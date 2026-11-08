@@ -1,0 +1,16 @@
+{
+  "name": "VideoGuard",
+  "short_name": "VideoGuard",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0F0F0F",
+  "theme_color": "#FF0000",
+  "icons": [
+    {
+      "src": "https://img.youtube.com/vi/4NRXx6U8ABQ/hqdefault.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
+
