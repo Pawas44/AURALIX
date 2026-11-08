@@ -1,0 +1,626 @@
+package com.videoguard.app.ui.components
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.graphics.Color as AndroidColor
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import android.view.MotionEvent
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.viewinterop.AndroidView
+import com.videoguard.app.service.PlaybackController
+
+class BackgroundPlayWebView(context: Context) : WebView(context) {
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        // Report VISIBLE so Chromium does not kill audio decoder in background
+        super.onWindowVisibilityChanged(View.VISIBLE)
+    }
+
+    override fun dispatchWindowVisibilityChanged(visibility: Int) {
+        super.dispatchWindowVisibilityChanged(View.VISIBLE)
+    }
+
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, View.VISIBLE)
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(true)
+    }
+
+    override fun onTouchEvent(event: MotionEvent?): Boolean {
+        // Delegate all touch events to Compose layer so native YouTube controls handle them
+        return false
+    }
+}
+
+class YouTubeBridge(
+    private val readyCallback: () -> Unit,
+    private val stateChangeCallback: (Int) -> Unit,
+    private val timeUpdateCallback: (Float, Float) -> Unit
+) {
+    @JavascriptInterface
+    fun onReady() {
+        readyCallback()
+    }
+
+    @JavascriptInterface
+    fun onStateChange(state: Int) {
+        stateChangeCallback(state)
+    }
+
+    @JavascriptInterface
+    fun onTimeUpdate(currentTime: Float, duration: Float) {
+        timeUpdateCallback(currentTime, duration)
+    }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun YouTubeVideoPlayer(
+    videoId: String,
+    isPlaying: Boolean,
+    modifier: Modifier = Modifier,
+    onStateChange: (Int) -> Unit = {}
+) {
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var currentLoadedId by remember { mutableStateOf<String?>(null) }
+
+    // Register with PlaybackController so transport buttons execute JS commands directly
+    DisposableEffect(webViewRef) {
+        PlaybackController.setCommandListener { command ->
+            if (command.startsWith("loadVideo(")) {
+                currentLoadedId = videoId
+            }
+            webViewRef?.post {
+                webViewRef?.evaluateJavascript(command, null)
+            }
+        }
+        onDispose {
+            PlaybackController.setCommandListener(null)
+        }
+    }
+
+    // Video ID updates
+    LaunchedEffect(videoId) {
+        if (currentLoadedId != null && currentLoadedId != videoId) {
+            currentLoadedId = videoId
+            webViewRef?.evaluateJavascript("loadVideo('$videoId');", null)
+        }
+    }
+
+    // Play/Pause sync from Compose state
+    LaunchedEffect(isPlaying) {
+        webViewRef?.evaluateJavascript("setPlaybackState($isPlaying);", null)
+    }
+
+    Box(
+        modifier = modifier.background(Color.Black),
+        contentAlignment = androidx.compose.ui.Alignment.Center
+    ) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { context ->
+                BackgroundPlayWebView(context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                    setBackgroundColor(AndroidColor.BLACK)
+
+                    clearCache(true)
+                    settings.apply {
+                        javaScriptEnabled = true
+                        mediaPlaybackRequiresUserGesture = false
+                        domStorageEnabled = true
+                        cacheMode = WebSettings.LOAD_NO_CACHE
+                        allowContentAccess = true
+                        allowFileAccess = true
+                        allowFileAccessFromFileURLs = true
+                        allowUniversalAccessFromFileURLs = true
+                        useWideViewPort = true
+                        loadWithOverviewMode = true
+                    }
+
+                    webChromeClient = WebChromeClient()
+
+                    val chromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+                    settings.userAgentString = chromeUserAgent
+
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldInterceptRequest(
+                            view: WebView?,
+                            request: android.webkit.WebResourceRequest?
+                        ): android.webkit.WebResourceResponse? {
+                            val url = request?.url?.toString() ?: ""
+                            if (url.contains(".css") && (url.contains("player") || url.contains("embed") || url.contains("ss/k=ytembeds"))) {
+                                try {
+                                    val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                                    connection.requestMethod = "GET"
+                                    request?.requestHeaders?.forEach { (k, v) ->
+                                        connection.setRequestProperty(k, v)
+                                    }
+                                    connection.connect()
+                                    val originalCss = connection.inputStream.bufferedReader().use { it.readText() }
+                                    val hideRules = """
+                                        .ytPlayerControlsContainerHost,
+                                        .ytPlayerControlsContainerRendered,
+                                        .ytmCustomControlHost,
+                                        .ytmWatchPlayerControlsHost,
+                                        .player-controls-content,
+                                        .player-controls-background-container,
+                                        .player-controls-background,
+                                        .player-controls-top,
+                                        .player-controls-middle,
+                                        .player-controls-bottom,
+                                        .ytwPlayerTopControlsHost,
+                                        .ytwPlayerBottomControlsHost,
+                                        .ytwPlayerMiddleControlsHost,
+                                        .ytmVideoInfoHost,
+                                        .ytwPlayerSeekOverlayHost,
+                                        .ytwPlayerFullscreenControlsHost,
+                                        .ytp-player-content,
+                                        .ytp-unmute,
+                                        .ytp-chrome-top,
+                                        .ytp-show-cards-title,
+                                        .ytp-pause-overlay,
+                                        .ytp-pause-overlay-container,
+                                        .ytp-youtube-button,
+                                        .ytp-watermark,
+                                        .ytp-copylink-button,
+                                        .ytp-impression-link,
+                                        .ytp-title,
+                                        .ytp-title-text,
+                                        .ytp-title-channel,
+                                        .ytp-endscreen-content,
+                                        .ytp-ce-element,
+                                        .ytp-cards-teaser,
+                                        .ytp-cards-button,
+                                        .ytp-gradient-top,
+                                        .ytp-gradient-bottom,
+                                        .ytp-chrome-bottom,
+                                        .ytp-scroll-min {
+                                            display: none !important;
+                                            opacity: 0 !important;
+                                            visibility: hidden !important;
+                                            pointer-events: none !important;
+                                            height: 0 !important;
+                                            width: 0 !important;
+                                        }
+                                    """.trimIndent()
+                                    val modifiedCss = originalCss + "\n" + hideRules
+                                    return android.webkit.WebResourceResponse(
+                                        "text/css",
+                                        "UTF-8",
+                                        java.io.ByteArrayInputStream(modifiedCss.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+                                    )
+                                } catch (e: Exception) {
+                                    android.util.Log.e("InterceptReq", "Error modifying CSS", e)
+                                }
+                            }
+                            return super.shouldInterceptRequest(view, request)
+                        }
+                    }
+
+                    val bridge = YouTubeBridge(
+                        readyCallback = {
+                            post {
+                                currentLoadedId = videoId
+                                evaluateJavascript("setPlaybackState($isPlaying);", null)
+                                if (PlaybackController.isCaptionsEnabled.value) {
+                                    evaluateJavascript("setCaptions(true);", null)
+                                }
+                            }
+                        },
+                        stateChangeCallback = { state ->
+                            // Synchronize player state with PlaybackController
+                            when (state) {
+                                1 -> PlaybackController.setPlayingState(true)   // PLAYING
+                                2 -> PlaybackController.setPlayingState(false)  // PAUSED
+                                0 -> {
+                                    if (PlaybackController.isLoopEnabled.value) {
+                                        PlaybackController.seekTo(0f)
+                                        PlaybackController.play()
+                                    } else if (PlaybackController.isAutoplayEnabled.value) {
+                                        PlaybackController.nextTrack()
+                                    } else {
+                                        PlaybackController.pause()
+                                    }
+                                }
+                            }
+                            onStateChange(state)
+                        },
+                        timeUpdateCallback = { current, duration ->
+                            PlaybackController.updateProgress(current, duration)
+                        }
+                    )
+                    addJavascriptInterface(bridge, "AndroidBridge")
+
+                    val htmlData = getYouTubePlayerHtml(videoId)
+                    loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlData, "text/html", "UTF-8", null)
+
+                    webViewRef = this
+                }
+            },
+            update = { webView ->
+                webViewRef = webView
+            }
+        )
+    }
+}
+
+private fun getYouTubePlayerHtml(videoId: String): String {
+    return """
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body, html { width: 100%; height: 100%; background-color: #000; overflow: hidden; pointer-events: none; user-select: none; }
+            #player-wrapper { width: 100%; height: 100%; position: relative; overflow: hidden; background-color: #000; }
+            #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
+          </style>
+          <script>
+            window.userWantsPlay = true;
+            window.isLoadingNewVideo = false;
+            window.currentVideoId = '$videoId';
+
+            try {
+              Object.defineProperty(document, 'hidden', { get: function() { return false; } });
+              Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; } });
+              Object.defineProperty(document, 'webkitVisibilityState', { get: function() { return 'visible'; } });
+              document.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+              window.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
+              window.addEventListener('pagehide', function(e) { e.stopImmediatePropagation(); }, true);
+              window.addEventListener('blur', function(e) { e.stopImmediatePropagation(); }, true);
+            } catch(e) {}
+
+            function setPlaybackState(play) {
+              window.userWantsPlay = play;
+              if (play) {
+                if (window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
+                  window.ytPlayer.playVideo();
+                } else {
+                  var iframe = document.getElementById('player');
+                  if (iframe && iframe.contentWindow) {
+                    iframe.contentWindow.postMessage(JSON.stringify({
+                      "event": "command",
+                      "func": "playVideo",
+                      "args": ""
+                    }), '*');
+                  }
+                }
+              } else {
+                window.isLoadingNewVideo = false;
+                if (window.ytPlayer && typeof window.ytPlayer.pauseVideo === 'function') {
+                  window.ytPlayer.pauseVideo();
+                } else {
+                  var iframe = document.getElementById('player');
+                  if (iframe && iframe.contentWindow) {
+                    iframe.contentWindow.postMessage(JSON.stringify({
+                      "event": "command",
+                      "func": "pauseVideo",
+                      "args": ""
+                    }), '*');
+                  }
+                }
+              }
+            }
+
+            function loadVideo(id) {
+              window.currentVideoId = id;
+              window.userWantsPlay = true;
+              window.isLoadingNewVideo = true;
+
+              if (window.ytPlayer && typeof window.ytPlayer.loadVideoById === 'function') {
+                try {
+                  window.ytPlayer.loadVideoById({
+                    'videoId': id,
+                    'startSeconds': 0
+                  });
+                  window.ytPlayer.playVideo();
+                } catch(e) {
+                  try {
+                    window.ytPlayer.loadVideoById(id, 0);
+                    window.ytPlayer.playVideo();
+                  } catch(e2) {}
+                }
+              } else {
+                var iframe = document.getElementById('player');
+                if (iframe && iframe.contentWindow) {
+                  iframe.contentWindow.postMessage(JSON.stringify({
+                    "event": "command",
+                    "func": "loadVideoById",
+                    "args": [id, 0]
+                  }), '*');
+                  iframe.contentWindow.postMessage(JSON.stringify({
+                    "event": "command",
+                    "func": "playVideo",
+                    "args": ""
+                  }), '*');
+                }
+              }
+            }
+
+            function seekTo(seconds) {
+              if (window.ytPlayer && window.ytPlayer.seekTo) {
+                window.ytPlayer.seekTo(seconds, true);
+              }
+            }
+
+            function seekBy(seconds) {
+              if (window.ytPlayer && window.ytPlayer.getCurrentTime && window.ytPlayer.seekTo) {
+                var cur = window.ytPlayer.getCurrentTime();
+                window.ytPlayer.seekTo(cur + seconds, true);
+              }
+            }
+
+            function setPlaybackRate(rate) {
+              if (window.ytPlayer && window.ytPlayer.setPlaybackRate) {
+                window.ytPlayer.setPlaybackRate(rate);
+              }
+            }
+
+            function setPlaybackQuality(quality) {
+              if (window.ytPlayer && window.ytPlayer.setPlaybackQuality) {
+                window.ytPlayer.setPlaybackQuality(quality);
+              }
+            }
+
+            function setCaptions(enabled) {
+              if (window.ytPlayer) {
+                try {
+                  if (enabled) {
+                    window.ytPlayer.loadModule("captions");
+                    window.ytPlayer.setOption("captions", "track", {"languageCode": "en"});
+                    window.ytPlayer.setOption("captions", "reload", true);
+                  } else {
+                    window.ytPlayer.unloadModule("captions");
+                  }
+                } catch(e) {}
+              }
+            }
+
+            function cleanEmbedDOM() {
+              try {
+                var iframe = document.getElementById('player');
+                if (!iframe) return;
+                var doc = iframe.contentDocument || (iframe.contentWindow ? iframe.contentWindow.document : null);
+                if (!doc) return;
+
+                if (!doc.getElementById('vg-clean-style')) {
+                  var style = doc.createElement('style');
+                  style.id = 'vg-clean-style';
+                  style.textContent = [
+                    '.ytPlayerControlsContainerHost,',
+                    '.ytPlayerControlsContainerRendered,',
+                    '.ytmCustomControlHost,',
+                    '.ytmWatchPlayerControlsHost,',
+                    '.player-controls-content,',
+                    '.player-controls-background-container,',
+                    '.player-controls-background,',
+                    '.player-controls-top,',
+                    '.player-controls-middle,',
+                    '.player-controls-bottom,',
+                    '.ytwPlayerTopControlsHost,',
+                    '.ytwPlayerBottomControlsHost,',
+                    '.ytwPlayerMiddleControlsHost,',
+                    '.ytmVideoInfoHost,',
+                    '.ytwPlayerSeekOverlayHost,',
+                    '.ytwPlayerFullscreenControlsHost,',
+                    '.ytp-player-content,',
+                    '.ytp-unmute,',
+                    '.ytp-chrome-top,',
+                    '.ytp-show-cards-title,',
+                    '.ytp-pause-overlay,',
+                    '.ytp-pause-overlay-container,',
+                    '.ytp-youtube-button,',
+                    '.ytp-watermark,',
+                    '.ytp-copylink-button,',
+                    '.ytp-impression-link,',
+                    '.ytp-title,',
+                    '.ytp-title-text,',
+                    '.ytp-title-channel,',
+                    '.ytp-endscreen-content,',
+                    '.ytp-ce-element,',
+                    '.ytp-cards-teaser,',
+                    '.ytp-cards-button,',
+                    '.ytp-gradient-top,',
+                    '.ytp-gradient-bottom,',
+                    '.ytp-chrome-bottom,',
+                    '.ytp-scroll-min {',
+                    '  display: none !important;',
+                    '  opacity: 0 !important;',
+                    '  visibility: hidden !important;',
+                    '  pointer-events: none !important;',
+                    '  height: 0 !important;',
+                    '  width: 0 !important;',
+                    '}'
+                  ].join('\n');
+                  (doc.head || doc.body || doc.documentElement).appendChild(style);
+                }
+
+                // Hide any overlays inside html5-video-player except the video container
+                var vp = doc.querySelector('.html5-video-player');
+                if (vp && vp.children) {
+                  for (var i = 0; i < vp.children.length; i++) {
+                    var c = vp.children[i];
+                    var cls = c.className || "";
+                    if (typeof cls === 'string' && cls.indexOf('html5-video-container') !== -1) {
+                      continue;
+                    }
+                    c.style.setProperty('display', 'none', 'important');
+                    c.style.setProperty('opacity', '0', 'important');
+                    c.style.setProperty('visibility', 'hidden', 'important');
+                    c.style.setProperty('pointer-events', 'none', 'important');
+                  }
+                }
+
+                var selectors = [
+                  '.ytPlayerControlsContainerHost',
+                  '.ytmWatchPlayerControlsHost',
+                  '.player-controls-content',
+                  '.player-controls-background-container',
+                  '.player-controls-top',
+                  '.player-controls-bottom',
+                  '.player-controls-middle',
+                  '.ytwPlayerTopControlsHost',
+                  '.ytwPlayerBottomControlsHost',
+                  '.ytmVideoInfoHost',
+                  '.ytp-player-content',
+                  '.ytp-unmute',
+                  '.ytp-chrome-top',
+                  '.ytp-pause-overlay',
+                  '.ytp-pause-overlay-container',
+                  '.ytp-youtube-button',
+                  '.ytp-watermark',
+                  '.ytp-copylink-button',
+                  '.ytp-impression-link',
+                  '.ytp-gradient-top',
+                  '.ytp-gradient-bottom',
+                  '.ytp-scroll-min',
+                  '.ytp-ce-element'
+                ];
+                for (var s = 0; s < selectors.length; s++) {
+                  var els = doc.querySelectorAll(selectors[s]);
+                  for (var e = 0; e < els.length; e++) {
+                    els[e].style.setProperty('display', 'none', 'important');
+                    els[e].style.setProperty('opacity', '0', 'important');
+                    els[e].style.setProperty('visibility', 'hidden', 'important');
+                    els[e].style.setProperty('pointer-events', 'none', 'important');
+                  }
+                }
+              } catch(e) {}
+            }
+            setInterval(cleanEmbedDOM, 50);
+
+            setInterval(function() {
+              if (window.ytPlayer && typeof window.ytPlayer.getCurrentTime === 'function' && typeof window.ytPlayer.getDuration === 'function') {
+                try {
+                  var cur = window.ytPlayer.getCurrentTime();
+                  var dur = window.ytPlayer.getDuration();
+                  if (typeof cur === 'number' && typeof dur === 'number' && !isNaN(cur) && !isNaN(dur) && cur >= 0) {
+                    if (window.AndroidBridge && window.AndroidBridge.onTimeUpdate) {
+                      window.AndroidBridge.onTimeUpdate(cur, dur);
+                    }
+                  }
+                } catch(e) {}
+              }
+            }, 500);
+          </script>
+        </head>
+        <body>
+          <div id="player-wrapper">
+            <div id="player"></div>
+          </div>
+          <script>
+            var tag = document.createElement('script');
+            tag.src = "https://www.youtube.com/iframe_api";
+            var firstScriptTag = document.getElementsByTagName('script')[0];
+            firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+            var ytPlayer;
+            function onYouTubeIframeAPIReady() {
+              ytPlayer = new YT.Player('player', {
+                videoId: '$videoId',
+                host: 'https://www.youtube-nocookie.com',
+                playerVars: {
+                  'autoplay': 1,
+                  'playsinline': 1,
+                  'controls': 0,
+                  'rel': 0,
+                  'modestbranding': 1,
+                  'fs': 0,
+                  'disablekb': 1,
+                  'enablejsapi': 1,
+                  'iv_load_policy': 3,
+                  'showinfo': 0,
+                  'autohide': 1,
+                  'origin': 'https://www.youtube-nocookie.com'
+                },
+                events: {
+                  'onReady': onPlayerReady,
+                  'onStateChange': onPlayerStateChange
+                }
+              });
+              window.ytPlayer = ytPlayer;
+            }
+
+            function onPlayerReady(event) {
+              window.ytPlayer = event.target;
+              if (window.currentVideoId && window.currentVideoId !== '$videoId') {
+                try {
+                  event.target.loadVideoById({
+                    'videoId': window.currentVideoId,
+                    'startSeconds': 0
+                  });
+                } catch(e) {}
+              }
+              if (window.userWantsPlay) {
+                event.target.playVideo();
+              }
+              if (window.AndroidBridge && window.AndroidBridge.onReady) {
+                window.AndroidBridge.onReady();
+              }
+            }
+
+            function onPlayerStateChange(event) {
+              // -1: UNSTARTED, 0: ENDED, 1: PLAYING, 2: PAUSED, 3: BUFFERING, 5: CUED
+              var state = event.data;
+
+              if (state === 1) { // PLAYING
+                window.isLoadingNewVideo = false;
+                window.userWantsPlay = true;
+                if (window.AndroidBridge && window.AndroidBridge.onStateChange) {
+                  window.AndroidBridge.onStateChange(1);
+                }
+              } else if (state === 2) { // PAUSED
+                // If a new track was loaded or user requested playback,
+                // ignore transient unload pause and ensure playVideo is called!
+                if (window.isLoadingNewVideo || window.userWantsPlay) {
+                  if (window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
+                    window.ytPlayer.playVideo();
+                  }
+                } else {
+                  window.userWantsPlay = false;
+                  if (window.AndroidBridge && window.AndroidBridge.onStateChange) {
+                    window.AndroidBridge.onStateChange(2);
+                  }
+                }
+              } else if (state === 5) { // CUED
+                if (window.userWantsPlay) {
+                  if (window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
+                    window.ytPlayer.playVideo();
+                  }
+                }
+              } else if (state === -1) { // UNSTARTED
+                if (window.userWantsPlay) {
+                  if (window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
+                    window.ytPlayer.playVideo();
+                  }
+                }
+              } else if (state === 0) { // ENDED
+                window.isLoadingNewVideo = false;
+                if (window.AndroidBridge && window.AndroidBridge.onStateChange) {
+                  window.AndroidBridge.onStateChange(0);
+                }
+              }
+            }
+          </script>
+        </body>
+        </html>
+    """.trimIndent()
+}

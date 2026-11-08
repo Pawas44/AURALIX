@@ -1,0 +1,2445 @@
+package com.videoguard.app.data
+
+import android.webkit.CookieManager
+import com.videoguard.app.model.UserPlaylist
+import com.videoguard.app.model.VideoItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+
+data class MusicFeedData(
+    val quickPicks: List<VideoItem> = emptyList(),
+    val listenAgain: List<VideoItem> = emptyList(),
+    val recommendedVideos: List<VideoItem> = emptyList(),
+    val trendingCharts: List<VideoItem> = emptyList()
+)
+
+/**
+ * Syncs real personalized YouTube feed, watch history, playlists,
+ * and user account profile using the authenticated session cookies and InnerTube API.
+ */
+object YouTubeSyncEngine {
+
+    private const val DESKTOP_UA =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+
+    /**
+     * Gathers authenticated cookies strictly from YouTube domains to prevent Google domain cookie conflicts.
+     */
+    fun getAuthCookies(): String {
+        return try {
+            val cm = CookieManager.getInstance()
+            cm.flush()
+            val ytCookies = cm.getCookie("https://www.youtube.com") ?: ""
+            if (ytCookies.contains("LOGIN_INFO") || ytCookies.contains("SAPISID")) {
+                android.util.Log.d("YouTubeSyncEngine", "getAuthCookies youtube.com: length=${ytCookies.length}")
+                return ytCookies
+            }
+            val mCookies = cm.getCookie("https://m.youtube.com") ?: ""
+            if (mCookies.contains("LOGIN_INFO") || mCookies.contains("SAPISID")) {
+                android.util.Log.d("YouTubeSyncEngine", "getAuthCookies m.youtube.com: length=${mCookies.length}")
+                return mCookies
+            }
+            ytCookies.ifBlank { mCookies }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeSyncEngine", "getAuthCookies error", e)
+            ""
+        }
+    }
+
+    fun hasAuthCookies(): Boolean {
+        val cookies = getAuthCookies()
+        return cookies.contains("SAPISID") || cookies.contains("__Secure-3PAPISID") ||
+                cookies.contains("LOGIN_INFO") || cookies.contains("SID")
+    }
+
+    /**
+     * Generates SAPISIDHASH Authorization header for authenticated YouTube InnerTube requests.
+     */
+    private fun getSapisidHash(cookies: String, origin: String = "https://www.youtube.com"): String? {
+        val sapisidMatch = Regex("(?:SAPISID|__Secure-3PAPISID)=([^;\\s]+)").find(cookies)
+        val sapisid = sapisidMatch?.groupValues?.get(1)?.trim() ?: return null
+        return try {
+            val timestamp = System.currentTimeMillis() / 1000
+            val input = "$timestamp $sapisid $origin"
+            val md = MessageDigest.getInstance("SHA-1")
+            val digest = md.digest(input.toByteArray(Charsets.UTF_8))
+            val hex = digest.joinToString("") { "%02x".format(it) }
+            val hash = "SAPISIDHASH ${timestamp}_$hex"
+            android.util.Log.d("YouTubeSyncEngine", "Generated SAPISIDHASH: $hash")
+            hash
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeSyncEngine", "getSapisidHash error", e)
+            null
+        }
+    }
+
+    const val INNERTUBE_API_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+    const val CLIENT_VERSION = "2.20261010.01.00"
+
+    private const val MOBILE_UA =
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+
+    private val _homeFeed = kotlinx.coroutines.flow.MutableStateFlow<List<VideoItem>>(emptyList())
+    val homeFeed: kotlinx.coroutines.flow.StateFlow<List<VideoItem>> = _homeFeed.asStateFlow()
+
+    private val _musicFeed = MutableStateFlow(MusicFeedData())
+    val musicFeed: StateFlow<MusicFeedData> = _musicFeed.asStateFlow()
+
+    // Stores the continuation token for the home feed so we can page in more results
+    private var homeFeedContinuationToken: String? = null
+    private var homeFeedCategory: String = "All"
+    private var homeFeedPage: Int = 0
+
+    fun cacheHomeFeed(videos: List<VideoItem>) {
+        if (videos.isNotEmpty()) {
+            _homeFeed.value = videos
+        }
+    }
+
+    /**
+     * Executes an InnerTube video search, returning parsed videos and updating continuation token.
+     */
+    suspend fun searchVideosInnerTube(query: String, filterToVideos: Boolean = true): List<VideoItem> = withContext(Dispatchers.IO) {
+        val outVideos = mutableListOf<VideoItem>()
+        try {
+            val payload = JSONObject().apply {
+                put("context", buildContext())
+                put("query", query)
+                if (filterToVideos) {
+                    put("params", "EgIQAQ%3D%3D") // Filter: Video
+                }
+            }
+            val resp = callInnerTube("search", payload)
+            if (resp != null) {
+                extractVideosRecursively(resp, outVideos)
+                val token = extractContinuationToken(resp)
+                if (!token.isNullOrBlank()) {
+                    homeFeedContinuationToken = token
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeSyncEngine", "searchVideosInnerTube error", e)
+        }
+        outVideos.distinctBy { it.id }
+    }
+
+    /**
+     * Extracts personalized creator/channel topics from the user's authentic YouTube account,
+     * watch history, search queries, subscribed channels, and profile.
+     */
+    fun getUserAccountTopics(): List<String> {
+        val topCreators = UserDataRepository.history.value
+            .map { it.channelName.trim() }
+            .filter { it.isNotBlank() && it != "YouTube Creator" && it != "YouTube Video" && !isViewOrDateString(it) }
+            .groupingBy { it }
+            .eachCount()
+            .toList()
+            .sortedByDescending { it.second }
+            .map { it.first }
+
+        val searchTopics = UserDataRepository.searchHistory.value.filter { it.isNotBlank() }
+        val subs = UserDataRepository.subscribedChannels.value.filter { it.isNotBlank() }
+        val account = AccountRepository.currentAccount.value?.name?.ifBlank { null }
+
+        val combined = mutableListOf<String>()
+        if (account != null && account != "YouTube Account" && account != "Google User") {
+            combined.add(account)
+        }
+        combined.addAll(topCreators.take(8))
+        combined.addAll(searchTopics.take(6))
+        combined.addAll(subs.take(6))
+        return combined.distinct().ifEmpty { listOf("trending", "popular music", "gaming", "entertainment") }
+    }
+
+    /**
+     * Appends more videos to the home feed using the stored continuation token.
+     * Returns true if more items were loaded, false if nothing new was found.
+     */
+    suspend fun fetchMoreHomeFeed(): Boolean = withContext(Dispatchers.IO) {
+        val token = homeFeedContinuationToken
+        val category = homeFeedCategory
+
+        // 1. If we have a continuation token, try to use it via InnerTube browse or search
+        if (!token.isNullOrBlank()) {
+            try {
+                val contPayload = JSONObject().apply {
+                    put("context", buildContext())
+                    put("continuation", token)
+                }
+                var resp = callInnerTube("browse", contPayload)
+                if (resp == null) {
+                    resp = callInnerTube("search", contPayload)
+                }
+                if (resp != null) {
+                    val batch = mutableListOf<VideoItem>()
+                    extractVideosRecursively(resp, batch)
+                    val newToken = extractContinuationToken(resp)
+                    homeFeedContinuationToken = newToken
+
+                    if (batch.isNotEmpty()) {
+                        val existingIds = _homeFeed.value.map { it.id }.toSet()
+                        val fresh = batch.filter { it.id !in existingIds }
+                        if (fresh.isNotEmpty()) {
+                            _homeFeed.value = _homeFeed.value + fresh
+                            android.util.Log.d("YouTubeSyncEngine", "fetchMoreHomeFeed appended ${fresh.size} videos via continuation, total=${_homeFeed.value.size}")
+                            return@withContext true
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeSyncEngine", "fetchMoreHomeFeed continuation error", e)
+            }
+        }
+
+        // 2. Query InnerTube search using the user's authentic account topics
+        try {
+            homeFeedPage++
+            val userTopics = getUserAccountTopics()
+            val queryTopic = if (category != "All" && category.isNotBlank()) {
+                category
+            } else {
+                userTopics[homeFeedPage % userTopics.size]
+            }
+            val extra = searchVideosInnerTube(queryTopic).ifEmpty {
+                YouTubeSearchEngine.searchVideos(queryTopic, page = homeFeedPage)
+            }
+            if (extra.isNotEmpty()) {
+                val existingIds = _homeFeed.value.map { it.id }.toSet()
+                val fresh = extra.filter { it.id !in existingIds }
+                if (fresh.isNotEmpty()) {
+                    _homeFeed.value = _homeFeed.value + fresh
+                    android.util.Log.d("YouTubeSyncEngine", "fetchMoreHomeFeed appended ${fresh.size} videos via account topic '$queryTopic', total=${_homeFeed.value.size}")
+                    return@withContext true
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeSyncEngine", "fetchMoreHomeFeed topic error", e)
+        }
+
+        false
+    }
+
+    fun parseVideosFromJsonString(jsonStr: String): List<VideoItem> {
+        val results = mutableListOf<VideoItem>()
+        try {
+            val root = JSONObject(jsonStr)
+            extractVideosRecursively(root, results)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return results.distinctBy { it.id }
+    }
+
+    private fun buildContext(): JSONObject {
+        return JSONObject().apply {
+            put("client", JSONObject().apply {
+                put("clientName", "WEB")
+                put("clientVersion", CLIENT_VERSION)
+                put("hl", "en")
+                put("gl", "US")
+            })
+        }
+    }
+
+    /**
+     * Executes an authenticated InnerTube API call.
+     */
+    private fun callInnerTube(endpoint: String, payload: JSONObject): JSONObject? {
+        return try {
+            val cookies = getAuthCookies()
+            val url = URL("https://www.youtube.com/youtubei/v1/$endpoint?key=$INNERTUBE_API_KEY&prettyPrint=false")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 10000
+                readTimeout = 10000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("User-Agent", DESKTOP_UA)
+                setRequestProperty("X-YouTube-Client-Name", "1")
+                setRequestProperty("X-YouTube-Client-Version", CLIENT_VERSION)
+                setRequestProperty("Origin", "https://www.youtube.com")
+                setRequestProperty("Referer", "https://www.youtube.com/")
+                setRequestProperty("X-Origin", "https://www.youtube.com")
+                setRequestProperty("X-Goog-AuthUser", "0")
+                if (cookies.isNotBlank()) {
+                    setRequestProperty("Cookie", cookies)
+                    getSapisidHash(cookies, "https://www.youtube.com")?.let {
+                        setRequestProperty("Authorization", it)
+                    }
+                }
+            }
+            conn.outputStream.use { os ->
+                os.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+            android.util.Log.d("YouTubeSyncEngine", "callInnerTube: endpoint=$endpoint, code=${conn.responseCode}")
+            if (conn.responseCode == 200) {
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                android.util.Log.d("YouTubeSyncEngine", "callInnerTube response length=${text.length}")
+                JSONObject(text)
+            } else {
+                val err = conn.errorStream?.bufferedReader()?.use { it.readText() }
+                android.util.Log.e("YouTubeSyncEngine", "callInnerTube error response: $err")
+                null
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeSyncEngine", "callInnerTube exception", e)
+            null
+        }
+    }
+
+    private fun buildMusicContext(): JSONObject {
+        return JSONObject().apply {
+            put("client", JSONObject().apply {
+                put("clientName", "WEB_REMIX")
+                put("clientVersion", "1.20240101.01.00")
+                put("hl", "en")
+                put("gl", "US")
+            })
+        }
+    }
+
+    private fun callInnerTubeMusic(endpoint: String, payload: JSONObject): JSONObject? {
+        return try {
+            val cookies = getAuthCookies()
+            val url = URL("https://music.youtube.com/youtubei/v1/$endpoint?key=$INNERTUBE_API_KEY&prettyPrint=false")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 10000
+                readTimeout = 10000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("User-Agent", DESKTOP_UA)
+                setRequestProperty("X-YouTube-Client-Name", "67")
+                setRequestProperty("X-YouTube-Client-Version", "1.20240101.01.00")
+                setRequestProperty("Origin", "https://music.youtube.com")
+                setRequestProperty("Referer", "https://music.youtube.com/")
+                setRequestProperty("X-Origin", "https://music.youtube.com")
+                setRequestProperty("X-Goog-AuthUser", "0")
+                if (cookies.isNotBlank()) {
+                    setRequestProperty("Cookie", cookies)
+                    getSapisidHash(cookies, "https://music.youtube.com")?.let {
+                        setRequestProperty("Authorization", it)
+                    }
+                }
+            }
+            conn.outputStream.use { os ->
+                os.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+            android.util.Log.d("YouTubeSyncEngine", "callInnerTubeMusic: endpoint=$endpoint, code=${conn.responseCode}")
+            if (conn.responseCode == 200) {
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                JSONObject(text)
+            } else {
+                val err = conn.errorStream?.bufferedReader()?.use { it.readText() }
+                android.util.Log.e("YouTubeSyncEngine", "callInnerTubeMusic error response: $err")
+                null
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeSyncEngine", "callInnerTubeMusic exception", e)
+            null
+        }
+    }
+
+    val MUSIC_MOOD_PARAMS = mapOf(
+        "Energize" to "ggNCSgQIDBABSgQIBBABSgQIBxABSgQIAxABSgQICRADSgQICBABSgQIDRABSgQIDhABSgQIChABSgQIBhABSgQIBRAB",
+        "Workout" to "ggNCSgQIDBABSgQIBBADSgQIBxABSgQIAxABSgQICRABSgQICBABSgQIDRABSgQIDhABSgQIChABSgQIBhABSgQIBRAB",
+        "Relax" to "ggNCSgQIDBABSgQIBBABSgQIBxADSgQIAxABSgQICRABSgQICBABSgQIDRABSgQIDhABSgQIChABSgQIBhABSgQIBRAB",
+        "Focus" to "ggNCSgQIDBABSgQIBBABSgQIBxABSgQIAxABSgQICRABSgQICBABSgQIDRABSgQIDhABSgQIChABSgQIBhADSgQIBRAB",
+        "Commute" to "ggNCSgQIDBABSgQIBBABSgQIBxABSgQIAxADSgQICRABSgQICBABSgQIDRABSgQIDhABSgQIChABSgQIBhABSgQIBRAB",
+        "Party" to "ggNCSgQIDBABSgQIBBABSgQIBxABSgQIAxABSgQICRABSgQICBABSgQIDRABSgQIDhADSgQIChABSgQIBhABSgQIBRAB"
+    )
+
+    /**
+     * Fetches personalized YouTube Music home feed, shelves, and mood songs,
+     * seamlessly blended with the user's synced account history and liked tracks.
+     */
+    suspend fun fetchMusicHomeFeed(mood: String? = null): MusicFeedData = withContext(Dispatchers.IO) {
+        val quickPicks = mutableListOf<VideoItem>()
+        val listenAgain = mutableListOf<VideoItem>()
+        val recommendedVideos = mutableListOf<VideoItem>()
+        val trendingCharts = mutableListOf<VideoItem>()
+        val allParsedTracks = mutableListOf<VideoItem>()
+        val playlistIdsToUnpack = mutableListOf<String>()
+
+        try {
+            val payload = JSONObject().apply {
+                put("context", buildMusicContext())
+                put("browseId", "FEmusic_home")
+                val p = mood?.let { MUSIC_MOOD_PARAMS[it] }
+                if (!p.isNullOrBlank()) {
+                    put("params", p)
+                }
+            }
+
+            val resp = callInnerTubeMusic("browse", payload)
+            if (resp != null) {
+                val tabs = resp.optJSONObject("contents")
+                    ?.optJSONObject("singleColumnBrowseResultsRenderer")
+                    ?.optJSONArray("tabs")
+                val sections = tabs?.optJSONObject(0)
+                    ?.optJSONObject("tabRenderer")
+                    ?.optJSONObject("content")
+                    ?.optJSONObject("sectionListRenderer")
+                    ?.optJSONArray("contents")
+
+                if (sections != null) {
+                    for (i in 0 until sections.length()) {
+                        val sec = sections.optJSONObject(i) ?: continue
+                        val shelf = sec.optJSONObject("musicCarouselShelfRenderer")
+                            ?: sec.optJSONObject("musicShelfRenderer") ?: continue
+
+                        val headerRenderer = shelf.optJSONObject("header")?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                            ?: shelf.optJSONObject("header")?.optJSONObject("musicHeaderRenderer")
+                        val shelfTitle = headerRenderer?.optJSONObject("title")
+                            ?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")?.trim() ?: ""
+
+                        val shelfItems = shelf.optJSONArray("contents") ?: continue
+                        val currentShelfTracks = mutableListOf<VideoItem>()
+
+                        for (j in 0 until shelfItems.length()) {
+                            val itemObj = shelfItems.optJSONObject(j) ?: continue
+                            if (itemObj.has("musicResponsiveListItemRenderer")) {
+                                parseMusicResponsiveListItemRenderer(itemObj.optJSONObject("musicResponsiveListItemRenderer"))?.let {
+                                    currentShelfTracks.add(it)
+                                }
+                            } else if (itemObj.has("musicTwoRowItemRenderer")) {
+                                val twoRow = itemObj.optJSONObject("musicTwoRowItemRenderer")
+                                val parsed = parseMusicTwoRowItemRenderer(twoRow)
+                                if (parsed != null) {
+                                    currentShelfTracks.add(parsed)
+                                } else {
+                                    val plId = twoRow?.optJSONObject("navigationEndpoint")
+                                        ?.optJSONObject("browseEndpoint")?.optString("browseId")
+                                        ?: twoRow?.optJSONObject("thumbnailOverlay")
+                                            ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                                            ?.optJSONObject("content")
+                                            ?.optJSONObject("musicPlayButtonRenderer")
+                                            ?.optJSONObject("playNavigationEndpoint")
+                                            ?.optJSONObject("watchPlaylistEndpoint")
+                                            ?.optString("playlistId")
+                                    if (!plId.isNullOrBlank() && (plId.startsWith("VL") || plId.startsWith("RDCL"))) {
+                                        playlistIdsToUnpack.add(plId)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (currentShelfTracks.isNotEmpty()) {
+                            allParsedTracks.addAll(currentShelfTracks)
+                            val lowerTitle = shelfTitle.lowercase()
+                            when {
+                                lowerTitle.contains("quick pick") || lowerTitle.contains("start radio") || lowerTitle.contains("picks") -> {
+                                    quickPicks.addAll(currentShelfTracks)
+                                }
+                                lowerTitle.contains("listen again") || lowerTitle.contains("forgotten") || lowerTitle.contains("history") || lowerTitle.contains("recently") -> {
+                                    listenAgain.addAll(currentShelfTracks)
+                                }
+                                lowerTitle.contains("recommended") || lowerTitle.contains("video") || lowerTitle.contains("mixed") -> {
+                                    recommendedVideos.addAll(currentShelfTracks)
+                                }
+                                lowerTitle.contains("chart") || lowerTitle.contains("trending") || lowerTitle.contains("hit") || lowerTitle.contains("top") -> {
+                                    trendingCharts.addAll(currentShelfTracks)
+                                }
+                                else -> {
+                                    if (quickPicks.isEmpty()) {
+                                        quickPicks.addAll(currentShelfTracks)
+                                    } else if (trendingCharts.isEmpty()) {
+                                        trendingCharts.addAll(currentShelfTracks)
+                                    } else {
+                                        recommendedVideos.addAll(currentShelfTracks)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeSyncEngine", "fetchMusicHomeFeed error", e)
+        }
+
+        // If we found mood/curated playlists and have few raw tracks, unpack up to 2 playlists
+        if (allParsedTracks.size < 10 && playlistIdsToUnpack.isNotEmpty()) {
+            for (plId in playlistIdsToUnpack.take(2)) {
+                try {
+                    val unpacked = fetchPlaylistVideos(plId, maxVideos = 20)
+                    if (unpacked.isNotEmpty()) {
+                        allParsedTracks.addAll(unpacked)
+                        if (quickPicks.isEmpty()) {
+                            quickPicks.addAll(unpacked)
+                        } else {
+                            trendingCharts.addAll(unpacked)
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("YouTubeSyncEngine", "Unpack playlist error: $plId", e)
+                }
+            }
+        }
+
+        // --- Personalized User Account Integration ---
+        val userAccountHistory = UserDataRepository.history.value
+        val accountMusicTracks = userAccountHistory.filter { track ->
+            track.isMusicTrack ||
+            track.title.contains("song", ignoreCase = true) ||
+            track.title.contains("music", ignoreCase = true) ||
+            track.title.contains("audio", ignoreCase = true) ||
+            track.title.contains("ft.", ignoreCase = true) ||
+            track.title.contains("official video", ignoreCase = true) ||
+            track.title.contains("official audio", ignoreCase = true) ||
+            track.title.contains("remix", ignoreCase = true) ||
+            track.title.contains("soundtrack", ignoreCase = true) ||
+            track.category.equals("Music", ignoreCase = true)
+        }.distinctBy { it.id }
+
+        val userLikedVideos = UserDataRepository.playlists.value
+            .find { it.id == "liked_videos" }?.videos ?: emptyList()
+        val likedMusicTracks = userLikedVideos.filter {
+            it.isMusicTrack || it.category.equals("Music", ignoreCase = true) ||
+            it.title.contains("song", ignoreCase = true) || it.title.contains("music", ignoreCase = true)
+        }.distinctBy { it.id }
+
+        // 1. Listen again: Real songs the user actually listened to on their account!
+        val finalListenAgain = if (accountMusicTracks.isNotEmpty()) {
+            (accountMusicTracks.take(15) + listenAgain).distinctBy { it.id }
+        } else if (listenAgain.isNotEmpty()) {
+            listenAgain.distinctBy { it.id }
+        } else if (userAccountHistory.isNotEmpty()) {
+            userAccountHistory.take(12)
+        } else {
+            allParsedTracks.take(10)
+        }
+
+        // 2. Quick picks: Real personalized recommendations
+        val finalQuickPicks = if (quickPicks.isNotEmpty()) {
+            quickPicks.distinctBy { it.id }
+        } else if (likedMusicTracks.isNotEmpty()) {
+            likedMusicTracks.take(12)
+        } else if (accountMusicTracks.isNotEmpty()) {
+            accountMusicTracks.shuffled().take(12)
+        } else {
+            allParsedTracks.take(12)
+        }
+
+        // 3. Recommended videos:
+        val finalRecommended = if (recommendedVideos.isNotEmpty()) {
+            recommendedVideos.distinctBy { it.id }
+        } else if (userLikedVideos.isNotEmpty()) {
+            userLikedVideos.take(12)
+        } else {
+            allParsedTracks.reversed().distinctBy { it.id }
+        }
+
+        // 4. Trending charts:
+        val finalTrending = if (trendingCharts.isNotEmpty()) {
+            trendingCharts.distinctBy { it.id }
+        } else {
+            allParsedTracks.drop(4).distinctBy { it.id }
+        }
+
+        // Fallbacks guaranteeing non-empty
+        val resolvedQuickPicks = finalQuickPicks.ifEmpty { userAccountHistory.take(10) }.ifEmpty { VideoRepository.sampleVideos }
+        val resolvedListenAgain = finalListenAgain.ifEmpty { userAccountHistory.take(10) }.ifEmpty { VideoRepository.sampleVideos }
+        val resolvedRecommended = finalRecommended.ifEmpty { resolvedQuickPicks }
+        val resolvedTrending = finalTrending.ifEmpty { resolvedQuickPicks }
+
+        val result = MusicFeedData(
+            quickPicks = resolvedQuickPicks,
+            listenAgain = resolvedListenAgain,
+            recommendedVideos = resolvedRecommended,
+            trendingCharts = resolvedTrending
+        )
+
+        _musicFeed.value = result
+        result
+    }
+
+    /**
+     * Fetches personalized or category-based YouTube home feed videos.
+     */
+    suspend fun fetchHomeFeed(category: String = "All"): List<VideoItem> = withContext(Dispatchers.IO) {
+        homeFeedCategory = category
+        homeFeedPage = 0
+        val cookies = getAuthCookies()
+
+        // 1. If category chip selected (Music, Gaming, Podcasts, News, etc.)
+        if (category != "All" && category.isNotBlank()) {
+            val searchResults = searchVideosInnerTube(category).ifEmpty {
+                YouTubeSearchEngine.searchVideos(category)
+            }
+            if (searchResults.isNotEmpty()) {
+                cacheHomeFeed(searchResults)
+                return@withContext searchResults
+            }
+        }
+
+        val browseVideos = mutableListOf<VideoItem>()
+        val subVideos = mutableListOf<VideoItem>()
+        val htmlVideos = mutableListOf<VideoItem>()
+
+        // 2. For "All": First try InnerTube FEwhat_to_watch with session cookies
+        try {
+            val payload = JSONObject().apply {
+                put("context", buildContext())
+                put("browseId", "FEwhat_to_watch")
+            }
+            val resp = callInnerTube("browse", payload)
+            if (resp != null) {
+                val videos = mutableListOf<VideoItem>()
+                extractVideosRecursively(resp, videos)
+                val token = extractContinuationToken(resp)
+                if (!token.isNullOrBlank()) homeFeedContinuationToken = token
+                if (videos.isNotEmpty()) {
+                    browseVideos.addAll(videos.distinctBy { it.id })
+                    android.util.Log.d("YouTubeSyncEngine", "fetchHomeFeed FEwhat_to_watch extracted ${browseVideos.size} videos")
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeSyncEngine", "fetchHomeFeed FEwhat_to_watch error", e)
+        }
+
+        // 3. Try InnerTube FEsubscriptions (the authentic feed of user's subscribed channels)
+        if (cookies.isNotBlank()) {
+            try {
+                val subPayload = JSONObject().apply {
+                    put("context", buildContext())
+                    put("browseId", "FEsubscriptions")
+                }
+                val subResp = callInnerTube("browse", subPayload)
+                if (subResp != null) {
+                    val rawSubs = mutableListOf<VideoItem>()
+                    extractVideosRecursively(subResp, rawSubs)
+                    if (rawSubs.isNotEmpty()) {
+                        subVideos.addAll(rawSubs.distinctBy { it.id })
+                        android.util.Log.d("YouTubeSyncEngine", "fetchHomeFeed FEsubscriptions extracted ${subVideos.size} videos")
+                        val channelNames = rawSubs.map { it.channelName }.filter { it.isNotBlank() && it != "YouTube Creator" }.toSet()
+                        if (channelNames.isNotEmpty()) {
+                            UserDataRepository.setSubscribedChannels(channelNames)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeSyncEngine", "fetchHomeFeed FEsubscriptions error", e)
+            }
+        }
+
+        // 4. Try HTML home feed with user cookies if browse is empty
+        if (browseVideos.isEmpty() && cookies.isNotBlank()) {
+            try {
+                val html = fetchHtmlWithRedirects("https://www.youtube.com/", cookies)
+                if (!html.isNullOrBlank()) {
+                    val parsed = parseVideosFromHtml(html)
+                    if (parsed.isNotEmpty()) {
+                        htmlVideos.addAll(parsed.distinctBy { it.id })
+                        android.util.Log.d("YouTubeSyncEngine", "fetchHomeFeed youtube.com HTML extracted ${htmlVideos.size} videos")
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 5. Account Channel Personalization & Recommendations:
+        // Always synthesize rich suggestions based on user's authentic topics, history, and liked videos
+        val topicBatches = mutableListOf<List<VideoItem>>()
+        val topics = getUserAccountTopics()
+        android.util.Log.d("YouTubeSyncEngine", "fetchHomeFeed generating personalized suggestions from topics: $topics")
+
+        for (topic in topics.take(6)) {
+            try {
+                val vids = searchVideosInnerTube(topic).ifEmpty {
+                    YouTubeSearchEngine.searchVideos(topic)
+                }
+                if (vids.isNotEmpty()) {
+                    topicBatches.add(vids.take(5))
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // Include user's liked videos and watch history
+        val userLiked = UserDataRepository.playlists.value.find { it.id == "liked_videos" }?.videos ?: emptyList()
+        val userHistory = UserDataRepository.history.value
+
+        // Assemble all candidate sources
+        val feedGroups = mutableListOf<List<VideoItem>>()
+        if (browseVideos.isNotEmpty()) feedGroups.add(browseVideos)
+        if (htmlVideos.isNotEmpty()) feedGroups.add(htmlVideos)
+        if (subVideos.isNotEmpty()) feedGroups.add(subVideos)
+        feedGroups.addAll(topicBatches)
+        if (userLiked.isNotEmpty()) feedGroups.add(userLiked.take(5))
+        if (userHistory.isNotEmpty()) feedGroups.add(userHistory.shuffled().take(6))
+
+        // Interleave all candidate sources round-robin, capping each creator to max 2 items
+        // so no single channel dominates the home feed!
+        val interleaved = mutableListOf<VideoItem>()
+        val seenIds = mutableSetOf<String>()
+        val channelCounts = mutableMapOf<String, Int>()
+        val maxBatchSize = feedGroups.maxOfOrNull { it.size } ?: 0
+
+        // Primary pass: max 2 videos per channel
+        for (idx in 0 until maxBatchSize) {
+            for (group in feedGroups) {
+                if (idx < group.size) {
+                    val item = group[idx]
+                    if (item.id !in seenIds) {
+                        val count = channelCounts.getOrDefault(item.channelName, 0)
+                        if (count < 2) {
+                            interleaved.add(item)
+                            seenIds.add(item.id)
+                            channelCounts[item.channelName] = count + 1
+                        }
+                    }
+                }
+            }
+        }
+
+        // Secondary pass if feed still has fewer than 20 items: relax limit
+        if (interleaved.size < 20) {
+            for (idx in 0 until maxBatchSize) {
+                for (group in feedGroups) {
+                    if (idx < group.size) {
+                        val item = group[idx]
+                        if (item.id !in seenIds) {
+                            val count = channelCounts.getOrDefault(item.channelName, 0)
+                            if (count < 5) {
+                                interleaved.add(item)
+                                seenIds.add(item.id)
+                                channelCounts[item.channelName] = count + 1
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val collectedVideos = interleaved.toMutableList()
+
+        // 6. Fallback if still empty: trending
+        if (collectedVideos.isEmpty()) {
+            val popular = searchVideosInnerTube("trending").ifEmpty {
+                YouTubeSearchEngine.searchVideos("trending")
+            }
+            collectedVideos.addAll(popular)
+        }
+
+        val result = collectedVideos.distinctBy { it.id }.ifEmpty {
+            VideoRepository.getVideosByCategory(category)
+        }
+
+        cacheHomeFeed(result)
+        android.util.Log.d("YouTubeSyncEngine", "fetchHomeFeed final total=${result.size} videos")
+        result
+    }
+
+    /**
+     * Fetches real user watch history from YouTube when signed in.
+     */
+    suspend fun fetchHistory(): List<VideoItem> = withContext(Dispatchers.IO) {
+        val cookies = getAuthCookies()
+        if (cookies.isBlank()) {
+            return@withContext emptyList()
+        }
+
+        // 1. Try InnerTube browse FEhistory (direct authenticated history)
+        try {
+            val payload = JSONObject().apply {
+                put("context", buildContext())
+                put("browseId", "FEhistory")
+            }
+            val resp = callInnerTube("browse", payload)
+            if (resp != null) {
+                val videos = mutableListOf<VideoItem>()
+                extractVideosRecursively(resp, videos)
+                android.util.Log.d("YouTubeSyncEngine", "fetchHistory FEhistory extracted ${videos.size} videos")
+                if (videos.isNotEmpty()) {
+                    return@withContext videos.distinctBy { it.id }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. Fallback: GET https://www.youtube.com/feed/history HTML with cookies
+        try {
+            val url = URL("https://www.youtube.com/feed/history")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 8000
+                readTimeout = 8000
+                setRequestProperty("User-Agent", DESKTOP_UA)
+                setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                setRequestProperty("Cookie", cookies)
+            }
+
+            if (conn.responseCode == 200) {
+                val html = conn.inputStream.bufferedReader().use { it.readText() }
+                val videos = parseVideosFromHtml(html)
+                if (videos.isNotEmpty()) {
+                    return@withContext videos
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        emptyList()
+    }
+
+    /**
+     * Fetches real user playlists from YouTube library, playlist aggregation, channel playlists, and guide.
+     */
+    suspend fun fetchPlaylists(): List<UserPlaylist> = withContext(Dispatchers.IO) {
+        val cookies = getAuthCookies()
+        val playlists = mutableListOf<UserPlaylist>()
+
+        // 1. Try InnerTube browse FEplaylist_aggregation (with deep pagination up to 25 pages)
+        if (cookies.isNotBlank()) {
+            try {
+                val payload = JSONObject().apply {
+                    put("context", buildContext())
+                    put("browseId", "FEplaylist_aggregation")
+                }
+                var resp = callInnerTube("browse", payload)
+                var iterations = 0
+                while (resp != null && iterations < 25) {
+                    extractPlaylistsRecursively(resp, playlists)
+                    val token = extractContinuationToken(resp)
+                    if (token.isNullOrBlank()) break
+                    iterations++
+                    val contPayload = JSONObject().apply {
+                        put("context", buildContext())
+                        put("continuation", token)
+                    }
+                    resp = callInnerTube("browse", contPayload)
+                }
+                android.util.Log.d("YouTubeSyncEngine", "FEplaylist_aggregation extracted ${playlists.size} playlists (iterations=$iterations)")
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // 2. Try InnerTube browse FElibrary (Library Playlists)
+            try {
+                val payload = JSONObject().apply {
+                    put("context", buildContext())
+                    put("browseId", "FElibrary")
+                }
+                val resp = callInnerTube("browse", payload)
+                if (resp != null) {
+                    val before = playlists.size
+                    extractPlaylistsRecursively(resp, playlists)
+                    android.util.Log.d("YouTubeSyncEngine", "FElibrary added ${playlists.size - before} playlists")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            val subs = mutableSetOf<String>()
+            // 3. Try InnerTube browse FEchannels
+            try {
+                val payload = JSONObject().apply {
+                    put("context", buildContext())
+                    put("browseId", "FEchannels")
+                }
+                val resp = callInnerTube("browse", payload)
+                if (resp != null) {
+                    val before = playlists.size
+                    extractPlaylistsRecursively(resp, playlists)
+                    extractSubscribedChannelsRecursively(resp, subs)
+                    android.util.Log.d("YouTubeSyncEngine", "FEchannels added ${playlists.size - before} playlists")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // 4. Try InnerTube guide endpoint (YouTube sidebar contains all saved and user playlists)
+            try {
+                val payload = JSONObject().apply {
+                    put("context", buildContext())
+                }
+                val resp = callInnerTube("guide", payload)
+                if (resp != null) {
+                    val before = playlists.size
+                    extractPlaylistsRecursively(resp, playlists)
+                    extractSubscribedChannelsRecursively(resp, subs)
+                    android.util.Log.d("YouTubeSyncEngine", "guide added ${playlists.size - before} playlists")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            if (subs.isNotEmpty()) {
+                UserDataRepository.setSubscribedChannels(subs)
+                android.util.Log.d("YouTubeSyncEngine", "Synced ${subs.size} subscribed channels: $subs")
+            }
+        }
+
+        // 5. Fetch user channel playlists & feed directly with redirect following
+        val channelUrls = mutableListOf<String>()
+        val handle = AccountRepository.currentAccount.value?.handle?.trim()?.removePrefix("@")
+        if (!handle.isNullOrBlank() && handle != "youtube_user") {
+            channelUrls.add("https://www.youtube.com/@$handle/playlists")
+        }
+        channelUrls.add("https://www.youtube.com/feed/playlists")
+        channelUrls.add("https://www.youtube.com/channel/mine/playlists")
+
+        for (urlStr in channelUrls) {
+            try {
+                val html = fetchHtmlWithRedirects(urlStr, cookies)
+                if (!html.isNullOrBlank()) {
+                    val before = playlists.size
+                    playlists.addAll(parsePlaylistsFromHtml(html))
+                    android.util.Log.d("YouTubeSyncEngine", "URL '$urlStr' added ${playlists.size - before} playlists")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        val result = playlists
+            .filter { it.id.isNotBlank() && it.title.isNotBlank() && it.id != "WL" && it.id != "LL" && it.id != "history" && !it.id.startsWith("UC") && !it.id.startsWith("FE") }
+            .distinctBy { it.id }
+
+        result.forEach {
+            android.util.Log.d("YouTubeSyncEngine", "Final Playlist: id='${it.id}', title='${it.title}'")
+        }
+
+        android.util.Log.d("YouTubeSyncEngine", "fetchPlaylists total unique: ${result.size}")
+        result
+    }
+
+    /**
+     * Fetches videos inside any YouTube playlist (e.g. user playlist, channel playlist, or mix)
+     * using InnerTube continuation pagination up to maxVideos (e.g. 2,000+).
+     */
+    suspend fun fetchPlaylistVideos(playlistId: String, maxVideos: Int = 2000): List<VideoItem> = withContext(Dispatchers.IO) {
+        if (playlistId.startsWith("playlist_") || playlistId == "favorites") {
+            val local = UserDataRepository.playlists.value.find { it.id == playlistId }
+            return@withContext local?.videos ?: emptyList()
+        }
+
+        val cookies = getAuthCookies()
+        val rawId = when (playlistId) {
+            "liked_videos", "LL", "VLLL" -> "LL"
+            "watch_later", "WL", "VLWL" -> "WL"
+            else -> playlistId.removePrefix("VL")
+        }
+        val cleanId = when (rawId) {
+            "LL" -> "VLLL"
+            "WL" -> "VLWL"
+            else -> "VL$rawId"
+        }
+
+        // InnerTube browse runner with continuation loop
+        suspend fun queryInnerTubeBrowse(browseId: String): List<VideoItem> {
+            val collected = mutableListOf<VideoItem>()
+            try {
+                val payload = JSONObject().apply {
+                    put("context", buildContext())
+                    put("browseId", browseId)
+                }
+                var resp = callInnerTube("browse", payload)
+                var iterations = 0
+                while (resp != null && iterations < 50 && collected.size < maxVideos) {
+                    val batch = mutableListOf<VideoItem>()
+                    extractVideosRecursively(resp, batch)
+                    if (batch.isNotEmpty()) {
+                        collected.addAll(batch)
+                    }
+
+                    val token = extractContinuationToken(resp)
+                    if (token.isNullOrBlank()) break
+
+                    iterations++
+                    val contPayload = JSONObject().apply {
+                        put("context", buildContext())
+                        put("continuation", token)
+                    }
+                    resp = callInnerTube("browse", contPayload)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            return collected.distinctBy { it.id }
+        }
+
+        // 1. Try with cleanId (e.g. "VLPL...", "VLLL", "VLWL")
+        var results = queryInnerTubeBrowse(cleanId)
+        if (results.isNotEmpty()) {
+            android.util.Log.d("YouTubeSyncEngine", "fetchPlaylistVideos $cleanId total fetched ${results.size} videos")
+            return@withContext results
+        }
+
+        // 2. If cleanId yielded nothing, try with rawId (e.g. "PL...")
+        if (rawId != cleanId && rawId != "WL" && rawId != "LL") {
+            results = queryInnerTubeBrowse(rawId)
+            if (results.isNotEmpty()) {
+                android.util.Log.d("YouTubeSyncEngine", "fetchPlaylistVideos $rawId total fetched ${results.size} videos")
+                return@withContext results
+            }
+        }
+
+        // 3. Fallback: GET https://www.youtube.com/playlist?list=rawId
+        try {
+            val html = fetchHtmlWithRedirects("https://www.youtube.com/playlist?list=$rawId", cookies)
+            if (!html.isNullOrBlank()) {
+                val videos = parseVideosFromHtml(html)
+                if (videos.isNotEmpty()) {
+                    android.util.Log.d("YouTubeSyncEngine", "fetchPlaylistVideos HTML extracted ${videos.size} videos")
+                    return@withContext videos.distinctBy { it.id }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        emptyList()
+    }
+
+    /**
+     * Syncs real user channel name, handle, and avatar from YouTube account.
+     */
+    suspend fun syncProfileDetails() = withContext(Dispatchers.IO) {
+        val cookies = getAuthCookies()
+        if (cookies.isBlank()) return@withContext
+
+        var extractedName = ""
+        var extractedEmail = ""
+        var extractedHandle = ""
+        var extractedAvatar: String? = null
+
+        // 1. Try InnerTube account/account_menu (most accurate for official YouTube channel name)
+        try {
+            val payload = JSONObject().apply {
+                put("context", buildContext())
+            }
+            val resp = callInnerTube("account/account_menu", payload)
+            if (resp != null) {
+                val respStr = resp.toString()
+                android.util.Log.d("YouTubeSyncEngine", "account_menu snippet: " + respStr.take(1000))
+                val actions = resp.optJSONArray("actions")
+                val header = actions?.optJSONObject(0)
+                    ?.optJSONObject("openPopupAction")
+                    ?.optJSONObject("popup")
+                    ?.optJSONObject("multiPageMenuRenderer")
+                    ?.optJSONObject("header")
+                    ?.optJSONObject("activeAccountHeaderRenderer")
+
+                if (header != null) {
+                    val nameObj = header.optJSONObject("accountName")
+                    val name = nameObj?.optString("simpleText")?.ifBlank {
+                        nameObj.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    } ?: ""
+
+                    val emailObj = header.optJSONObject("email")
+                    val email = emailObj?.optString("simpleText")?.ifBlank {
+                        emailObj.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    } ?: ""
+
+                    val handleObj = header.optJSONObject("channelHandle")
+                    val handle = handleObj?.optString("simpleText")?.ifBlank {
+                        handleObj.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    } ?: ""
+
+                    val thumbs = header.optJSONObject("accountPhoto")?.optJSONArray("thumbnails")
+                    val avatar = thumbs?.optJSONObject(thumbs.length() - 1)?.optString("url")
+
+                    if (name.isNotBlank()) extractedName = name.trim()
+                    if (email.isNotBlank()) extractedEmail = email.trim()
+                    if (handle.isNotBlank()) extractedHandle = handle.trim()
+                    if (!avatar.isNullOrBlank()) extractedAvatar = avatar
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. Fallback: GET https://www.youtube.com/channel/mine to detect real channel redirect
+        if (extractedName.isBlank() || extractedHandle.isBlank()) {
+            try {
+                val mineUrl = URL("https://www.youtube.com/channel/mine")
+                val mineConn = (mineUrl.openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = true
+                    requestMethod = "GET"
+                    connectTimeout = 8000
+                    readTimeout = 8000
+                    setRequestProperty("User-Agent", DESKTOP_UA)
+                    setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                    setRequestProperty("Cookie", cookies)
+                }
+
+                if (mineConn.responseCode == 200) {
+                    val html = mineConn.inputStream.bufferedReader().use { it.readText() }
+                    Regex("<title>(.*?) - YouTube</title>").find(html)?.let {
+                        val t = it.groupValues[1].trim()
+                        if (t.isNotBlank() && t != "YouTube" && t != "Account") {
+                            if (extractedName.isBlank()) extractedName = t
+                        }
+                    }
+                    Regex("\"channelTitle\":\"(.*?)\"").find(html)?.let {
+                        if (extractedName.isBlank()) extractedName = it.groupValues[1]
+                    }
+                    Regex("\"channelHandle\":\"(.*?)\"").find(html)?.let {
+                        if (extractedHandle.isBlank()) extractedHandle = it.groupValues[1]
+                    }
+                    Regex("\"avatar\":\\{\"thumbnails\":\\[\\{\"url\":\"(.*?)\"").find(html)?.let {
+                        if (extractedAvatar == null) extractedAvatar = it.groupValues[1]
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        android.util.Log.d("YouTubeSyncEngine", "syncProfileDetails extracted: name='$extractedName', email='$extractedEmail', handle='$extractedHandle'")
+        if (extractedName.isNotBlank() || extractedEmail.isNotBlank()) {
+            val current = AccountRepository.currentAccount.value
+            val finalName = extractedName.ifBlank { current?.name ?: "YouTube User" }
+            val finalEmail = extractedEmail.ifBlank { current?.email ?: "" }
+            val finalHandle = if (extractedHandle.isNotBlank()) {
+                if (extractedHandle.startsWith("@")) extractedHandle else "@$extractedHandle"
+            } else {
+                current?.handle ?: ("@" + finalName.lowercase().replace("[^a-z0-9_]".toRegex(), "_"))
+            }
+            val finalAvatar = extractedAvatar ?: current?.avatarUrl
+
+            AccountRepository.setGoogleAccount(
+                name = finalName,
+                email = finalEmail,
+                avatarUrl = finalAvatar,
+                handle = finalHandle
+            )
+        }
+    }
+
+    private val isSyncRunning = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * Syncs all user data (profile, history, playlists, feed) in background.
+     */
+    suspend fun syncAllUserData() = withContext(Dispatchers.IO) {
+        if (!isSyncRunning.compareAndSet(false, true)) {
+            android.util.Log.d("YouTubeSyncEngine", "syncAllUserData already running, skipping")
+            return@withContext
+        }
+        try {
+            android.util.Log.d("YouTubeSyncEngine", "syncAllUserData started...")
+            syncProfileDetails()
+
+            // Sync real History
+            val onlineHistory = fetchHistory()
+            android.util.Log.d("YouTubeSyncEngine", "syncAllUserData: onlineHistory count=${onlineHistory.size}")
+            if (onlineHistory.isNotEmpty()) {
+                UserDataRepository.setOnlineHistory(onlineHistory)
+            }
+
+            // Sync real Playlists
+            val onlinePlaylists = fetchPlaylists()
+            android.util.Log.d("YouTubeSyncEngine", "syncAllUserData: onlinePlaylists count=${onlinePlaylists.size}")
+            if (onlinePlaylists.isNotEmpty()) {
+                UserDataRepository.setOnlinePlaylists(onlinePlaylists)
+            }
+
+            // Sync real Liked Videos with full pagination (1,000+ videos)
+            try {
+                val liked = fetchPlaylistVideos("VLLL", maxVideos = 2000)
+                if (liked.isNotEmpty()) {
+                    android.util.Log.d("YouTubeSyncEngine", "syncAllUserData: Liked videos count=${liked.size}")
+                    UserDataRepository.updateLikedVideos(liked)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // Sync real Watch Later with pagination (up to 2,000 videos)
+            try {
+                val watchLater = fetchPlaylistVideos("VLWL", maxVideos = 2000)
+                if (watchLater.isNotEmpty()) {
+                    android.util.Log.d("YouTubeSyncEngine", "syncAllUserData: Watch later count=${watchLater.size}")
+                    UserDataRepository.updateWatchLaterVideos(watchLater)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // Sync user custom playlists (e.g. Music, podcasts, series, etc.)
+            for (pl in onlinePlaylists) {
+                if (pl.id != "liked_videos" && pl.id != "watch_later" && !pl.id.startsWith("playlist_") && pl.id != "favorites") {
+                    try {
+                        val vids = fetchPlaylistVideos(pl.id, maxVideos = 2000)
+                        if (vids.isNotEmpty()) {
+                            android.util.Log.d("YouTubeSyncEngine", "syncAllUserData: Custom playlist '${pl.title}' (${pl.id}) synced ${vids.size} videos")
+                            UserDataRepository.updatePlaylistVideos(pl.id, vids)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+
+            // Pre-fetch personalized home feed so it's instantly available
+            fetchHomeFeed("All")
+        } finally {
+            isSyncRunning.set(false)
+        }
+    }
+
+
+    /**
+     * Generic extractor for video items from YouTube's ytInitialData
+     */
+    private fun parseVideosFromHtml(html: String): List<VideoItem> {
+        val results = mutableListOf<VideoItem>()
+        try {
+            val markerIdx = html.indexOf("ytInitialData")
+            if (markerIdx != -1) {
+                val eqIdx = html.indexOf("=", markerIdx)
+                if (eqIdx != -1) {
+                    val braceIdx = html.indexOf("{", eqIdx)
+                    if (braceIdx != -1 && braceIdx - eqIdx < 15) {
+                        val endIdx = html.indexOf("</script>", braceIdx)
+                        if (endIdx != -1) {
+                            var jsonStr = html.substring(braceIdx, endIdx).trim()
+                            if (jsonStr.endsWith(";")) {
+                                jsonStr = jsonStr.substring(0, jsonStr.length - 1).trim()
+                            }
+                            val root = JSONObject(jsonStr)
+                            extractVideosRecursively(root, results)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return results.distinctBy { it.id }
+    }
+
+    private fun extractVideosRecursively(obj: Any, outList: MutableList<VideoItem>) {
+        when (obj) {
+            is JSONObject -> {
+                if (obj.has("channelRenderer")) {
+                    parseChannelRenderer(obj.optJSONObject("channelRenderer"))?.let { outList.add(it) }
+                }
+                if (obj.has("lockupViewModel")) {
+                    parseLockupViewModel(obj.optJSONObject("lockupViewModel"))?.let { outList.add(it) }
+                }
+                if (obj.has("videoRenderer")) {
+                    parseVideoRenderer(obj.optJSONObject("videoRenderer"))?.let { outList.add(it) }
+                }
+                if (obj.has("playlistVideoRenderer")) {
+                    parseVideoRenderer(obj.optJSONObject("playlistVideoRenderer"))?.let { outList.add(it) }
+                }
+                if (obj.has("playlistPanelVideoRenderer")) {
+                    parseVideoRenderer(obj.optJSONObject("playlistPanelVideoRenderer"))?.let { outList.add(it) }
+                }
+                if (obj.has("compactVideoRenderer")) {
+                    parseVideoRenderer(obj.optJSONObject("compactVideoRenderer"))?.let { outList.add(it) }
+                }
+                if (obj.has("gridVideoRenderer")) {
+                    parseVideoRenderer(obj.optJSONObject("gridVideoRenderer"))?.let { outList.add(it) }
+                }
+                if (obj.has("reelItemRenderer")) {
+                    parseVideoRenderer(obj.optJSONObject("reelItemRenderer"))?.let { outList.add(it) }
+                }
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    extractVideosRecursively(obj.get(key), outList)
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until obj.length()) {
+                    val elem = obj.opt(i)
+                    if (elem != null) {
+                        extractVideosRecursively(elem, outList)
+                    }
+                }
+            }
+        }
+    }
+
+    fun isViewOrDateString(text: String): Boolean {
+        val t = text.trim()
+        if (t.isEmpty()) return false
+        val lower = t.lowercase()
+        if (lower.endsWith("views") || lower.endsWith("view") || lower.contains(" views") || lower.contains(" view")) return true
+        if (lower.endsWith("ago") || lower.startsWith("streamed") || lower.contains("streamed") || lower.endsWith("watching") || lower.contains("watching")) return true
+        if (lower.startsWith("premier") || lower.contains("scheduled")) return true
+        if (Regex("""^(\d+(\.\d+)?[KMB]?\s*(views?|watching)|no\s*views?)""", RegexOption.IGNORE_CASE).containsMatchIn(t)) return true
+        return false
+    }
+
+    private fun parseLockupViewModel(lvm: JSONObject?): VideoItem? {
+        if (lvm == null) return null
+        val contentType = lvm.optString("contentType")
+        if (contentType == "LOCKUP_CONTENT_TYPE_PLAYLIST" || contentType == "LOCKUP_CONTENT_TYPE_PODCAST") {
+            return null
+        }
+        val vid = lvm.optString("contentId")
+        if (vid.isBlank() || vid.startsWith("PL") || vid.startsWith("VL")) return null
+
+        val meta = lvm.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+        val title = meta?.optJSONObject("title")?.optString("content") ?: ""
+        if (title.isBlank()) return null
+
+        var channel = "YouTube Creator"
+        var views = "1M views"
+        var uploadTime = "Recently"
+
+        val rows = meta?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")?.optJSONArray("metadataRows")
+        if (rows != null) {
+            val allParts = mutableListOf<String>()
+            for (i in 0 until rows.length()) {
+                val rowParts = rows.optJSONObject(i)?.optJSONArray("metadataParts")
+                if (rowParts != null) {
+                    for (j in 0 until rowParts.length()) {
+                        val txt = rowParts.optJSONObject(j)?.optJSONObject("text")?.optString("content")?.trim()
+                        if (!txt.isNullOrBlank()) {
+                            allParts.add(txt)
+                        }
+                    }
+                }
+            }
+
+            for (part in allParts) {
+                if (isViewOrDateString(part)) {
+                    val lower = part.lowercase()
+                    if (lower.contains("view") || lower.contains("watching")) {
+                        views = part
+                    } else if (lower.contains("ago") || lower.contains("streamed")) {
+                        uploadTime = part
+                    }
+                } else if (channel == "YouTube Creator") {
+                    channel = part
+                }
+            }
+        }
+
+        var avatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"
+        val avatarSources = meta?.optJSONObject("image")?.optJSONObject("decoratedAvatarViewModel")
+            ?.optJSONObject("avatar")?.optJSONObject("avatarViewModel")?.optJSONObject("image")?.optJSONArray("sources")
+        if (avatarSources != null && avatarSources.length() > 0) {
+            val u = avatarSources.optJSONObject(avatarSources.length() - 1)?.optString("url")
+            if (!u.isNullOrBlank()) {
+                avatar = if (u.startsWith("//")) "https:$u" else u
+            }
+        }
+
+        var thumb = "https://img.youtube.com/vi/$vid/hqdefault.jpg"
+        val thumbSources = lvm.optJSONObject("contentImage")?.optJSONObject("thumbnailViewModel")
+            ?.optJSONObject("image")?.optJSONArray("sources")
+        if (thumbSources != null && thumbSources.length() > 0) {
+            val t = thumbSources.optJSONObject(thumbSources.length() - 1)?.optString("url")
+            if (!t.isNullOrBlank()) {
+                thumb = if (t.startsWith("//")) "https:$t" else t
+            }
+        }
+
+        var duration = "3:45"
+        val overlays = lvm.optJSONObject("contentImage")?.optJSONObject("thumbnailViewModel")?.optJSONArray("overlays")
+        if (overlays != null) {
+            for (i in 0 until overlays.length()) {
+                val overlay = overlays.optJSONObject(i)?.optJSONObject("thumbnailBottomOverlayViewModel")
+                val badges = overlay?.optJSONArray("badges")
+                if (badges != null && badges.length() > 0) {
+                    val badgeText = badges.optJSONObject(0)?.optJSONObject("thumbnailBadgeViewModel")?.optString("text")
+                    if (!badgeText.isNullOrBlank()) {
+                        duration = badgeText
+                        break
+                    }
+                }
+            }
+        }
+
+        return VideoItem(
+            id = vid,
+            title = title,
+            channelName = channel,
+            channelAvatarUrl = avatar,
+            subscriberCount = "Subscribers",
+            thumbnailUrl = thumb,
+            views = views,
+            uploadTime = uploadTime,
+            duration = duration,
+            description = title,
+            likes = "100K",
+            isMusicTrack = title.contains("Music", ignoreCase = true) || title.contains("Song", ignoreCase = true) || title.contains("ft.", ignoreCase = true),
+            artist = channel,
+            album = "Single",
+            lyrics = "",
+            category = "YouTube"
+        )
+    }
+
+    private fun parseChannelRenderer(cr: JSONObject?): VideoItem? {
+        if (cr == null) return null
+        val cid = cr.optString("channelId")
+        val title = cr.optJSONObject("title")?.optString("simpleText")
+            ?: cr.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            ?: ""
+        if (cid.isBlank() || title.isBlank()) return null
+
+        var avatar = ""
+        val thumbs = cr.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        if (thumbs != null && thumbs.length() > 0) {
+            avatar = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url") ?: ""
+        }
+        if (avatar.startsWith("//")) avatar = "https:$avatar"
+
+        val subscriberText = cr.optJSONObject("videoCountText")?.optString("simpleText")
+            ?: cr.optJSONObject("subscriberCountText")?.optString("simpleText")
+            ?: "Channel"
+        val handle = cr.optJSONObject("subscriberCountText")?.optString("simpleText") ?: ""
+
+        val displaySubCount = if (handle.startsWith("@") && !subscriberText.startsWith("@")) {
+            "$handle • $subscriberText"
+        } else {
+            subscriberText
+        }
+
+        return VideoItem(
+            id = "channel_$cid",
+            title = title,
+            channelName = title,
+            channelAvatarUrl = avatar.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150" },
+            subscriberCount = displaySubCount,
+            thumbnailUrl = avatar.ifBlank { "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150" },
+            views = "",
+            uploadTime = "",
+            duration = "",
+            description = cr.optJSONObject("descriptionSnippet")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text") ?: "",
+            likes = "",
+            isMusicTrack = false,
+            artist = title,
+            album = "",
+            lyrics = "",
+            category = "Channel",
+            channelId = cid
+        )
+    }
+
+    private fun parseVideoRenderer(vr: JSONObject?): VideoItem? {
+        if (vr == null) return null
+        var vid = vr.optString("videoId")
+        if (vid.isBlank()) {
+            vid = vr.optJSONObject("watchEndpoint")?.optString("videoId") ?: ""
+        }
+        if (vid.isBlank()) {
+            vid = vr.optJSONObject("navigationEndpoint")?.optJSONObject("watchEndpoint")?.optString("videoId") ?: ""
+        }
+        if (vid.isBlank()) {
+            vid = vr.optJSONObject("navigationEndpoint")?.optJSONObject("reelWatchEndpoint")?.optString("videoId") ?: ""
+        }
+        if (vid.isBlank()) {
+            vid = vr.optJSONObject("onTap")?.optJSONObject("innertubeCommand")?.optJSONObject("reelWatchEndpoint")?.optString("videoId") ?: ""
+        }
+        if (vid.isBlank()) return null
+
+        val title = vr.optJSONObject("title")?.let { t ->
+            t.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                ?: t.optString("simpleText")
+        } ?: vr.optJSONObject("headline")?.let { h ->
+            h.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                ?: h.optString("simpleText")
+        } ?: vr.optJSONObject("overlayMetadata")?.optJSONObject("primaryText")?.optString("content")
+        ?: vr.optString("title")
+
+        if (title.isBlank()) return null
+
+        val channel = vr.optJSONObject("ownerText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            ?: vr.optJSONObject("shortBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            ?: vr.optJSONObject("longBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            ?: vr.optJSONObject("bylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            ?: "YouTube Creator"
+
+        val views = vr.optJSONObject("viewCountText")?.let { vc ->
+            vc.optString("simpleText").ifBlank {
+                vc.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            }
+        } ?: vr.optJSONObject("shortViewCountText")?.let { vc ->
+            vc.optString("simpleText").ifBlank {
+                vc.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            }
+        } ?: "1M views"
+
+        val duration = vr.optJSONObject("lengthText")?.let { lt ->
+            lt.optString("simpleText").ifBlank {
+                lt.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            }
+        } ?: "3:45"
+
+        val uploadTime = vr.optJSONObject("publishedTimeText")?.optString("simpleText") ?: "Recently"
+
+        var avatar = vr.optJSONObject("channelThumbnailSupportedRenderers")
+            ?.optJSONObject("channelThumbnailWithLinkRenderer")
+            ?.optJSONObject("thumbnail")
+            ?.optJSONArray("thumbnails")
+            ?.let { thumbs ->
+                thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+            }
+            ?: vr.optJSONObject("channelThumbnail")
+                ?.optJSONArray("thumbnails")
+                ?.let { thumbs ->
+                    thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+                }
+            ?: ""
+        if (avatar.startsWith("//")) avatar = "https:$avatar"
+        if (avatar.isBlank()) avatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"
+
+        var cid = vr.optJSONObject("channelThumbnailSupportedRenderers")
+            ?.optJSONObject("channelThumbnailWithLinkRenderer")
+            ?.optJSONObject("navigationEndpoint")
+            ?.optJSONObject("browseEndpoint")
+            ?.optString("browseId") ?: ""
+        if (cid.isBlank()) {
+            cid = vr.optJSONObject("ownerText")
+                ?.optJSONArray("runs")
+                ?.optJSONObject(0)
+                ?.optJSONObject("navigationEndpoint")
+                ?.optJSONObject("browseEndpoint")
+                ?.optString("browseId") ?: ""
+        }
+
+        var thumb = "https://img.youtube.com/vi/$vid/hqdefault.jpg"
+        val vidThumbs = vr.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+        if (vidThumbs != null && vidThumbs.length() > 0) {
+            val t = vidThumbs.optJSONObject(vidThumbs.length() - 1)?.optString("url")
+            if (!t.isNullOrBlank()) {
+                thumb = if (t.startsWith("//")) "https:$t" else t
+            }
+        }
+
+        return VideoItem(
+            id = vid,
+            title = title,
+            channelName = channel,
+            channelAvatarUrl = avatar,
+            subscriberCount = "Subscribers",
+            thumbnailUrl = thumb,
+            views = views,
+            uploadTime = uploadTime,
+            duration = duration,
+            description = title,
+            likes = "100K",
+            isMusicTrack = title.contains("Music", ignoreCase = true) || title.contains("Song", ignoreCase = true) || title.contains("ft.", ignoreCase = true),
+            artist = channel,
+            album = "Single",
+            lyrics = "",
+            category = "YouTube",
+            channelId = cid
+        )
+    }
+
+    private fun parseMusicResponsiveListItemRenderer(item: JSONObject?): VideoItem? {
+        if (item == null) return null
+        var vid = item.optJSONObject("playlistItemData")?.optString("videoId") ?: ""
+        val flexCols = item.optJSONArray("flexColumns")
+        if (vid.isBlank() && flexCols != null && flexCols.length() > 0) {
+            val runs = flexCols.optJSONObject(0)
+                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                ?.optJSONObject("text")
+                ?.optJSONArray("runs")
+            if (runs != null && runs.length() > 0) {
+                vid = runs.optJSONObject(0)
+                    ?.optJSONObject("navigationEndpoint")
+                    ?.optJSONObject("watchEndpoint")
+                    ?.optString("videoId") ?: ""
+            }
+        }
+        if (vid.isBlank()) {
+            vid = item.optJSONObject("overlay")
+                ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("musicPlayButtonRenderer")
+                ?.optJSONObject("playNavigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+                ?.optString("videoId") ?: ""
+        }
+        if (vid.isBlank()) return null
+
+        var title = ""
+        if (flexCols != null && flexCols.length() > 0) {
+            val runs = flexCols.optJSONObject(0)
+                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                ?.optJSONObject("text")
+                ?.optJSONArray("runs")
+            if (runs != null && runs.length() > 0) {
+                title = runs.optJSONObject(0)?.optString("text")?.trim() ?: ""
+            }
+        }
+        if (title.isBlank()) return null
+
+        var artist = "YouTube Music"
+        var album = "Single"
+        var views = "Music Track"
+        if (flexCols != null && flexCols.length() > 1) {
+            val runs = flexCols.optJSONObject(1)
+                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                ?.optJSONObject("text")
+                ?.optJSONArray("runs")
+            if (runs != null && runs.length() > 0) {
+                val artistPart = runs.optJSONObject(0)?.optString("text")?.trim() ?: ""
+                if (artistPart.isNotBlank()) artist = artistPart
+                for (i in 1 until runs.length()) {
+                    val t = runs.optJSONObject(i)?.optString("text")?.trim() ?: ""
+                    if (t.contains("plays", ignoreCase = true) || t.contains("views", ignoreCase = true)) {
+                        views = t
+                    }
+                }
+            }
+        }
+        if (flexCols != null && flexCols.length() > 2) {
+            val runs = flexCols.optJSONObject(2)
+                ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                ?.optJSONObject("text")
+                ?.optJSONArray("runs")
+            if (runs != null && runs.length() > 0) {
+                val albumPart = runs.optJSONObject(0)?.optString("text")?.trim() ?: ""
+                if (albumPart.isNotBlank()) album = albumPart
+            }
+        }
+
+        var thumb = "https://img.youtube.com/vi/$vid/hqdefault.jpg"
+        val thumbs = item.optJSONObject("thumbnail")
+            ?.optJSONObject("musicThumbnailRenderer")
+            ?.optJSONObject("thumbnail")
+            ?.optJSONArray("thumbnails")
+        if (thumbs != null && thumbs.length() > 0) {
+            val u = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+            if (!u.isNullOrBlank()) {
+                thumb = if (u.startsWith("//")) "https:$u" else u
+            }
+        }
+
+        return VideoItem(
+            id = vid,
+            title = title,
+            channelName = artist,
+            channelAvatarUrl = thumb,
+            subscriberCount = "Music Track",
+            thumbnailUrl = thumb,
+            views = views,
+            uploadTime = "YouTube Music",
+            duration = "3:30",
+            description = "$title - $artist",
+            likes = "100K",
+            isMusicTrack = true,
+            artist = artist,
+            album = album,
+            lyrics = "",
+            category = "Music"
+        )
+    }
+
+    private fun parseMusicTwoRowItemRenderer(item: JSONObject?): VideoItem? {
+        if (item == null) return null
+        var vid = item.optJSONObject("navigationEndpoint")
+            ?.optJSONObject("watchEndpoint")
+            ?.optString("videoId") ?: ""
+        if (vid.isBlank()) {
+            vid = item.optJSONObject("thumbnailOverlay")
+                ?.optJSONObject("musicItemThumbnailOverlayRenderer")
+                ?.optJSONObject("content")
+                ?.optJSONObject("musicPlayButtonRenderer")
+                ?.optJSONObject("playNavigationEndpoint")
+                ?.optJSONObject("watchEndpoint")
+                ?.optString("videoId") ?: ""
+        }
+        if (vid.isBlank()) return null
+
+        val titleRuns = item.optJSONObject("title")?.optJSONArray("runs")
+        val title = titleRuns?.optJSONObject(0)?.optString("text")?.trim() ?: ""
+        if (title.isBlank()) return null
+
+        var artist = "YouTube Music"
+        val subRuns = item.optJSONObject("subtitle")?.optJSONArray("runs")
+        if (subRuns != null && subRuns.length() > 0) {
+            val parts = mutableListOf<String>()
+            for (i in 0 until subRuns.length()) {
+                val t = subRuns.optJSONObject(i)?.optString("text")?.trim() ?: ""
+                if (t.isNotBlank() && t != "•" && t != ",") {
+                    parts.add(t)
+                }
+            }
+            if (parts.isNotEmpty()) {
+                artist = parts.joinToString(", ")
+            }
+        }
+
+        var thumb = "https://img.youtube.com/vi/$vid/hqdefault.jpg"
+        val thumbs = item.optJSONObject("thumbnailRenderer")
+            ?.optJSONObject("musicThumbnailRenderer")
+            ?.optJSONObject("thumbnail")
+            ?.optJSONArray("thumbnails")
+        if (thumbs != null && thumbs.length() > 0) {
+            val u = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url")
+            if (!u.isNullOrBlank()) {
+                thumb = if (u.startsWith("//")) "https:$u" else u
+            }
+        }
+
+        return VideoItem(
+            id = vid,
+            title = title,
+            channelName = artist,
+            channelAvatarUrl = thumb,
+            subscriberCount = "Music Track",
+            thumbnailUrl = thumb,
+            views = "Popular",
+            uploadTime = "YouTube Music",
+            duration = "3:45",
+            description = "$title - $artist",
+            likes = "50K",
+            isMusicTrack = true,
+            artist = artist,
+            album = "YouTube Music",
+            lyrics = "",
+            category = "Music"
+        )
+    }
+
+    private fun parsePlaylistsFromHtml(html: String): List<UserPlaylist> {
+        val playlists = mutableListOf<UserPlaylist>()
+        try {
+            val markerIdx = html.indexOf("ytInitialData")
+            if (markerIdx != -1) {
+                val eqIdx = html.indexOf("=", markerIdx)
+                if (eqIdx != -1) {
+                    val braceIdx = html.indexOf("{", eqIdx)
+                    if (braceIdx != -1 && braceIdx - eqIdx < 15) {
+                        val endIdx = html.indexOf("</script>", braceIdx)
+                        if (endIdx != -1) {
+                            var jsonStr = html.substring(braceIdx, endIdx).trim()
+                            if (jsonStr.endsWith(";")) {
+                                jsonStr = jsonStr.substring(0, jsonStr.length - 1).trim()
+                            }
+                            val root = JSONObject(jsonStr)
+                            extractPlaylistsRecursively(root, playlists)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return playlists.distinctBy { it.id }
+    }
+
+    private fun fetchHtmlWithRedirects(urlStr: String, cookies: String): String? {
+        var currentUrl = urlStr
+        var redirects = 0
+        while (redirects < 5) {
+            val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                instanceFollowRedirects = false
+                requestMethod = "GET"
+                connectTimeout = 8000
+                readTimeout = 8000
+                setRequestProperty("User-Agent", DESKTOP_UA)
+                setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                if (cookies.isNotBlank()) {
+                    setRequestProperty("Cookie", cookies)
+                }
+            }
+            val code = conn.responseCode
+            if (code in 300..399) {
+                val loc = conn.getHeaderField("Location") ?: break
+                currentUrl = if (loc.startsWith("http")) loc else URL(URL(currentUrl), loc).toString()
+                redirects++
+                continue
+            }
+            if (code == 200) {
+                return conn.inputStream.bufferedReader().use { it.readText() }
+            }
+            break
+        }
+        return null
+    }
+
+    private fun extractFirstImageUrl(obj: Any?): String? {
+        if (obj == null) return null
+        when (obj) {
+            is JSONObject -> {
+                val sources = obj.optJSONArray("sources") ?: obj.optJSONArray("thumbnails")
+                if (sources != null && sources.length() > 0) {
+                    val last = sources.optJSONObject(sources.length() - 1)?.optString("url")
+                    if (!last.isNullOrBlank()) {
+                        return if (last.startsWith("//")) "https:$last" else last
+                    }
+                }
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val res = extractFirstImageUrl(obj.get(keys.next()))
+                    if (res != null) {
+                        return if (res.startsWith("//")) "https:$res" else res
+                    }
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until obj.length()) {
+                    val elem = obj.opt(i)
+                    if (elem != null) {
+                        val res = extractFirstImageUrl(elem)
+                        if (res != null) {
+                            return if (res.startsWith("//")) "https:$res" else res
+                        }
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun extractContinuationToken(obj: Any?): String? {
+        if (obj == null) return null
+        when (obj) {
+            is JSONObject -> {
+                // 1. nextContinuationData (standard InnerTube browse pagination)
+                val ncd = obj.optJSONObject("nextContinuationData")
+                if (ncd != null) {
+                    val token = ncd.optString("continuation")
+                    if (token.isNotBlank()) return token
+                }
+
+                // 2. reloadContinuationData
+                val rcd = obj.optJSONObject("reloadContinuationData")
+                if (rcd != null) {
+                    val token = rcd.optString("continuation")
+                    if (token.isNotBlank()) return token
+                }
+
+                // 3. continuationCommand
+                val cc = obj.optJSONObject("continuationCommand")
+                if (cc != null) {
+                    val token = cc.optString("token")
+                    if (token.isNotBlank()) return token
+                }
+
+                // 4. continuationItemRenderer
+                val cir = obj.optJSONObject("continuationItemRenderer")
+                if (cir != null) {
+                    val ep = cir.optJSONObject("continuationEndpoint")
+                    val token = ep?.optJSONObject("continuationCommand")?.optString("token")
+                        ?: ep?.optString("continuation")
+                        ?: ep?.optJSONObject("continuationCommand")?.optString("continuation")
+                    if (!token.isNullOrBlank()) return token
+                }
+
+                // 5. Direct continuation key with a long token
+                val directCont = obj.optString("continuation")
+                if (directCont.length > 20) {
+                    return directCont
+                }
+
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val res = extractContinuationToken(obj.get(keys.next()))
+                    if (res != null) return res
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until obj.length()) {
+                    val res = extractContinuationToken(obj.opt(i))
+                    if (res != null) return res
+                }
+            }
+        }
+        return null
+    }
+
+    private fun extractPlaylistIdFromObject(obj: JSONObject): String? {
+        // 1. Direct playlistId
+        val plId = obj.optString("playlistId")
+        if (plId.isNotBlank() && plId != "WL" && plId != "LL" && plId != "history") {
+            return plId.removePrefix("VL")
+        }
+
+        // 2. contentId
+        val cid = obj.optString("contentId")
+        if (cid.startsWith("PL") || cid.startsWith("RD") || cid.startsWith("FL") ||
+            cid.startsWith("UU") || cid.startsWith("OLAK") || cid.startsWith("TLGG") || cid.startsWith("CL")) {
+            return cid
+        }
+        if (cid.startsWith("VLPL") || cid.startsWith("VL")) {
+            return cid.removePrefix("VL")
+        }
+
+        // 3. Check endpoints recursively or by known paths
+        fun findInEndpoint(ep: JSONObject?): String? {
+            if (ep == null) return null
+            val pid = ep.optJSONObject("watchEndpoint")?.optString("playlistId")
+            if (!pid.isNullOrBlank() && pid != "WL" && pid != "LL") return pid.removePrefix("VL")
+
+            val bid = ep.optJSONObject("browseEndpoint")?.optString("browseId")
+            if (!bid.isNullOrBlank()) {
+                if (bid.startsWith("VLPL") || bid.startsWith("VL")) return bid.removePrefix("VL")
+                if (bid.startsWith("PL") || bid.startsWith("RD") || bid.startsWith("FL") ||
+                    bid.startsWith("UU") || bid.startsWith("OLAK")) return bid
+            }
+
+            val url = ep.optJSONObject("commandMetadata")?.optJSONObject("webCommandMetadata")?.optString("url")
+                ?: ep.optString("url")
+            if (url.contains("list=")) {
+                Regex("[?&]list=([a-zA-Z0-9_-]+)").find(url)?.let {
+                    val found = it.groupValues[1]
+                    if (found != "WL" && found != "LL") return found
+                }
+            }
+            return null
+        }
+
+        findInEndpoint(obj.optJSONObject("navigationEndpoint"))?.let { return it }
+        findInEndpoint(obj.optJSONObject("onTap")?.optJSONObject("innertubeCommand"))?.let { return it }
+        findInEndpoint(obj.optJSONObject("rendererContext")?.optJSONObject("commandContext")?.optJSONObject("onTap")?.optJSONObject("innertubeCommand"))?.let { return it }
+        findInEndpoint(obj.optJSONObject("serviceEndpoint"))?.let { return it }
+
+        return null
+    }
+
+    private fun extractTitleFromObject(obj: JSONObject): String? {
+        val directTitle = obj.optString("title")
+        if (directTitle.isNotBlank() && !directTitle.startsWith("{")) return directTitle
+
+        obj.optJSONObject("title")?.let { t ->
+            t.optJSONArray("runs")?.optJSONObject(0)?.optString("text")?.ifBlank { null }?.let { return it }
+            t.optString("simpleText").ifBlank { null }?.let { return it }
+            t.optString("content").ifBlank { null }?.let { return it }
+        }
+
+        obj.optJSONObject("formattedTitle")?.let { t ->
+            t.optJSONArray("runs")?.optJSONObject(0)?.optString("text")?.ifBlank { null }?.let { return it }
+            t.optString("simpleText").ifBlank { null }?.let { return it }
+        }
+
+        obj.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")?.let { lmm ->
+            lmm.optJSONObject("title")?.let { t ->
+                t.optString("content").ifBlank { null }?.let { return it }
+                t.optJSONArray("runs")?.optJSONObject(0)?.optString("text")?.ifBlank { null }?.let { return it }
+                t.optString("simpleText").ifBlank { null }?.let { return it }
+            }
+        }
+
+        obj.optJSONObject("headline")?.let { h ->
+            h.optJSONArray("runs")?.optJSONObject(0)?.optString("text")?.ifBlank { null }?.let { return it }
+            h.optString("simpleText").ifBlank { null }?.let { return it }
+        }
+
+        return null
+    }
+
+    private fun extractPlaylistDescription(obj: JSONObject): String {
+        val vc = obj.optJSONObject("videoCountText")?.let {
+            it.optString("simpleText").ifBlank {
+                it.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            }
+        } ?: obj.optJSONObject("videoCountShortText")?.optString("simpleText") ?: ""
+
+        val parts = mutableListOf<String>()
+        if (vc.isNotBlank()) parts.add(vc)
+
+        val rows = obj.optJSONObject("metadata")?.optJSONObject("lockupMetadataViewModel")
+            ?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")
+            ?.optJSONArray("metadataRows")
+        if (rows != null) {
+            for (i in 0 until rows.length()) {
+                val rowParts = rows.optJSONObject(i)?.optJSONArray("metadataParts")
+                if (rowParts != null) {
+                    for (j in 0 until rowParts.length()) {
+                        val text = rowParts.optJSONObject(j)?.optJSONObject("text")?.optString("content")
+                        if (!text.isNullOrBlank() && text != "•") {
+                            parts.add(text)
+                        }
+                    }
+                }
+            }
+        }
+
+        return if (parts.isNotEmpty()) parts.distinct().joinToString(" • ") else "Synced from YouTube"
+    }
+
+    private fun parseAnyPlaylistRenderer(obj: JSONObject): UserPlaylist? {
+        val contentType = obj.optString("contentType")
+        if (contentType == "LOCKUP_CONTENT_TYPE_VIDEO" || contentType == "LOCKUP_CONTENT_TYPE_SHORTS") {
+            return null
+        }
+
+        val plId = extractPlaylistIdFromObject(obj) ?: return null
+        if (plId == "WL" || plId == "LL" || plId == "history" || plId.startsWith("UC") || plId.startsWith("FE")) {
+            return null
+        }
+
+        val title = extractTitleFromObject(obj) ?: return null
+        val cover = extractFirstImageUrl(obj.optJSONObject("contentImage")) ?: extractFirstImageUrl(obj)
+        val desc = extractPlaylistDescription(obj)
+        val count = extractPlaylistVideoCount(obj)
+
+        return UserPlaylist(
+            id = plId,
+            title = title,
+            description = desc,
+            customCoverUrl = cover,
+            isSystem = false,
+            iconType = "playlist",
+            totalVideosCount = count
+        )
+    }
+
+    private fun extractPlaylistVideoCount(obj: JSONObject): Int? {
+        fun parseCount(text: String?): Int? {
+            if (text.isNullOrBlank()) return null
+            val match = Regex("""([\d,]+)\s*(?:videos|video)?""", RegexOption.IGNORE_CASE).find(text)
+            return match?.groupValues?.get(1)?.replace(",", "")?.toIntOrNull()
+        }
+
+        val vc = obj.optString("videoCount")
+        parseCount(vc)?.let { return it }
+
+        val vct = obj.optJSONObject("videoCountText")?.let {
+            it.optString("simpleText").ifBlank {
+                it.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            }
+        }
+        parseCount(vct)?.let { return it }
+
+        val vcst = obj.optJSONObject("videoCountShortText")?.let {
+            it.optString("simpleText").ifBlank {
+                it.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+            }
+        }
+        parseCount(vcst)?.let { return it }
+
+        fun searchBadge(o: Any?): Int? {
+            if (o == null) return null
+            when (o) {
+                is JSONObject -> {
+                    val tb = o.optJSONObject("thumbnailBadgeViewModel")
+                    if (tb != null) {
+                        parseCount(tb.optString("text"))?.let { return it }
+                    }
+                    val text = o.optString("text")
+                    if (text.contains("video", ignoreCase = true)) {
+                        parseCount(text)?.let { return it }
+                    }
+                    val keys = o.keys()
+                    while (keys.hasNext()) {
+                        val res = searchBadge(o.get(keys.next()))
+                        if (res != null) return res
+                    }
+                }
+                is JSONArray -> {
+                    for (i in 0 until o.length()) {
+                        val res = searchBadge(o.opt(i))
+                        if (res != null) return res
+                    }
+                }
+            }
+            return null
+        }
+
+        return searchBadge(obj.opt("contentImage") ?: obj)
+    }
+
+    private fun extractPlaylistsRecursively(obj: Any, outList: MutableList<UserPlaylist>) {
+        when (obj) {
+            is JSONObject -> {
+                // Check all known playlist renderer wrappers
+                val wrappers = listOf(
+                    "lockupViewModel",
+                    "playlistRenderer",
+                    "gridPlaylistRenderer",
+                    "compactPlaylistRenderer",
+                    "radioRenderer",
+                    "guideEntryRenderer",
+                    "guideCollapsibleSectionEntryRenderer",
+                    "guideItemRenderer",
+                    "playlistCardViewModel",
+                    "musicTwoRowItemRenderer",
+                    "musicResponsiveListItemRenderer"
+                )
+                for (wrapper in wrappers) {
+                    if (obj.has(wrapper)) {
+                        obj.optJSONObject(wrapper)?.let { pObj ->
+                            parseAnyPlaylistRenderer(pObj)?.let { outList.add(it) }
+                        }
+                    }
+                }
+
+                // Also check if obj itself is a renderer with playlist data
+                parseAnyPlaylistRenderer(obj)?.let { outList.add(it) }
+
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    extractPlaylistsRecursively(obj.get(keys.next()), outList)
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until obj.length()) {
+                    val elem = obj.opt(i)
+                    if (elem != null) extractPlaylistsRecursively(elem, outList)
+                }
+            }
+        }
+    }
+
+    private fun extractSubscribedChannelsRecursively(obj: Any?, outSet: MutableSet<String>) {
+        if (obj == null) return
+        when (obj) {
+            is JSONObject -> {
+                val cr = obj.optJSONObject("channelRenderer")
+                if (cr != null) {
+                    val title = cr.optJSONObject("title")?.optString("simpleText")
+                        ?: cr.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                    if (!title.isNullOrBlank()) outSet.add(title)
+                }
+                val ger = obj.optJSONObject("guideEntryRenderer")
+                if (ger != null) {
+                    val be = ger.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
+                    val browseId = be?.optString("browseId") ?: ""
+                    if (browseId.startsWith("UC")) {
+                        val title = ger.optJSONObject("formattedTitle")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                            ?: ger.optString("title")
+                        if (!title.isNullOrBlank()) outSet.add(title)
+                    }
+                }
+                val gir = obj.optJSONObject("guideItemRenderer")
+                if (gir != null) {
+                    val be = gir.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
+                    val browseId = be?.optString("browseId") ?: ""
+                    if (browseId.startsWith("UC")) {
+                        val title = gir.optJSONObject("formattedTitle")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                            ?: gir.optString("title")
+                        if (!title.isNullOrBlank()) outSet.add(title)
+                    }
+                }
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    extractSubscribedChannelsRecursively(obj.get(keys.next()), outSet)
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until obj.length()) {
+                    val elem = obj.opt(i)
+                    if (elem != null) extractSubscribedChannelsRecursively(elem, outSet)
+                }
+            }
+        }
+    }
+
+    private val channelIdCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /**
+     * Resolves a channel name to its YouTube Channel ID (UC...) using InnerTube search.
+     */
+    suspend fun resolveChannelId(channelNameOrId: String): String? = withContext(Dispatchers.IO) {
+        val trimmed = channelNameOrId.trim()
+        if (trimmed.isBlank()) return@withContext null
+        if (trimmed.startsWith("UC") && trimmed.length >= 20) return@withContext trimmed
+
+        channelIdCache[trimmed]?.let { return@withContext it }
+
+        try {
+            val payload = JSONObject().apply {
+                put("context", buildContext())
+                put("query", trimmed)
+                put("params", "EgIQAg%3D%3D") // Filter: Channel
+            }
+            val resp = callInnerTube("search", payload)
+            if (resp != null) {
+                val cid = findChannelIdRecursively(resp)
+                if (!cid.isNullOrBlank()) {
+                    channelIdCache[trimmed] = cid
+                    android.util.Log.d("YouTubeSyncEngine", "Resolved channel '$trimmed' -> $cid")
+                    return@withContext cid
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeSyncEngine", "resolveChannelId error for $trimmed", e)
+        }
+        null
+    }
+
+    private fun findChannelIdRecursively(obj: Any?): String? {
+        if (obj == null) return null
+        when (obj) {
+            is JSONObject -> {
+                val cr = obj.optJSONObject("channelRenderer")
+                if (cr != null) {
+                    val id = cr.optString("channelId")
+                    if (id.startsWith("UC")) return id
+                }
+                val cid = obj.optString("channelId")
+                if (cid.startsWith("UC")) return cid
+
+                val be = obj.optJSONObject("browseEndpoint")
+                val bid = be?.optString("browseId")
+                if (!bid.isNullOrBlank() && bid.startsWith("UC")) return bid
+
+                val keys = obj.keys()
+                while (keys.hasNext()) {
+                    val r = findChannelIdRecursively(obj.get(keys.next()))
+                    if (r != null) return r
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until obj.length()) {
+                    val r = findChannelIdRecursively(obj.opt(i))
+                    if (r != null) return r
+                }
+            }
+        }
+        return null
+    }
+
+    /**
+     * Fetches real channel videos with continuation token pagination support.
+     * Returns Pair of (videos, nextContinuationToken).
+     */
+    suspend fun fetchChannelVideos(
+        channelNameOrId: String,
+        continuationToken: String? = null,
+        fallbackAvatar: String? = null
+    ): Pair<List<VideoItem>, String?> = withContext(Dispatchers.IO) {
+        val outVideos = mutableListOf<VideoItem>()
+        var nextToken: String? = null
+        var headerChannelName: String? = null
+        var headerAvatarUrl: String? = null
+
+        if (!continuationToken.isNullOrBlank()) {
+            try {
+                val payload = JSONObject().apply {
+                    put("context", buildContext())
+                    put("continuation", continuationToken)
+                }
+                val resp = callInnerTube("browse", payload)
+                if (resp != null) {
+                    extractVideosRecursively(resp, outVideos)
+                    nextToken = extractContinuationToken(resp)
+                    android.util.Log.d("YouTubeSyncEngine", "fetchChannelVideos continuation extracted ${outVideos.size} videos, nextToken=${nextToken != null}")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeSyncEngine", "fetchChannelVideos continuation error", e)
+            }
+        } else {
+            // Initial page via channelId
+            val cid = resolveChannelId(channelNameOrId)
+            if (!cid.isNullOrBlank()) {
+                try {
+                    val payload = JSONObject().apply {
+                        put("context", buildContext())
+                        put("browseId", cid)
+                        put("params", "EgZ2aWRlb3PyBgQKAjoA")
+                    }
+                    val resp = callInnerTube("browse", payload)
+                    if (resp != null) {
+                        extractVideosRecursively(resp, outVideos)
+                        nextToken = extractContinuationToken(resp)
+                        val header = resp.optJSONObject("header")
+                        val pageHeader = header?.optJSONObject("pageHeaderRenderer")
+                        if (pageHeader != null) {
+                            headerChannelName = pageHeader.optString("pageTitle").ifBlank { null }
+                            headerAvatarUrl = extractFirstImageUrl(pageHeader)
+                        }
+                        val c4Header = header?.optJSONObject("c4TabbedHeaderRenderer")
+                        if (c4Header != null) {
+                            if (headerChannelName == null) headerChannelName = c4Header.optString("title").ifBlank { null }
+                            if (headerAvatarUrl == null) headerAvatarUrl = extractFirstImageUrl(c4Header.optJSONObject("avatar"))
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("YouTubeSyncEngine", "fetchChannelVideos initial error", e)
+                }
+            }
+
+            // Fallback if empty: YouTubeSearchEngine search
+            if (outVideos.isEmpty()) {
+                val searchFallback = YouTubeSearchEngine.searchVideos("$channelNameOrId official")
+                if (searchFallback.isNotEmpty()) {
+                    return@withContext Pair(searchFallback, null)
+                }
+            }
+        }
+
+        val effectiveChannel = headerChannelName
+            ?: if (!channelNameOrId.startsWith("UC")) channelNameOrId else "YouTube Creator"
+        val effectiveAvatar = headerAvatarUrl ?: fallbackAvatar
+
+        val sanitized = outVideos.map { vid ->
+            val finalChannel = if (vid.channelName == "YouTube Creator" || isViewOrDateString(vid.channelName) || vid.channelName.isBlank()) {
+                effectiveChannel
+            } else {
+                vid.channelName
+            }
+            val finalAvatar = if ((vid.channelAvatarUrl.isBlank() || vid.channelAvatarUrl.contains("unsplash")) && !effectiveAvatar.isNullOrBlank()) {
+                effectiveAvatar
+            } else {
+                vid.channelAvatarUrl
+            }
+            vid.copy(
+                channelName = finalChannel,
+                artist = finalChannel,
+                channelAvatarUrl = finalAvatar
+            )
+        }
+
+        Pair(sanitized.distinctBy { it.id }, nextToken)
+    }
+
+    /**
+     * Fetches real channel playlists with continuation token pagination support.
+     * Returns Pair of (playlists, nextContinuationToken).
+     */
+    suspend fun fetchChannelPlaylists(
+        channelNameOrId: String,
+        continuationToken: String? = null
+    ): Pair<List<UserPlaylist>, String?> = withContext(Dispatchers.IO) {
+        val outPlaylists = mutableListOf<UserPlaylist>()
+        var nextToken: String? = null
+
+        if (!continuationToken.isNullOrBlank()) {
+            try {
+                val payload = JSONObject().apply {
+                    put("context", buildContext())
+                    put("continuation", continuationToken)
+                }
+                val resp = callInnerTube("browse", payload)
+                if (resp != null) {
+                    extractPlaylistsRecursively(resp, outPlaylists)
+                    nextToken = extractContinuationToken(resp)
+                    android.util.Log.d("YouTubeSyncEngine", "fetchChannelPlaylists continuation extracted ${outPlaylists.size} playlists, nextToken=${nextToken != null}")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeSyncEngine", "fetchChannelPlaylists continuation error", e)
+            }
+            return@withContext Pair(outPlaylists.distinctBy { it.id }, nextToken)
+        }
+
+        // Initial page via channelId
+        val cid = resolveChannelId(channelNameOrId)
+        if (!cid.isNullOrBlank()) {
+            try {
+                val payload1 = JSONObject().apply {
+                    put("context", buildContext())
+                    put("browseId", cid)
+                    put("params", "EglwbGF5bGlzdHPyBgoKCEIGCgIQaCIA")
+                }
+                val resp1 = callInnerTube("browse", payload1)
+                if (resp1 != null) {
+                    extractPlaylistsRecursively(resp1, outPlaylists)
+                    nextToken = extractContinuationToken(resp1)
+                }
+
+                if (outPlaylists.isEmpty()) {
+                    val payload2 = JSONObject().apply {
+                        put("context", buildContext())
+                        put("browseId", cid)
+                        put("params", "EghwbGF5bGlzdHPyBgQKAjoA")
+                    }
+                    val resp2 = callInnerTube("browse", payload2)
+                    if (resp2 != null) {
+                        extractPlaylistsRecursively(resp2, outPlaylists)
+                        nextToken = extractContinuationToken(resp2)
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeSyncEngine", "fetchChannelPlaylists initial error", e)
+            }
+        }
+
+        Pair(outPlaylists.distinctBy { it.id }, nextToken)
+    }
+
+    /**
+     * Fetches real channel shorts with continuation token pagination support.
+     * Returns Pair of (shorts, nextContinuationToken).
+     */
+    suspend fun fetchChannelShorts(
+        channelNameOrId: String,
+        continuationToken: String? = null,
+        fallbackAvatar: String? = null
+    ): Pair<List<VideoItem>, String?> = withContext(Dispatchers.IO) {
+        val outShorts = mutableListOf<VideoItem>()
+        var nextToken: String? = null
+        var headerChannelName: String? = null
+        var headerAvatarUrl: String? = null
+
+        if (!continuationToken.isNullOrBlank()) {
+            try {
+                val payload = JSONObject().apply {
+                    put("context", buildContext())
+                    put("continuation", continuationToken)
+                }
+                val resp = callInnerTube("browse", payload)
+                if (resp != null) {
+                    extractVideosRecursively(resp, outShorts)
+                    nextToken = extractContinuationToken(resp)
+                    android.util.Log.d("YouTubeSyncEngine", "fetchChannelShorts continuation extracted ${outShorts.size} shorts, nextToken=${nextToken != null}")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("YouTubeSyncEngine", "fetchChannelShorts continuation error", e)
+            }
+        } else {
+            val cid = resolveChannelId(channelNameOrId)
+            if (!cid.isNullOrBlank()) {
+                try {
+                    val payload = JSONObject().apply {
+                        put("context", buildContext())
+                        put("browseId", cid)
+                        put("params", "EgZzaG9ydHPyBgUKA5oBAA%3D%3D")
+                    }
+                    val resp = callInnerTube("browse", payload)
+                    if (resp != null) {
+                        extractVideosRecursively(resp, outShorts)
+                        nextToken = extractContinuationToken(resp)
+                        val header = resp.optJSONObject("header")
+                        val pageHeader = header?.optJSONObject("pageHeaderRenderer")
+                        if (pageHeader != null) {
+                            headerChannelName = pageHeader.optString("pageTitle").ifBlank { null }
+                            headerAvatarUrl = extractFirstImageUrl(pageHeader)
+                        }
+                        val c4Header = header?.optJSONObject("c4TabbedHeaderRenderer")
+                        if (c4Header != null) {
+                            if (headerChannelName == null) headerChannelName = c4Header.optString("title").ifBlank { null }
+                            if (headerAvatarUrl == null) headerAvatarUrl = extractFirstImageUrl(c4Header.optJSONObject("avatar"))
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("YouTubeSyncEngine", "fetchChannelShorts initial error", e)
+                }
+            }
+        }
+
+        val effectiveChannel = headerChannelName
+            ?: if (!channelNameOrId.startsWith("UC")) channelNameOrId else "YouTube Creator"
+        val effectiveAvatar = headerAvatarUrl ?: fallbackAvatar
+
+        val sanitized = outShorts.map { vid ->
+            val finalChannel = if (vid.channelName == "YouTube Creator" || isViewOrDateString(vid.channelName) || vid.channelName.isBlank()) {
+                effectiveChannel
+            } else {
+                vid.channelName
+            }
+            val finalAvatar = if ((vid.channelAvatarUrl.isBlank() || vid.channelAvatarUrl.contains("unsplash")) && !effectiveAvatar.isNullOrBlank()) {
+                effectiveAvatar
+            } else {
+                vid.channelAvatarUrl
+            }
+            vid.copy(
+                channelName = finalChannel,
+                artist = finalChannel,
+                channelAvatarUrl = finalAvatar
+            )
+        }
+
+        Pair(sanitized.distinctBy { it.id }, nextToken)
+    }
+}
