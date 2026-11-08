@@ -1,0 +1,429 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		VG000001 /* AppMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00001 /* AppMode.swift */; };
+		VG000002 /* VideoItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00002 /* VideoItem.swift */; };
+		VG000003 /* UserAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00003 /* UserAccount.swift */; };
+		VG000004 /* UserPlaylist.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00004 /* UserPlaylist.swift */; };
+		VG000005 /* Colors.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00005 /* Colors.swift */; };
+		VG000006 /* VideoRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00006 /* VideoRepository.swift */; };
+		VG000007 /* AccountRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00007 /* AccountRepository.swift */; };
+		VG000008 /* UserDataRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00008 /* UserDataRepository.swift */; };
+		VG000009 /* YouTubeSearchEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00009 /* YouTubeSearchEngine.swift */; };
+		VG000010 /* MediaPlaybackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00010 /* MediaPlaybackService.swift */; };
+		VG000011 /* GoogleCastButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00011 /* GoogleCastButton.swift */; };
+		VG000012 /* ModeToggle.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00012 /* ModeToggle.swift */; };
+		VG000013 /* TopBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00013 /* TopBar.swift */; };
+		VG000014 /* BottomNavBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00014 /* BottomNavBar.swift */; };
+		VG000015 /* MiniPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00015 /* MiniPlayer.swift */; };
+		VG000016 /* YouTubeVideoCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00016 /* YouTubeVideoCard.swift */; };
+		VG000017 /* PlayerControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00017 /* PlayerControls.swift */; };
+		VG000018 /* PlayerBottomSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00018 /* PlayerBottomSheet.swift */; };
+		VG000019 /* AccountSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00019 /* AccountSheet.swift */; };
+		VG000020 /* YouTubeFeedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00020 /* YouTubeFeedView.swift */; };
+		VG000021 /* YouTubeMusicHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00021 /* YouTubeMusicHomeView.swift */; };
+		VG000022 /* VideoDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00022 /* VideoDetailView.swift */; };
+		VG000023 /* MusicPlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00023 /* MusicPlayerView.swift */; };
+		VG000024 /* MusicLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00024 /* MusicLibraryView.swift */; };
+		VG000025 /* SearchScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00025 /* SearchScreenView.swift */; };
+		VG000026 /* ChannelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00026 /* ChannelView.swift */; };
+		VG000027 /* YouView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00027 /* YouView.swift */; };
+		VG000028 /* PlaylistDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00028 /* PlaylistDetailView.swift */; };
+		VG000029 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00029 /* MainView.swift */; };
+		VG000030 /* VideoGuardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00030 /* VideoGuardApp.swift */; };
+		VG000031 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = VGF00031 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		VGPROD01 /* VideoGuard.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VideoGuard.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		VGF00001 /* AppMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMode.swift; sourceTree = "<group>"; };
+		VGF00002 /* VideoItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoItem.swift; sourceTree = "<group>"; };
+		VGF00003 /* UserAccount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAccount.swift; sourceTree = "<group>"; };
+		VGF00004 /* UserPlaylist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPlaylist.swift; sourceTree = "<group>"; };
+		VGF00005 /* Colors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Colors.swift; sourceTree = "<group>"; };
+		VGF00006 /* VideoRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoRepository.swift; sourceTree = "<group>"; };
+		VGF00007 /* AccountRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRepository.swift; sourceTree = "<group>"; };
+		VGF00008 /* UserDataRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDataRepository.swift; sourceTree = "<group>"; };
+		VGF00009 /* YouTubeSearchEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeSearchEngine.swift; sourceTree = "<group>"; };
+		VGF00010 /* MediaPlaybackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaPlaybackService.swift; sourceTree = "<group>"; };
+		VGF00011 /* GoogleCastButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleCastButton.swift; sourceTree = "<group>"; };
+		VGF00012 /* ModeToggle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModeToggle.swift; sourceTree = "<group>"; };
+		VGF00013 /* TopBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopBar.swift; sourceTree = "<group>"; };
+		VGF00014 /* BottomNavBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BottomNavBar.swift; sourceTree = "<group>"; };
+		VGF00015 /* MiniPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayer.swift; sourceTree = "<group>"; };
+		VGF00016 /* YouTubeVideoCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeVideoCard.swift; sourceTree = "<group>"; };
+		VGF00017 /* PlayerControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerControls.swift; sourceTree = "<group>"; };
+		VGF00018 /* PlayerBottomSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerBottomSheet.swift; sourceTree = "<group>"; };
+		VGF00019 /* AccountSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSheet.swift; sourceTree = "<group>"; };
+		VGF00020 /* YouTubeFeedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeFeedView.swift; sourceTree = "<group>"; };
+		VGF00021 /* YouTubeMusicHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeMusicHomeView.swift; sourceTree = "<group>"; };
+		VGF00022 /* VideoDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoDetailView.swift; sourceTree = "<group>"; };
+		VGF00023 /* MusicPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicPlayerView.swift; sourceTree = "<group>"; };
+		VGF00024 /* MusicLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MusicLibraryView.swift; sourceTree = "<group>"; };
+		VGF00025 /* SearchScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchScreenView.swift; sourceTree = "<group>"; };
+		VGF00026 /* ChannelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelView.swift; sourceTree = "<group>"; };
+		VGF00027 /* YouView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouView.swift; sourceTree = "<group>"; };
+		VGF00028 /* PlaylistDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistDetailView.swift; sourceTree = "<group>"; };
+		VGF00029 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		VGF00030 /* VideoGuardApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoGuardApp.swift; sourceTree = "<group>"; };
+		VGF00031 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		VGF00032 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		VGFRMK01 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		VGRP0001 = {
+			isa = PBXGroup;
+			children = (
+				VGRP0002 /* VideoGuard */,
+				VGRP0009 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		VGRP0002 /* VideoGuard */ = {
+			isa = PBXGroup;
+			children = (
+				VGF00030 /* VideoGuardApp.swift */,
+				VGRP0003 /* Models */,
+				VGRP0004 /* Theme */,
+				VGRP0005 /* Data */,
+				VGRP0006 /* Services */,
+				VGRP0007 /* Views */,
+				VGF00031 /* Assets.xcassets */,
+				VGF00032 /* Info.plist */,
+			);
+			path = VideoGuard;
+			sourceTree = "<group>";
+		};
+		VGRP0003 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				VGF00001 /* AppMode.swift */,
+				VGF00002 /* VideoItem.swift */,
+				VGF00003 /* UserAccount.swift */,
+				VGF00004 /* UserPlaylist.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		VGRP0004 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				VGF00005 /* Colors.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		VGRP0005 /* Data */ = {
+			isa = PBXGroup;
+			children = (
+				VGF00006 /* VideoRepository.swift */,
+				VGF00007 /* AccountRepository.swift */,
+				VGF00008 /* UserDataRepository.swift */,
+				VGF00009 /* YouTubeSearchEngine.swift */,
+			);
+			path = Data;
+			sourceTree = "<group>";
+		};
+		VGRP0006 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				VGF00010 /* MediaPlaybackService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		VGRP0007 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				VGRP0008 /* Components */,
+				VGRP0010 /* Screens */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		VGRP0008 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				VGF00011 /* GoogleCastButton.swift */,
+				VGF00012 /* ModeToggle.swift */,
+				VGF00013 /* TopBar.swift */,
+				VGF00014 /* BottomNavBar.swift */,
+				VGF00015 /* MiniPlayer.swift */,
+				VGF00016 /* YouTubeVideoCard.swift */,
+				VGF00017 /* PlayerControls.swift */,
+				VGF00018 /* PlayerBottomSheet.swift */,
+				VGF00019 /* AccountSheet.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		VGRP0010 /* Screens */ = {
+			isa = PBXGroup;
+			children = (
+				VGF00020 /* YouTubeFeedView.swift */,
+				VGF00021 /* YouTubeMusicHomeView.swift */,
+				VGF00022 /* VideoDetailView.swift */,
+				VGF00023 /* MusicPlayerView.swift */,
+				VGF00024 /* MusicLibraryView.swift */,
+				VGF00025 /* SearchScreenView.swift */,
+				VGF00026 /* ChannelView.swift */,
+				VGF00027 /* YouView.swift */,
+				VGF00028 /* PlaylistDetailView.swift */,
+				VGF00029 /* MainView.swift */,
+			);
+			path = Screens;
+			sourceTree = "<group>";
+		};
+		VGRP0009 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				VGPROD01 /* VideoGuard.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		VGTARG01 /* VideoGuard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = VGCFG01 /* Build configuration list for PBXNativeTarget "VideoGuard" */;
+			buildPhases = (
+				VGSRC001 /* Sources */,
+				VGFRMK01 /* Frameworks */,
+				VGRESO01 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VideoGuard;
+			productName = VideoGuard;
+			productReference = VGPROD01 /* VideoGuard.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		VGPROJ01 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					VGTARG01 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = VGCFG02 /* Build configuration list for PBXProject "VideoGuard" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = VGRP0001;
+			productRefGroup = VGRP0009 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				VGTARG01 /* VideoGuard */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		VGRESO01 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				VG000031 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		VGSRC001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				VG000001 /* AppMode.swift in Sources */,
+				VG000002 /* VideoItem.swift in Sources */,
+				VG000003 /* UserAccount.swift in Sources */,
+				VG000004 /* UserPlaylist.swift in Sources */,
+				VG000005 /* Colors.swift in Sources */,
+				VG000006 /* VideoRepository.swift in Sources */,
+				VG000007 /* AccountRepository.swift in Sources */,
+				VG000008 /* UserDataRepository.swift in Sources */,
+				VG000009 /* YouTubeSearchEngine.swift in Sources */,
+				VG000010 /* MediaPlaybackService.swift in Sources */,
+				VG000011 /* GoogleCastButton.swift in Sources */,
+				VG000012 /* ModeToggle.swift in Sources */,
+				VG000013 /* TopBar.swift in Sources */,
+				VG000014 /* BottomNavBar.swift in Sources */,
+				VG000015 /* MiniPlayer.swift in Sources */,
+				VG000016 /* YouTubeVideoCard.swift in Sources */,
+				VG000017 /* PlayerControls.swift in Sources */,
+				VG000018 /* PlayerBottomSheet.swift in Sources */,
+				VG000019 /* AccountSheet.swift in Sources */,
+				VG000020 /* YouTubeFeedView.swift in Sources */,
+				VG000021 /* YouTubeMusicHomeView.swift in Sources */,
+				VG000022 /* VideoDetailView.swift in Sources */,
+				VG000023 /* MusicPlayerView.swift in Sources */,
+				VG000024 /* MusicLibraryView.swift in Sources */,
+				VG000025 /* SearchScreenView.swift in Sources */,
+				VG000026 /* ChannelView.swift in Sources */,
+				VG000027 /* YouView.swift in Sources */,
+				VG000028 /* PlaylistDetailView.swift in Sources */,
+				VG000029 /* MainView.swift in Sources */,
+				VG000030 /* VideoGuardApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		VGBUILD_DBG = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		VGBUILD_REL = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		VGBUILD_TRG_DBG = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VideoGuard/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.videoguard.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		VGBUILD_TRG_REL = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 3;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VideoGuard/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.videoguard.app;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		VGCFG01 /* Build configuration list for PBXNativeTarget "VideoGuard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				VGBUILD_TRG_DBG /* Debug */,
+				VGBUILD_TRG_REL /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		VGCFG02 /* Build configuration list for PBXProject "VideoGuard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				VGBUILD_DBG /* Debug */,
+				VGBUILD_REL /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = VGPROJ01 /* Project object */;
+}
+
