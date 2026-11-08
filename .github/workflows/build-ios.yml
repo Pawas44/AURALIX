@@ -7,14 +7,18 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-latest
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set Xcode version
-      run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+    - name: Select latest Xcode
+      run: |
+        XCODE_PATH=$(find /Applications -name "Xcode*.app" -maxdepth 1 | sort -V | tail -n 1)
+        echo "Selecting $XCODE_PATH"
+        sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+        xcodebuild -version
 
     - name: Build VideoGuard iOS App
       run: |
@@ -41,4 +45,3 @@ jobs:
       with:
         name: VideoGuard-iOS-IPA
         path: VideoGuard/build/VideoGuard.ipa
-
