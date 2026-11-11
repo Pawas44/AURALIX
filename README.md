@@ -1,4 +1,4 @@
-# 🛡️ VideoGuard — Multi-Platform Client (Android & iOS)
+# AURALIX — Multi-Platform Client (Android & iOS)
 
 A sleek, dual-mode client inspired by **YouTube** and **YouTube Music**, available natively for both **Android** and **Apple iOS**.
 
@@ -7,7 +7,7 @@ A sleek, dual-mode client inspired by **YouTube** and **YouTube Music**, availab
 ## 📂 Project Architecture
 
 ```
-videoguard-ios/
+AURALIX/
 ├── .github/
 │   └── workflows/
 │       └── build-ios.yml       # Cloud CI/CD: Automated builds for Android APK & iOS IPA
@@ -60,18 +60,17 @@ videoguard-ios/
 ## 📲 How to Download & Install
 
 ### 1. Download Latest Builds
-1. Navigate to the [GitHub Actions Runs](https://github.com/Pawas44/videoguard-ios/actions).
-2. Click on the latest workflow run: **Build Both (Android APK + iOS IPA)**.
-3. Scroll down to **Artifacts** to download:
-   - **`VideoGuard-Android-APK`**: Contains the Android `.apk` installer.
-   - **`VideoGuard-iOS-IPA`**: Contains the iOS `.ipa` installer.
+1. Navigate to the [Latest GitHub Release](https://github.com/Pawas44/AURALIX/releases/latest) (or check [GitHub Actions Runs](https://github.com/Pawas44/AURALIX/actions)).
+2. Download directly under **Assets**:
+   - **`AURALIX.apk`**: Android installer.
+   - **`AURALIX.ipa`**: iOS installer.
 
 ---
 
 ### 2. Installation on Android Devices
-1. Unzip `VideoGuard-Android-APK.zip` to get `app-debug.apk`.
+1. Download `AURALIX.apk` directly from the latest release.
 2. Transfer it to your Android device.
-3. Tap on the `.apk` file and select **Install**.
+3. Tap on `AURALIX.apk` and select **Install**.
 
 ---
 
@@ -80,8 +79,8 @@ videoguard-ios/
 #### Using Sideloadly (Recommended)
 1. Download [Sideloadly](https://sideloadly.io/) on Windows or Mac.
 2. Connect your iPhone to your PC using a USB cable.
-3. Unzip `VideoGuard-iOS-IPA.zip` to get `VideoGuard.ipa`.
-4. Drag `VideoGuard.ipa` into Sideloadly, enter your Apple ID, and click **Start**.
+3. Download `AURALIX.ipa` directly from the latest release.
+4. Drag `AURALIX.ipa` into Sideloadly, enter your Apple ID, and click **Start**.
 5. Once finished, on the iPhone:
    - Go to **Settings > General > VPN & Device Management** and tap **Trust**.
    - If on iOS 16+, go to **Settings > Privacy & Security > Developer Mode** and turn it **ON** (phone reboots once).

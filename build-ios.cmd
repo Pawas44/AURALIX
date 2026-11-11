@@ -1,9 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
-title VideoGuard - iOS Build via GitHub Actions
+title AURALIX - iOS Build via GitHub Actions
 
 echo ===================================================
-echo       VideoGuard - iOS IPA Build Script
+echo       AURALIX - iOS IPA Build Script
 echo ===================================================
 echo.
 echo [NOTE] iOS apps require Apple Xcode (macOS).
@@ -47,11 +47,11 @@ if /i "%PUSH_CHOICE%"=="Y" (
 )
 
 echo.
-echo [*] Opening GitHub Actions in your browser...
-start https://github.com/Pawas44/videoguard-ios/actions
+echo [*] Opening GitHub Releases in your browser...
+start https://github.com/Pawas44/AURALIX/releases/latest
 echo.
-echo Once the macOS workflow finishes, you can download 'VideoGuard-iOS-IPA'
-echo directly from the Actions artifact section.
+echo Once the workflow finishes, you can download 'AURALIX.apk' and 'AURALIX.ipa'
+echo directly from GitHub Releases or the Actions artifacts section.
 echo.
 pause
 
