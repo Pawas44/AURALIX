@@ -64,9 +64,9 @@ struct LiquidBottomNavBar: View {
                     Text("Support")
                         .font(.system(size: 10, weight: isSupportSelected ? .bold : .medium))
                 }
-                .foregroundColor(isSupportSelected ? Color(hex: 0xFFDD00) : Color(hex: 0x9E9EAF))
+                .foregroundColor(isSupportSelected ? Color(hex: 0x40DCA5) : Color(hex: 0x9E9EAF))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(isSupportSelected ? Color(hex: 0xFFDD00).opacity(0.14) : Color.clear)
+                .background(isSupportSelected ? Color(hex: 0x40DCA5).opacity(0.14) : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
             }
         }

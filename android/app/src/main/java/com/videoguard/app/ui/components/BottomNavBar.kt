@@ -148,7 +148,7 @@ fun BottomNavBar(
                     title = "Support",
                     icon = if (isSupportSelected) Icons.Filled.Coffee else Icons.Outlined.Coffee,
                     isSelected = isSupportSelected,
-                    selectedTint = Color(0xFFFFDD00),
+                    selectedTint = Color(0xFF40DCA5),
                     onClick = onSupportClick
                 )
             }
