@@ -1,107 +1,143 @@
 import SwiftUI
 
 struct MusicLibraryView: View {
-    let onBack: () -> Void
-    let onTrackClick: (VideoItem) -> Void
-    let onPlaylistClick: (String) -> Void
+    let onTrackSelected: (VideoItem, [VideoItem]) -> Void
+    let onPlaylistClick: (UserPlaylist) -> Void
+    let onOpenSearch: () -> Void
+    let onOpenAccountSheet: () -> Void
 
     @ObservedObject var userData = UserDataRepository.shared
+    @State private var showNewPlaylistAlert = false
+    @State private var newPlaylistTitle = ""
 
     var body: some View {
-        let playlists = userData.playlists
-        let recentTracks = Array(VideoRepository.getMusicTracks().prefix(5))
-
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("Library")
-                    .font(.system(size: 28, weight: .bold))
-                    .foregroundColor(AppTheme.ytMusicTextPrimary)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-
-                // Quick Action Cards
-                HStack(spacing: 12) {
-                    QuickActionCard(icon: "clock.arrow.circlepath", title: "Recent")
-                    QuickActionCard(icon: "heart.fill", title: "Liked")
-                    QuickActionCard(icon: "arrow.down.circle.fill", title: "Downloads")
+                HStack {
+                    Text("Library")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(.white)
+                    Spacer()
+                    Button(action: onOpenSearch) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 19))
+                            .foregroundColor(.white)
+                    }
+                    Button(action: onOpenAccountSheet) {
+                        Image(systemName: "person.crop.circle")
+                            .font(.system(size: 21))
+                            .foregroundColor(.white)
+                            .padding(.leading, 12)
+                    }
                 }
                 .padding(.horizontal, 16)
+                .padding(.top, 10)
 
-                // Playlists section
-                Text("Playlists")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(AppTheme.ytMusicTextPrimary)
+                // Recent Music Activity
+                if !userData.watchHistory.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Recent activity")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(userData.watchHistory.prefix(12)) { track in
+                                    Button(action: { onTrackSelected(track, userData.watchHistory) }) {
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            AsyncImage(url: URL(string: track.thumbnailUrl)) { img in
+                                                img.resizable().aspectRatio(contentMode: .fill)
+                                            } placeholder: {
+                                                Rectangle().fill(AppTheme.ytMusicCardBg)
+                                            }
+                                            .frame(width: 110, height: 110)
+                                            .cornerRadius(8)
+                                            .clipped()
+
+                                            Text(track.title)
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(.white)
+                                                .lineLimit(1)
+                                                .frame(width: 110, alignment: .leading)
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                        }
+                    }
+                }
+
+                // Playlists List
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Playlists")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundColor(.white)
+                        Spacer()
+                        Button(action: { showNewPlaylistAlert = true }) {
+                            Label("New", systemImage: "plus")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .liquidGlassPill()
+                        }
+                    }
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
 
-                VStack(spacing: 12) {
-                    ForEach(playlists) { playlist in
-                        Button(action: { onPlaylistClick(playlist.id) }) {
-                            HStack(spacing: 14) {
-                                AsyncImage(url: URL(string: playlist.thumbnailUrl)) { image in
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    RoundedRectangle(cornerRadius: 8).fill(AppTheme.ytMusicCardBg)
-                                }
-                                .frame(width: 56, height: 56)
-                                .cornerRadius(8)
-                                .clipped()
+                    LazyVStack(spacing: 12) {
+                        ForEach(userData.playlists) { playlist in
+                            Button(action: { onPlaylistClick(playlist) }) {
+                                HStack(spacing: 14) {
+                                    if !playlist.thumbnailUrl.isEmpty {
+                                        AsyncImage(url: URL(string: playlist.thumbnailUrl)) { img in
+                                            img.resizable().aspectRatio(contentMode: .fill)
+                                        } placeholder: {
+                                            Rectangle().fill(AppTheme.ytMusicCardBg)
+                                        }
+                                        .frame(width: 60, height: 60)
+                                        .cornerRadius(8)
+                                        .clipped()
+                                    } else {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(Color.white.opacity(0.08))
+                                            Image(systemName: playlist.iconType == "like" ? "hand.thumbsup.fill" : "music.note.list")
+                                                .font(.system(size: 22))
+                                                .foregroundColor(.white)
+                                        }
+                                        .frame(width: 60, height: 60)
+                                    }
 
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(playlist.name)
-                                        .font(.system(size: 15, weight: .medium))
-                                        .foregroundColor(AppTheme.ytMusicTextPrimary)
-                                    Text("\(playlist.videoCount) songs\(playlist.isPrivate ? " • Private" : "")")
-                                        .font(.system(size: 13))
-                                        .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(playlist.title)
+                                            .font(.system(size: 15, weight: .semibold))
+                                            .foregroundColor(.white)
+                                        Text("\(playlist.videoCount) tracks")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                    }
+                                    Spacer()
                                 }
-                                Spacer()
+                                .padding(.horizontal, 16)
                             }
                         }
                     }
                 }
-                .padding(.horizontal, 16)
-
-                // Recently Played
-                Text("Recently played")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(AppTheme.ytMusicTextPrimary)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-
-                VStack(spacing: 8) {
-                    ForEach(recentTracks) { track in
-                        MusicTrackRow(track: track) {
-                            onTrackClick(track)
-                        }
-                    }
+                .padding(.bottom, 80)
+            }
+        }
+        .alert("New Playlist", isPresented: $showNewPlaylistAlert) {
+            TextField("Title", text: $newPlaylistTitle)
+            Button("Create") {
+                if !newPlaylistTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    userData.createPlaylist(title: newPlaylistTitle.trimmingCharacters(in: .whitespacesAndNewlines))
+                    newPlaylistTitle = ""
                 }
             }
-            .padding(.bottom, 100)
-        }
-        .background(AppTheme.ytMusicBlack.ignoresSafeArea())
-    }
-}
-
-struct QuickActionCard: View {
-    let icon: String
-    let title: String
-
-    var body: some View {
-        Button(action: {}) {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 24))
-                    .foregroundColor(AppTheme.ytMusicTextPrimary)
-                Text(title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(AppTheme.ytMusicTextPrimary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(AppTheme.ytMusicCardBg)
-            .cornerRadius(12)
+            Button("Cancel", role: .cancel) { newPlaylistTitle = "" }
         }
     }
 }
-

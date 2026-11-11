@@ -1,196 +1,298 @@
 import SwiftUI
 
-enum ScreenDestination {
-    case youtubeFeed
-    case search
-    case videoDetail
-    case channel
-    case you
-    case musicHome
-    case musicPlayer
-    case musicLibrary
-    case musicExplore
-    case playlistDetail
-}
-
 struct MainView: View {
     @State private var appMode: AppMode = .youtube
-    @State private var currentScreen: ScreenDestination = .youtubeFeed
-    @State private var selectedYouTubeTab: YouTubeTab = .home
+    @State private var selectedYTTab: YouTubeTab = .home
     @State private var selectedMusicTab: MusicTab = .home
-    @State private var selectedVideo: VideoItem? = nil
-    @State private var selectedChannel: String = ""
-    @State private var selectedPlaylistId: String = ""
+    @State private var homeScrollToTopTrigger: Int = 0
+
+    @State private var isFullscreen: Bool = false
+    @State private var isPlayerExpanded: Bool = false
+    @State private var isSearchActive: Bool = false
     @State private var showAccountSheet: Bool = false
-    @State private var showPlayerSheet: Bool = false
+    @State private var showGoogleAuthSheet: Bool = false
+
+    @State private var activeChannelVideo: VideoItem? = nil
+    @State private var activePlaylist: UserPlaylist? = nil
 
     @ObservedObject var playbackService = MediaPlaybackService.shared
 
     var body: some View {
-        let bgColor = appMode == .youtube ? AppTheme.youTubeDarkBg : AppTheme.ytMusicBlack
+        let isMusic = appMode == .youtubeMusic
+        let showVideoInYT = isPlayerExpanded && appMode == .youtube
 
-        ZStack(alignment: .bottom) {
-            bgColor.ignoresSafeArea()
+        ZStack(alignment: .top) {
+            // Liquid Glass Background
+            (isMusic ? LiquidGlassDefaults.liquidMusicCanvas : LiquidGlassDefaults.liquidCanvas)
+                .ignoresSafeArea()
 
+            // Main Persistent Shell
             VStack(spacing: 0) {
-                // Main Active Screen Content
-                ZStack {
-                    switch currentScreen {
-                    case .youtubeFeed:
-                        YouTubeFeedView(
+                if !isSearchActive && activeChannelVideo == nil && activePlaylist == nil {
+                    if (appMode == .youtube && selectedYTTab != .you) ||
+                       (appMode == .youtubeMusic && selectedMusicTab != .library) {
+                        YouTubeTopBar(
                             appMode: appMode,
-                            onSearchClick: { currentScreen = .search },
-                            onProfileClick: { showAccountSheet = true },
-                            onVideoClick: { video in
-                                selectedVideo = video
-                                currentScreen = .videoDetail
+                            onModeChanged: { newMode in
+                                appMode = newMode
+                            },
+                            onTitleClick: {
+                                let alreadyHome = appMode == .youtube ? (selectedYTTab == .home) : (selectedMusicTab == .home)
+                                if alreadyHome {
+                                    homeScrollToTopTrigger += 1
+                                } else {
+                                    if appMode == .youtube { selectedYTTab = .home }
+                                    else { selectedMusicTab = .home }
+                                }
+                            },
+                            onSearchClick: { isSearchActive = true },
+                            isBackgroundPlay: playbackService.isBackgroundPlayEnabled,
+                            onToggleBackgroundPlay: { playbackService.toggleBackgroundPlay() },
+                            onProfileClick: {
+                                if appMode == .youtube {
+                                    selectedYTTab = .you
+                                } else {
+                                    showAccountSheet = true
+                                }
                             }
                         )
-                    case .search:
+                    }
+                }
+
+                // Content Area
+                ZStack {
+                    if isSearchActive {
                         SearchScreenView(
                             appMode: appMode,
-                            onBack: {
-                                currentScreen = appMode == .youtube ? .youtubeFeed : .musicHome
+                            onBack: { isSearchActive = false },
+                            onVideoSelected: { video, queue in
+                                playbackService.playTrack(video, queue: queue)
+                                isPlayerExpanded = true
+                                isSearchActive = false
                             },
-                            onVideoClick: { video in
-                                selectedVideo = video
-                                currentScreen = appMode == .youtube ? .videoDetail : .musicPlayer
+                            onChannelClick: { video in
+                                activeChannelVideo = video
+                                isSearchActive = false
                             }
                         )
-                    case .videoDetail:
-                        if let video = selectedVideo {
-                            VideoDetailView(
-                                video: video,
-                                onBack: { currentScreen = .youtubeFeed },
-                                onChannelClick: { channel in
-                                    selectedChannel = channel
-                                    currentScreen = .channel
-                                },
-                                onVideoClick: { nextVideo in
-                                    selectedVideo = nextVideo
-                                }
-                            )
-                        }
-                    case .channel:
-                        ChannelView(
-                            channelName: selectedChannel,
-                            onBack: {
-                                currentScreen = selectedVideo != nil ? .videoDetail : .youtubeFeed
-                            },
-                            onVideoClick: { video in
-                                selectedVideo = video
-                                currentScreen = .videoDetail
-                            }
-                        )
-                    case .you:
-                        YouView(
-                            onBack: { currentScreen = .youtubeFeed },
-                            onVideoClick: { video in
-                                selectedVideo = video
-                                currentScreen = .videoDetail
-                            },
-                            onPlaylistClick: { playlistId in
-                                selectedPlaylistId = playlistId
-                                currentScreen = .playlistDetail
-                            }
-                        )
-                    case .musicHome:
-                        YouTubeMusicHomeView(
-                            onSearchClick: { currentScreen = .search },
-                            onProfileClick: { showAccountSheet = true },
-                            onTrackClick: { track in
-                                selectedVideo = track
-                                currentScreen = .musicPlayer
-                            }
-                        )
-                    case .musicPlayer:
-                        if let track = selectedVideo {
-                            MusicPlayerView(
-                                track: track,
-                                onBack: { currentScreen = .musicHome },
-                                onVideoClick: { nextTrack in
-                                    selectedVideo = nextTrack
-                                }
-                            )
-                        }
-                    case .musicLibrary:
-                        MusicLibraryView(
-                            onBack: { currentScreen = .musicHome },
-                            onTrackClick: { track in
-                                selectedVideo = track
-                                currentScreen = .musicPlayer
-                            },
-                            onPlaylistClick: { playlistId in
-                                selectedPlaylistId = playlistId
-                                currentScreen = .playlistDetail
-                            }
-                        )
-                    case .musicExplore:
-                        YouTubeMusicHomeView(
-                            onSearchClick: { currentScreen = .search },
-                            onProfileClick: { showAccountSheet = true },
-                            onTrackClick: { track in
-                                selectedVideo = track
-                                currentScreen = .musicPlayer
-                            }
-                        )
-                    case .playlistDetail:
+                    } else if let pl = activePlaylist {
                         PlaylistDetailView(
-                            playlistId: selectedPlaylistId,
+                            playlistId: pl.id,
+                            initialPlaylist: pl,
                             appMode: appMode,
-                            onBack: {
-                                currentScreen = appMode == .youtube ? .you : .musicLibrary
-                            },
-                            onVideoClick: { video in
-                                selectedVideo = video
-                                currentScreen = appMode == .youtube ? .videoDetail : .musicPlayer
+                            onBack: { activePlaylist = nil },
+                            onVideoSelected: { video, queue in
+                                playbackService.playTrack(video, queue: queue)
+                                isPlayerExpanded = true
                             }
                         )
+                    } else if let chVid = activeChannelVideo {
+                        ChannelView(
+                            channelName: chVid.channelName,
+                            channelAvatarUrl: chVid.channelAvatarUrl,
+                            subscriberCount: chVid.subscriberCount.isEmpty ? "10M subscribers" : chVid.subscriberCount,
+                            onBack: { activeChannelVideo = nil },
+                            onVideoSelected: { video, queue in
+                                playbackService.playTrack(video, queue: queue)
+                                isPlayerExpanded = true
+                            },
+                            onPlaylistClick: { pl in
+                                activePlaylist = pl
+                            }
+                        )
+                    } else {
+                        if appMode == .youtube {
+                            if selectedYTTab == .you {
+                                YouView(
+                                    onVideoSelected: { video, queue in
+                                        playbackService.playTrack(video, queue: queue)
+                                        isPlayerExpanded = true
+                                    },
+                                    onPlaylistClick: { pl in
+                                        activePlaylist = pl
+                                    },
+                                    onOpenSearch: { isSearchActive = true },
+                                    onOpenAccountSheet: { showAccountSheet = true },
+                                    onSignInClick: { showGoogleAuthSheet = true }
+                                )
+                            } else {
+                                YouTubeFeedView(
+                                    onVideoSelected: { video, queue in
+                                        playbackService.playTrack(video, queue: queue)
+                                        isPlayerExpanded = true
+                                    },
+                                    onSwitchToMusic: {
+                                        appMode = .youtubeMusic
+                                    },
+                                    onChannelClick: { video in
+                                        activeChannelVideo = video
+                                    },
+                                    scrollToTopTrigger: homeScrollToTopTrigger
+                                )
+                            }
+                        } else {
+                            if selectedMusicTab == .library {
+                                MusicLibraryView(
+                                    onTrackSelected: { track, queue in
+                                        playbackService.playTrack(track, queue: queue)
+                                        isPlayerExpanded = true
+                                    },
+                                    onPlaylistClick: { pl in
+                                        activePlaylist = pl
+                                    },
+                                    onOpenSearch: { isSearchActive = true },
+                                    onOpenAccountSheet: { showAccountSheet = true }
+                                )
+                            } else {
+                                YouTubeMusicHomeView(
+                                    onTrackSelected: { track, queue in
+                                        playbackService.playTrack(track, queue: queue)
+                                        isPlayerExpanded = true
+                                    },
+                                    scrollToTopTrigger: homeScrollToTopTrigger
+                                )
+                            }
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 // Mini Player Bar
-                if playbackService.playbackState.currentTrack != nil &&
-                    currentScreen != .musicPlayer &&
-                    currentScreen != .videoDetail {
+                if playbackService.currentTrack != nil && !isPlayerExpanded {
                     MiniPlayer(appMode: appMode) {
-                        if appMode == .youtube {
-                            showPlayerSheet = true
-                        } else {
-                            selectedVideo = playbackService.playbackState.currentTrack
-                            currentScreen = .musicPlayer
-                        }
+                        isPlayerExpanded = true
                     }
                 }
 
-                // Bottom Tab Bar
-                if currentScreen != .videoDetail &&
-                    currentScreen != .musicPlayer &&
-                    currentScreen != .channel &&
-                    currentScreen != .search {
+                // Bottom Navigation Bar
+                if !isPlayerExpanded {
                     if appMode == .youtube {
-                        YouTubeBottomNavBar(selectedTab: $selectedYouTubeTab)
-                            .onChange(of: selectedYouTubeTab) { newTab in
-                                switch newTab {
-                                case .home: currentScreen = .youtubeFeed
-                                case .you: currentScreen = .you
-                                default: currentScreen = .youtubeFeed
+                        YouTubeBottomNavBar(selectedTab: Binding(
+                            get: { selectedYTTab },
+                            set: { newTab in
+                                activeChannelVideo = nil
+                                activePlaylist = nil
+                                isSearchActive = false
+                                if selectedYTTab == .home && newTab == .home {
+                                    homeScrollToTopTrigger += 1
                                 }
+                                selectedYTTab = newTab
                             }
+                        ))
                     } else {
-                        MusicBottomNavBar(selectedTab: $selectedMusicTab)
-                            .onChange(of: selectedMusicTab) { newTab in
-                                switch newTab {
-                                case .home: currentScreen = .musicHome
-                                case .library: currentScreen = .musicLibrary
-                                case .explore: currentScreen = .musicExplore
-                                case .samples: currentScreen = .musicHome
+                        MusicBottomNavBar(selectedTab: Binding(
+                            get: { selectedMusicTab },
+                            set: { newTab in
+                                activeChannelVideo = nil
+                                activePlaylist = nil
+                                isSearchActive = false
+                                if selectedMusicTab == .home && newTab == .home {
+                                    homeScrollToTopTrigger += 1
                                 }
+                                selectedMusicTab = newTab
                             }
+                        ))
                     }
                 }
             }
+
+            // Expanded Detail / Music Player Overlay
+            if isPlayerExpanded, let video = playbackService.currentTrack {
+                Group {
+                    if appMode == .youtube {
+                        VideoDetailView(
+                            video: video,
+                            isPlaying: playbackService.isPlaying,
+                            onPlayPauseToggle: { playbackService.togglePlayPause() },
+                            onCollapse: { isPlayerExpanded = false },
+                            onSwitchToMusicMode: { appMode = .youtubeMusic },
+                            onVideoSelected: { newVideo in
+                                let q = playbackService.playbackQueue.isEmpty ? [video] : playbackService.playbackQueue
+                                playbackService.playTrack(newVideo, queue: q)
+                            },
+                            onChannelClick: { chVideo in
+                                activeChannelVideo = chVideo
+                                isPlayerExpanded = false
+                            },
+                            isBackgroundPlay: playbackService.isBackgroundPlayEnabled,
+                            onToggleBackgroundPlay: { playbackService.toggleBackgroundPlay() }
+                        )
+                    } else {
+                        MusicPlayerView(
+                            track: video,
+                            isPlaying: playbackService.isPlaying,
+                            onPlayPauseToggle: { playbackService.togglePlayPause() },
+                            onCollapse: { isPlayerExpanded = false },
+                            onNextTrack: { playbackService.nextTrack() },
+                            onPrevTrack: { playbackService.prevTrack() },
+                            onTrackSelected: { newTrack in
+                                let q = playbackService.playbackQueue.isEmpty ? [video] : playbackService.playbackQueue
+                                playbackService.playTrack(newTrack, queue: q)
+                            },
+                            isBackgroundPlay: playbackService.isBackgroundPlayEnabled,
+                            onToggleBackgroundPlay: { playbackService.toggleBackgroundPlay() },
+                            onSwitchToVideoMode: { appMode = .youtube }
+                        )
+                    }
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(10)
+            }
+
+            // Persistent YouTube Video Player (Stays alive across all screens & background!)
+            if let track = playbackService.currentTrack {
+                ZStack {
+                    YouTubeVideoPlayer(
+                        videoId: track.id,
+                        isPlaying: playbackService.isPlaying
+                    )
+                    .background(Color.black)
+
+                    if showVideoInYT || isFullscreen {
+                        PlayerControlsOverlay(
+                            isPlaying: playbackService.isPlaying,
+                            currentTime: playbackService.currentTimeSeconds,
+                            duration: playbackService.durationSeconds,
+                            onPlayPauseToggle: { playbackService.togglePlayPause() },
+                            onNext: { playbackService.nextTrack() },
+                            onPrev: { playbackService.prevTrack() },
+                            onSeekBy: { playbackService.seekBy(seconds: $0) },
+                            onSeekTo: { playbackService.seekTo(seconds: $0) },
+                            onCollapse: {
+                                if isFullscreen {
+                                    isFullscreen = false
+                                } else {
+                                    isPlayerExpanded = false
+                                }
+                            },
+                            isFullscreen: isFullscreen,
+                            onToggleFullscreen: { isFullscreen.toggle() }
+                        )
+                    }
+                }
+                .frame(
+                    maxWidth: isFullscreen ? .infinity : (showVideoInYT ? .infinity : 1),
+                    maxHeight: isFullscreen ? .infinity : (showVideoInYT ? nil : 1)
+                )
+                .aspectRatio(showVideoInYT && !isFullscreen ? 16/9 : nil, contentMode: .fit)
+                .opacity((showVideoInYT || isFullscreen) ? 1.0 : 0.01)
+                .allowsHitTesting(showVideoInYT || isFullscreen)
+                .ignoresSafeArea(edges: isFullscreen ? .all : [])
+                .zIndex(isFullscreen ? 50 : (showVideoInYT ? 15 : -10))
+            }
+        }
+        .statusBarHidden(isFullscreen)
+        .onAppear {
+            AccountRepository.shared.syncIfCookiesExist()
+        }
+        .onChange(of: isPlayerExpanded) { expanded in
+            if !expanded && isFullscreen { isFullscreen = false }
+        }
+        .onChange(of: appMode) { mode in
+            if mode != .youtube && isFullscreen { isFullscreen = false }
+        }
+        .onChange(of: isFullscreen) { full in
+            updateOrientation(fullscreen: full)
         }
         .sheet(isPresented: $showAccountSheet) {
             AccountSheet(
@@ -198,17 +300,26 @@ struct MainView: View {
                 onDismiss: { showAccountSheet = false },
                 onModeSwitch: {
                     appMode = appMode == .youtube ? .youtubeMusic : .youtube
-                    currentScreen = appMode == .youtube ? .youtubeFeed : .musicHome
+                },
+                onSignInClick: {
+                    showGoogleAuthSheet = true
                 }
             )
-            .presentationDetents([.fraction(0.55), .large])
+            .presentationDetents([.fraction(0.60), .large])
         }
-        .sheet(isPresented: $showPlayerSheet) {
-            PlayerBottomSheet(
-                appMode: appMode,
-                onDismiss: { showPlayerSheet = false }
+        .fullScreenCover(isPresented: $showGoogleAuthSheet) {
+            GoogleAuthSheet(
+                onDismiss: { showGoogleAuthSheet = false },
+                onLoginSuccess: { showGoogleAuthSheet = false }
             )
         }
     }
-}
 
+    private func updateOrientation(fullscreen: Bool) {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene else { return }
+        if #available(iOS 16.0, *) {
+            let mask: UIInterfaceOrientationMask = fullscreen ? .landscapeRight : .portrait
+            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }
+        }
+    }
+}

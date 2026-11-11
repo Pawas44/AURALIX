@@ -38,6 +38,10 @@
 		VG000029 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00029 /* MainView.swift */; };
 		VG000030 /* VideoGuardApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00030 /* VideoGuardApp.swift */; };
 		VG000031 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = VGF00031 /* Assets.xcassets */; };
+		VG000032 /* YouTubeSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00033 /* YouTubeSyncEngine.swift */; };
+		VG000033 /* YouTubeVideoPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00034 /* YouTubeVideoPlayer.swift */; };
+		VG000034 /* PlayerControlsOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00035 /* PlayerControlsOverlay.swift */; };
+		VG000035 /* GoogleAuthSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00036 /* GoogleAuthSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -74,6 +78,10 @@
 		VGF00030 /* VideoGuardApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoGuardApp.swift; sourceTree = "<group>"; };
 		VGF00031 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		VGF00032 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		VGF00033 /* YouTubeSyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeSyncEngine.swift; sourceTree = "<group>"; };
+		VGF00034 /* YouTubeVideoPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeVideoPlayer.swift; sourceTree = "<group>"; };
+		VGF00035 /* PlayerControlsOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerControlsOverlay.swift; sourceTree = "<group>"; };
+		VGF00036 /* GoogleAuthSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuthSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -136,6 +144,7 @@
 				VGF00007 /* AccountRepository.swift */,
 				VGF00008 /* UserDataRepository.swift */,
 				VGF00009 /* YouTubeSearchEngine.swift */,
+				VGF00033 /* YouTubeSyncEngine.swift */,
 			);
 			path = Data;
 			sourceTree = "<group>";
@@ -169,6 +178,9 @@
 				VGF00017 /* PlayerControls.swift */,
 				VGF00018 /* PlayerBottomSheet.swift */,
 				VGF00019 /* AccountSheet.swift */,
+				VGF00034 /* YouTubeVideoPlayer.swift */,
+				VGF00035 /* PlayerControlsOverlay.swift */,
+				VGF00036 /* GoogleAuthSheet.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -297,6 +309,10 @@
 				VG000028 /* PlaylistDetailView.swift in Sources */,
 				VG000029 /* MainView.swift in Sources */,
 				VG000030 /* VideoGuardApp.swift in Sources */,
+				VG000032 /* YouTubeSyncEngine.swift in Sources */,
+				VG000033 /* YouTubeVideoPlayer.swift in Sources */,
+				VG000034 /* PlayerControlsOverlay.swift in Sources */,
+				VG000035 /* GoogleAuthSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

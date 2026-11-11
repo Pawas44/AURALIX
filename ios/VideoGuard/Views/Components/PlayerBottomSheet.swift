@@ -6,138 +6,202 @@ struct PlayerBottomSheet: View {
 
     @ObservedObject var playbackService = MediaPlaybackService.shared
 
+    @State private var showQualityPicker = false
+    @State private var showSpeedPicker = false
+    @State private var showSleepTimerPicker = false
+    @State private var showStatsAlert = false
+
+    private let qualities = ["Auto (1080p)", "1080p HD", "720p HD", "480p", "360p"]
+    private let speeds: [Float] = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+    private let timerOptions: [(String, Int?)] = [
+        ("Off", nil), ("15 minutes", 15), ("30 minutes", 30), ("45 minutes", 45), ("60 minutes", 60)
+    ]
+
     var body: some View {
-        let state = playbackService.playbackState
-        let track = state.currentTrack
-        let bgColor = appMode == .youtube ? AppTheme.youTubeDarkBg : AppTheme.ytMusicBlack
-        let accentColor = appMode == .youtube ? AppTheme.youTubeRed : AppTheme.ytMusicRedAccent
-
         ZStack {
-            bgColor.ignoresSafeArea()
+            Color(hex: 0x18192A).ignoresSafeArea()
 
-            if let current = track {
-                VStack(spacing: 20) {
-                    // Header Drag Indicator & Down arrow
-                    HStack {
-                        Button(action: onDismiss) {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(AppTheme.youTubeTextPrimary)
-                        }
-                        Spacer()
-                        Text("Now Playing")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(AppTheme.youTubeTextSecondary)
-                        Spacer()
-                        Button(action: {}) {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 18))
-                                .foregroundColor(AppTheme.youTubeTextPrimary)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 16)
-
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Playback settings")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
                     Spacer()
-
-                    // Big Artwork
-                    AsyncImage(url: URL(string: current.thumbnailUrl)) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Rectangle().fill(AppTheme.youTubeCardBg)
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(6)
                     }
-                    .frame(width: 280, height: 280)
-                    .cornerRadius(16)
-                    .shadow(color: Color.black.opacity(0.5), radius: 10, x: 0, y: 5)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
 
-                    Spacer()
+                Divider().background(Color(hex: 0x333333))
 
-                    // Title & Artist
-                    VStack(spacing: 6) {
-                        Text(current.title)
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundColor(AppTheme.youTubeTextPrimary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .padding(.horizontal, 24)
+                ScrollView {
+                    VStack(spacing: 4) {
+                        SettingsActionRow(
+                            icon: "sparkles.tv",
+                            title: "Quality",
+                            subtitle: playbackService.playbackQuality
+                        ) { showQualityPicker = true }
 
-                        Text(current.isMusicTrack && !current.artist.isEmpty ? current.artist : current.channelName)
-                            .font(.system(size: 15))
-                            .foregroundColor(AppTheme.youTubeTextSecondary)
+                        let speedLabel = playbackService.playbackSpeed == 1.0
+                            ? "Normal (1.0x)"
+                            : String(format: "%.2gx", playbackService.playbackSpeed)
+                        SettingsActionRow(
+                            icon: "speedometer",
+                            title: "Playback speed",
+                            subtitle: speedLabel
+                        ) { showSpeedPicker = true }
+
+                        SettingsToggleRow(
+                            icon: "headphones",
+                            title: "Background playback",
+                            subtitle: "Keep audio playing when screen is off",
+                            isOn: Binding(
+                                get: { playbackService.isBackgroundPlayEnabled },
+                                set: { _ in playbackService.toggleBackgroundPlay() }
+                            )
+                        )
+
+                        SettingsToggleRow(
+                            icon: "repeat",
+                            title: "Loop video",
+                            subtitle: "Automatically replay when finished",
+                            isOn: Binding(
+                                get: { playbackService.isLoopEnabled },
+                                set: { _ in playbackService.toggleLoop() }
+                            )
+                        )
+
+                        SettingsToggleRow(
+                            icon: "play.circle",
+                            title: "Autoplay",
+                            subtitle: "Automatically play next video when finished",
+                            isOn: Binding(
+                                get: { playbackService.isAutoplayEnabled },
+                                set: { _ in playbackService.toggleAutoplay() }
+                            )
+                        )
+
+                        SettingsToggleRow(
+                            icon: "captions.bubble",
+                            title: "Captions (Subtitles)",
+                            subtitle: "Display closed captions on video",
+                            isOn: Binding(
+                                get: { playbackService.isCaptionsEnabled },
+                                set: { _ in playbackService.toggleCaptions() }
+                            )
+                        )
+
+                        let timerText = playbackService.sleepTimerMinutes.map { "\($0) minutes remaining" } ?? "Off"
+                        SettingsActionRow(
+                            icon: "timer",
+                            title: "Sleep timer",
+                            subtitle: timerText
+                        ) { showSleepTimerPicker = true }
+
+                        SettingsActionRow(
+                            icon: "info.circle",
+                            title: "Stats & video info",
+                            subtitle: "Resolution, ID, codec & channel"
+                        ) { showStatsAlert = true }
                     }
-
-                    // Progress Slider
-                    VStack(spacing: 6) {
-                        let progress = state.duration > 0 ? Double(state.currentPosition) / Double(state.duration) : 0.0
-
-                        Slider(value: Binding(
-                            get: { progress },
-                            set: { newVal in
-                                playbackService.seekTo(position: Int64(newVal * Double(state.duration)))
-                            }
-                        ))
-                        .accentColor(accentColor)
-
-                        HStack {
-                            Text(formatTime(state.currentPosition))
-                                .font(.system(size: 12))
-                                .foregroundColor(AppTheme.youTubeTextSecondary)
-                            Spacer()
-                            Text(formatTime(state.duration))
-                                .font(.system(size: 12))
-                                .foregroundColor(AppTheme.youTubeTextSecondary)
-                        }
-                    }
-                    .padding(.horizontal, 24)
-
-                    // Control Buttons
-                    HStack(spacing: 28) {
-                        Button(action: { playbackService.toggleShuffle() }) {
-                            Image(systemName: "shuffle")
-                                .font(.system(size: 20))
-                                .foregroundColor(state.isShuffled ? accentColor : AppTheme.youTubeTextSecondary)
-                        }
-
-                        Button(action: { playbackService.previous() }) {
-                            Image(systemName: "backward.fill")
-                                .font(.system(size: 26))
-                                .foregroundColor(AppTheme.youTubeTextPrimary)
-                        }
-
-                        Button(action: { playbackService.togglePlayPause() }) {
-                            ZStack {
-                                Circle()
-                                    .fill(accentColor)
-                                    .frame(width: 64, height: 64)
-                                Image(systemName: state.isPlaying ? "pause.fill" : "play.fill")
-                                    .font(.system(size: 28))
-                                    .foregroundColor(.white)
-                            }
-                        }
-
-                        Button(action: { playbackService.next() }) {
-                            Image(systemName: "forward.fill")
-                                .font(.system(size: 26))
-                                .foregroundColor(AppTheme.youTubeTextPrimary)
-                        }
-
-                        Button(action: { playbackService.toggleRepeat() }) {
-                            Image(systemName: state.repeatMode == .one ? "repeat.1" : "repeat")
-                                .font(.system(size: 20))
-                                .foregroundColor(state.repeatMode != .off ? accentColor : AppTheme.youTubeTextSecondary)
-                        }
-                    }
-                    .padding(.bottom, 40)
+                    .padding(.vertical, 8)
                 }
             }
         }
-    }
-
-    private func formatTime(_ ms: Int64) -> String {
-        let totalSeconds = ms / 1000
-        let minutes = totalSeconds / 60
-        let seconds = totalSeconds % 60
-        return String(format: "%d:%02d", minutes, seconds)
+        .confirmationDialog("Select Video Quality", isPresented: $showQualityPicker, titleVisibility: .visible) {
+            ForEach(qualities, id: \.self) { q in
+                Button(q) { playbackService.setPlaybackQuality(q) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Select Playback Speed", isPresented: $showSpeedPicker, titleVisibility: .visible) {
+            ForEach(speeds, id: \.self) { spd in
+                let label = spd == 1.0 ? "Normal (1.0x)" : String(format: "%.2gx", spd)
+                Button(label) { playbackService.setPlaybackSpeed(spd) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Sleep Timer", isPresented: $showSleepTimerPicker, titleVisibility: .visible) {
+            ForEach(timerOptions, id: \.0) { opt in
+                Button(opt.0) { playbackService.setSleepTimer(minutes: opt.1) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .alert("Stats & Video Info", isPresented: $showStatsAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if let track = playbackService.currentTrack {
+                Text("Video ID: \(track.id)\nChannel: \(track.channelName)\nQuality: \(playbackService.playbackQuality)\nSpeed: \(playbackService.playbackSpeed)x\nViews: \(track.views)")
+            } else {
+                Text("No active media loaded.")
+            }
+        }
     }
 }
 
+private struct SettingsActionRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 14) {
+                Image(systemName: icon)
+                    .font(.system(size: 19))
+                    .foregroundColor(.white)
+                    .frame(width: 26)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.white)
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(hex: 0xAAAAAA))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(hex: 0x777777))
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
+    }
+}
+
+private struct SettingsToggleRow: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 19))
+                .foregroundColor(.white)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.white)
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundColor(Color(hex: 0xAAAAAA))
+            }
+            Spacer()
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .tint(AppTheme.youTubeRed)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 10)
+    }
+}

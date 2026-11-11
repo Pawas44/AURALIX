@@ -18,4 +18,5 @@ struct VideoItem: Identifiable, Hashable, Codable {
     var lyrics: String = ""
     var category: String = ""
     var mood: String = ""
+    var channelId: String = ""
 }

@@ -1,37 +1,5 @@
 import SwiftUI
 
-enum YouTubeTab: String, CaseIterable {
-    case home = "Home"
-    case shorts = "Shorts"
-    case subscriptions = "Subscriptions"
-    case you = "You"
-
-    var icon: String {
-        switch self {
-        case .home: return "house.fill"
-        case .shorts: return "play.square.stack.fill"
-        case .subscriptions: return "rectangle.stack.badge.play.fill"
-        case .you: return "person.crop.circle.fill"
-        }
-    }
-}
-
-enum MusicTab: String, CaseIterable {
-    case home = "Home"
-    case samples = "Samples"
-    case explore = "Explore"
-    case library = "Library"
-
-    var icon: String {
-        switch self {
-        case .home: return "house.fill"
-        case .samples: return "sparkles"
-        case .explore: return "safari.fill"
-        case .library: return "play.square.stack"
-        }
-    }
-}
-
 struct YouTubeBottomNavBar: View {
     @Binding var selectedTab: YouTubeTab
 
@@ -42,17 +10,23 @@ struct YouTubeBottomNavBar: View {
                 Button(action: { selectedTab = tab }) {
                     VStack(spacing: 3) {
                         Image(systemName: tab.icon)
-                            .font(.system(size: 20))
+                            .font(.system(size: 19))
                         Text(tab.rawValue)
                             .font(.system(size: 10, weight: selectedTab == tab ? .semibold : .regular))
                     }
-                    .foregroundColor(selectedTab == tab ? AppTheme.youTubeTextPrimary : AppTheme.youTubeTextSecondary)
+                    .foregroundColor(selectedTab == tab ? .white : AppTheme.youTubeTextSecondary)
                 }
                 Spacer()
             }
         }
         .padding(.vertical, 8)
-        .background(AppTheme.youTubeDarkBg)
+        .background(Color(hex: 0x0A0B12, alpha: 0.96))
+        .overlay(
+            Rectangle()
+                .frame(height: 0.5)
+                .foregroundColor(Color.white.opacity(0.12)),
+            alignment: .top
+        )
     }
 }
 
@@ -66,17 +40,22 @@ struct MusicBottomNavBar: View {
                 Button(action: { selectedTab = tab }) {
                     VStack(spacing: 3) {
                         Image(systemName: tab.icon)
-                            .font(.system(size: 20))
+                            .font(.system(size: 19))
                         Text(tab.rawValue)
                             .font(.system(size: 10, weight: selectedTab == tab ? .semibold : .regular))
                     }
-                    .foregroundColor(selectedTab == tab ? AppTheme.ytMusicTextPrimary : AppTheme.ytMusicTextSecondary)
+                    .foregroundColor(selectedTab == tab ? .white : AppTheme.ytMusicTextSecondary)
                 }
                 Spacer()
             }
         }
         .padding(.vertical, 8)
-        .background(AppTheme.ytMusicBlack)
+        .background(Color(hex: 0x08050D, alpha: 0.96))
+        .overlay(
+            Rectangle()
+                .frame(height: 0.5)
+                .foregroundColor(Color.white.opacity(0.12)),
+            alignment: .top
+        )
     }
 }
-

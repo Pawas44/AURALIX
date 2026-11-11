@@ -7,23 +7,21 @@ struct MiniPlayer: View {
     @ObservedObject var playbackService = MediaPlaybackService.shared
 
     var body: some View {
-        if let track = playbackService.playbackState.currentTrack {
-            let bgColor = appMode == .youtube ? AppTheme.youTubeCardBg : AppTheme.ytMusicCardBg
+        if let track = playbackService.currentTrack {
             let accentColor = appMode == .youtube ? AppTheme.youTubeRed : AppTheme.ytMusicRedAccent
-            let progress: Double = playbackService.playbackState.duration > 0
-                ? Double(playbackService.playbackState.currentPosition) / Double(playbackService.playbackState.duration)
+            let progress: Double = playbackService.durationSeconds > 0
+                ? min(1.0, max(0.0, playbackService.currentTimeSeconds / playbackService.durationSeconds))
                 : 0.0
 
             VStack(spacing: 0) {
-                // Progress bar
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Rectangle()
-                            .fill(accentColor.opacity(0.2))
+                            .fill(accentColor.opacity(0.25))
                             .frame(width: geo.size.width, height: 2)
                         Rectangle()
                             .fill(accentColor)
-                            .frame(width: max(0, min(geo.size.width, geo.size.width * CGFloat(progress))), height: 2)
+                            .frame(width: geo.size.width * CGFloat(progress), height: 2)
                     }
                 }
                 .frame(height: 2)
@@ -34,40 +32,36 @@ struct MiniPlayer: View {
                     } placeholder: {
                         Rectangle().fill(Color.gray.opacity(0.3))
                     }
-                    .frame(width: 44, height: 44)
-                    .cornerRadius(4)
+                    .frame(width: 48, height: 40)
+                    .cornerRadius(6)
                     .clipped()
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(track.title)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(appMode == .youtube ? AppTheme.youTubeTextPrimary : AppTheme.ytMusicTextPrimary)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
                             .lineLimit(1)
 
                         Text(track.isMusicTrack && !track.artist.isEmpty ? track.artist : track.channelName)
-                            .font(.system(size: 12))
-                            .foregroundColor(appMode == .youtube ? AppTheme.youTubeTextSecondary : AppTheme.ytMusicTextSecondary)
+                            .font(.system(size: 11))
+                            .foregroundColor(AppTheme.youTubeTextSecondary)
                             .lineLimit(1)
                     }
 
                     Spacer()
 
-                    Button(action: {
-                        playbackService.togglePlayPause()
-                    }) {
-                        Image(systemName: playbackService.playbackState.isPlaying ? "pause.fill" : "play.fill")
+                    Button(action: { playbackService.togglePlayPause() }) {
+                        Image(systemName: playbackService.isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 20))
-                            .foregroundColor(appMode == .youtube ? AppTheme.youTubeTextPrimary : AppTheme.ytMusicTextPrimary)
+                            .foregroundColor(.white)
                             .frame(width: 36, height: 36)
                     }
 
-                    Button(action: {
-                        playbackService.stop()
-                    }) {
+                    Button(action: { playbackService.stop() }) {
                         Image(systemName: "xmark")
-                            .font(.system(size: 16))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(AppTheme.youTubeTextSecondary)
-                            .frame(width: 36, height: 36)
+                            .frame(width: 34, height: 34)
                     }
                 }
                 .padding(.horizontal, 10)
@@ -77,8 +71,9 @@ struct MiniPlayer: View {
                     onClick()
                 }
             }
-            .background(bgColor)
+            .liquidGlass(cornerRadius: 12, backgroundColor: Color(hex: 0x151624, alpha: 0.92), borderWidth: 0.8)
+            .padding(.horizontal, 6)
+            .padding(.bottom, 2)
         }
     }
 }
-
