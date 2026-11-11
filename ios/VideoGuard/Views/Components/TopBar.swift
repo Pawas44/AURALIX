@@ -9,91 +9,72 @@ struct YouTubeTopBar: View {
     let onToggleBackgroundPlay: () -> Void
     let onProfileClick: () -> Void
 
-    @ObservedObject var accountRepo = AccountRepository.shared
-
     var body: some View {
-        HStack(spacing: 10) {
-            // App Logo + Title
-            Button(action: onTitleClick) {
-                HStack(spacing: 6) {
-                    if appMode == .youtube {
-                        Image(systemName: "play.rectangle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(AppTheme.youTubeRed)
-                        Text("YouTube")
-                            .font(.system(size: 19, weight: .bold))
-                            .foregroundColor(AppTheme.youTubeTextPrimary)
-                    } else {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 22, weight: .bold))
-                            .foregroundColor(AppTheme.ytMusicRedAccent)
-                        Text("Music")
-                            .font(.system(size: 19, weight: .bold))
-                            .foregroundColor(AppTheme.ytMusicTextPrimary)
-                    }
-                }
-            }
+        let isMusic = appMode == .youtubeMusic
 
-            Spacer()
-
-            // Mode Toggle Pill (YouTube <-> Music)
-            ModeToggle(currentMode: appMode, onModeChanged: onModeChanged)
-
-            // Background Audio Play Toggle
-            Button(action: onToggleBackgroundPlay) {
-                Image(systemName: "headphones")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(isBackgroundPlay ? Color(hex: 0x4CAF50) : AppTheme.youTubeTextSecondary)
-                    .padding(7)
-                    .background(isBackgroundPlay ? Color(hex: 0x4CAF50).opacity(0.18) : Color.white.opacity(0.06))
-                    .clipShape(Circle())
-            }
-
-            // Search Icon
-            Button(action: onSearchClick) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(appMode == .youtube ? AppTheme.youTubeTextPrimary : AppTheme.ytMusicTextPrimary)
-            }
-
-            // Account Avatar / Sign-in Button
-            Button(action: onProfileClick) {
-                if accountRepo.isIncognito {
-                    Image(systemName: "eye.slash.fill")
-                        .font(.system(size: 14))
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: onTitleClick) {
+                    Text("VideoGuard")
+                        .font(.system(size: 21, weight: .heavy))
+                        .tracking(-0.5)
                         .foregroundColor(.white)
-                        .frame(width: 28, height: 28)
-                        .background(Color(hex: 0x333333))
-                        .clipShape(Circle())
-                } else if let acc = accountRepo.currentAccount {
-                    if let urlStr = acc.avatarUrl, let url = URL(string: urlStr) {
-                        AsyncImage(url: url) { image in
-                            image.resizable().aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            Text(acc.initial)
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(.white)
-                                .frame(width: 28, height: 28)
-                                .background(Color(argbHex: acc.avatarBgColorHex))
-                        }
-                        .frame(width: 28, height: 28)
-                        .clipShape(Circle())
-                    } else {
-                        Text(acc.initial)
+                }
+
+                Spacer()
+
+                // Liquid Glass Mode Switcher Pill (Matches Android TopBar)
+                Button(action: {
+                    onModeChanged(isMusic ? .youtube : .youtubeMusic)
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: isMusic ? "play.fill" : "music.note")
                             .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(isMusic ? AppTheme.youTubeRed : AppTheme.ytMusicRedAccent)
+                        Text(isMusic ? "Video" : "Music")
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundColor(.white)
-                            .frame(width: 28, height: 28)
-                            .background(Color(argbHex: acc.avatarBgColorHex))
-                            .clipShape(Circle())
                     }
-                } else {
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: 22))
-                        .foregroundColor(appMode == .youtube ? AppTheme.youTubeTextPrimary : AppTheme.ytMusicTextPrimary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.16), Color.white.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20)
+                            .strokeBorder(LiquidGlassDefaults.borderSpecular, lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.45), radius: 6, x: 0, y: 3)
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                LinearGradient(
+                    colors: [Color(hex: 0x121320, alpha: 0.85), Color(hex: 0x0C0D16, alpha: 0.65)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+
+            // Specular highlight hairline
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    Color.white.opacity(0.18),
+                    Color.white.opacity(0.35),
+                    Color.white.opacity(0.18),
+                    Color.clear
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(height: 0.8)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 }

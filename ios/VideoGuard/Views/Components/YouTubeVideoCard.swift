@@ -18,19 +18,28 @@ struct YouTubeVideoCard: View {
                     }
                     .frame(maxWidth: .infinity)
                     .aspectRatio(16/9, contentMode: .fit)
-                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                    )
 
                     if !video.duration.isEmpty {
                         Text(video.duration)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 11, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.black.opacity(0.82))
-                            .cornerRadius(4)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.black.opacity(0.75))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .strokeBorder(Color.white.opacity(0.28), lineWidth: 0.8)
+                            )
                             .padding(8)
                     }
                 }
+                .padding(.horizontal, 8)
             }
 
             HStack(alignment: .top, spacing: 12) {
@@ -46,15 +55,16 @@ struct YouTubeVideoCard: View {
                     } placeholder: {
                         Circle().fill(Color.gray.opacity(0.4))
                     }
-                    .frame(width: 36, height: 36)
+                    .frame(width: 38, height: 38)
                     .clipShape(Circle())
+                    .overlay(Circle().strokeBorder(Color.white.opacity(0.20), lineWidth: 1))
                 }
 
                 Button(action: onClick) {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(video.title)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(AppTheme.youTubeTextPrimary)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Color(hex: 0xF1F1F1))
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
 
@@ -83,11 +93,11 @@ struct YouTubeVideoCard: View {
                     Image(systemName: "ellipsis")
                         .rotationEffect(.degrees(90))
                         .font(.system(size: 14))
-                        .foregroundColor(AppTheme.youTubeTextSecondary)
+                        .foregroundColor(.white)
                         .padding(6)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .padding(.vertical, 10)
         }
     }

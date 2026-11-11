@@ -156,45 +156,57 @@ struct MainView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                // Mini Player Bar
-                if playbackService.currentTrack != nil && !isPlayerExpanded {
-                    MiniPlayer(appMode: appMode) {
-                        isPlayerExpanded = true
-                    }
-                }
-
-                // Bottom Navigation Bar
-                if !isPlayerExpanded {
-                    if appMode == .youtube {
-                        YouTubeBottomNavBar(selectedTab: Binding(
-                            get: { selectedYTTab },
-                            set: { newTab in
-                                activeChannelVideo = nil
-                                activePlaylist = nil
-                                isSearchActive = false
-                                if selectedYTTab == .home && newTab == .home {
-                                    homeScrollToTopTrigger += 1
-                                }
-                                selectedYTTab = newTab
-                            }
-                        ))
-                    } else {
-                        MusicBottomNavBar(selectedTab: Binding(
-                            get: { selectedMusicTab },
-                            set: { newTab in
-                                activeChannelVideo = nil
-                                activePlaylist = nil
-                                isSearchActive = false
-                                if selectedMusicTab == .home && newTab == .home {
-                                    homeScrollToTopTrigger += 1
-                                }
-                                selectedMusicTab = newTab
-                            }
-                        ))
-                    }
-                }
             }
+
+                // Floating Mini Player Bar & Liquid Glass Bottom Nav Docked at Bottom
+                if !isPlayerExpanded {
+                    VStack(spacing: 0) {
+                        Spacer()
+                        if playbackService.currentTrack != nil {
+                            MiniPlayer(appMode: appMode) {
+                                isPlayerExpanded = true
+                            }
+                        }
+
+                        let isHomeSelected = !isSearchActive && activeChannelVideo == nil && activePlaylist == nil && (appMode == .youtube ? selectedYTTab == .home : selectedMusicTab == .home)
+                        let isAccountSelected = !isSearchActive && activeChannelVideo == nil && activePlaylist == nil && (appMode == .youtube ? selectedYTTab == .you : selectedMusicTab == .library)
+
+                        LiquidBottomNavBar(
+                            isHomeSelected: isHomeSelected,
+                            isSearchSelected: isSearchActive,
+                            isAccountSelected: isAccountSelected,
+                            onHomeClick: {
+                                let alreadyOnHome = isHomeSelected
+                                activeChannelVideo = nil
+                                activePlaylist = nil
+                                isSearchActive = false
+                                if alreadyOnHome {
+                                    homeScrollToTopTrigger += 1
+                                }
+                                if appMode == .youtube { selectedYTTab = .home }
+                                else { selectedMusicTab = .home }
+                            },
+                            onSearchClick: {
+                                activeChannelVideo = nil
+                                activePlaylist = nil
+                                isSearchActive = true
+                            },
+                            onAccountClick: {
+                                activeChannelVideo = nil
+                                activePlaylist = nil
+                                isSearchActive = false
+                                if appMode == .youtube {
+                                    if selectedYTTab == .you { showAccountSheet = true }
+                                    else { selectedYTTab = .you }
+                                } else {
+                                    if selectedMusicTab == .library { showAccountSheet = true }
+                                    else { selectedMusicTab = .library }
+                                }
+                            }
+                        )
+                    }
+                    .zIndex(5)
+                }
 
             // Expanded Detail / Music Player Overlay
             if isPlayerExpanded, let video = playbackService.currentTrack {

@@ -25,28 +25,12 @@ struct YouTubeFeedView: View {
                         let isSelected = category == selectedCategory
                         Button(action: { selectedCategory = category }) {
                             Text(category)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(isSelected ? AppTheme.youTubeChipSelectedText : AppTheme.youTubeTextPrimary)
+                                .font(.system(size: 13, weight: isSelected ? .bold : .medium))
+                                .foregroundColor(isSelected ? .white : Color(hex: 0xD4D4E2))
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(isSelected ? AppTheme.youTubeChipSelectedBg : Color.white.opacity(0.08))
-                                )
+                                .liquidGlassPill(isSelected: isSelected, activeColor: AppTheme.youTubeRed)
                         }
-                    }
-
-                    Button(action: onSwitchToMusic) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "music.note")
-                                .font(.system(size: 12))
-                            Text("Music Mode")
-                                .font(.system(size: 13, weight: .medium))
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .liquidGlassPill(isSelected: true, activeColor: AppTheme.ytMusicRedAccent)
                     }
                 }
                 .padding(.horizontal, 12)

@@ -188,15 +188,16 @@ fun MainScreen() {
         }
 
         // Persistent Shell Structure
-        Column(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            // Mode-Aware Top Bar (shown on Feed / Home tabs when no child overlay is active)
-            if (!isSearchActive && activeChannelVideo == null && activePlaylist == null) {
-                if ((appMode == AppMode.YOUTUBE && selectedYTTab != YouTubeTab.YOU) ||
-                    (appMode == AppMode.YOUTUBE_MUSIC && selectedMusicTab != YouTubeMusicTab.LIBRARY)
-                ) {
-                    TopBar(
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier.fillMaxSize()
+            ) {
+                // Mode-Aware Top Bar (shown on Feed / Home tabs when no child overlay is active)
+                if (!isSearchActive && activeChannelVideo == null && activePlaylist == null) {
+                    if ((appMode == AppMode.YOUTUBE && selectedYTTab != YouTubeTab.YOU) ||
+                        (appMode == AppMode.YOUTUBE_MUSIC && selectedMusicTab != YouTubeMusicTab.LIBRARY)
+                    ) {
+                        TopBar(
                         currentMode = appMode,
                         onModeChanged = { newMode ->
                             appMode = newMode
@@ -348,80 +349,89 @@ fun MainScreen() {
                     }
                 }
             }
-
-            // Mini Player Bar (docked above Bottom Nav when video is loaded & minimized)
-            if (currentVideo != null && !isPlayerExpanded) {
-                MiniPlayerBar(
-                    video = currentVideo,
-                    isPlaying = isPlaying,
-                    currentMode = appMode,
-                    onExpand = { isPlayerExpanded = true },
-                    onPlayPauseToggle = { PlaybackController.togglePlayPause() },
-                    onClose = { PlaybackController.stop() }
-                )
             }
 
-            // Bottom Navigation Bar
-            if (!isPlayerExpanded) {
-                BottomNavBar(
-                    currentMode = appMode,
-                    selectedYTTab = selectedYTTab,
-                    selectedMusicTab = selectedMusicTab,
-                    isSearchActive = isSearchActive,
-                    onHomeClick = {
-                        val wasAlreadyOnHome = if (appMode == AppMode.YOUTUBE) {
-                            !isSearchActive && activeChannelVideo == null && activePlaylist == null && selectedYTTab == YouTubeTab.HOME
-                        } else {
-                            !isSearchActive && activeChannelVideo == null && activePlaylist == null && selectedMusicTab == YouTubeMusicTab.HOME
-                        }
-                        activeChannelVideo = null
-                        activePlaylist = null
-                        isSearchActive = false
-                        if (wasAlreadyOnHome) {
-                            homeScrollToTopTrigger++
-                        }
-                        if (appMode == AppMode.YOUTUBE) {
-                            selectedYTTab = YouTubeTab.HOME
-                        } else {
-                            selectedMusicTab = YouTubeMusicTab.HOME
-                        }
-                    },
-                    onSearchClick = {
-                        activeChannelVideo = null
-                        activePlaylist = null
-                        isSearchActive = true
-                    },
-                    onAccountClick = {
-                        activeChannelVideo = null
-                        activePlaylist = null
-                        isSearchActive = false
-                        if (appMode == AppMode.YOUTUBE) {
-                            if (selectedYTTab == YouTubeTab.YOU) {
-                                showAccountSheet = true
+            // Floating Mini Player & Bottom Navigation Capsule Docked at Bottom
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .zIndex(5f)
+            ) {
+                // Mini Player Bar (docked above Bottom Nav when video is loaded & minimized)
+                if (currentVideo != null && !isPlayerExpanded) {
+                    MiniPlayerBar(
+                        video = currentVideo,
+                        isPlaying = isPlaying,
+                        currentMode = appMode,
+                        onExpand = { isPlayerExpanded = true },
+                        onPlayPauseToggle = { PlaybackController.togglePlayPause() },
+                        onClose = { PlaybackController.stop() }
+                    )
+                }
+
+                // Bottom Navigation Bar
+                if (!isPlayerExpanded) {
+                    BottomNavBar(
+                        currentMode = appMode,
+                        selectedYTTab = selectedYTTab,
+                        selectedMusicTab = selectedMusicTab,
+                        isSearchActive = isSearchActive,
+                        onHomeClick = {
+                            val wasAlreadyOnHome = if (appMode == AppMode.YOUTUBE) {
+                                !isSearchActive && activeChannelVideo == null && activePlaylist == null && selectedYTTab == YouTubeTab.HOME
                             } else {
-                                selectedYTTab = YouTubeTab.YOU
+                                !isSearchActive && activeChannelVideo == null && activePlaylist == null && selectedMusicTab == YouTubeMusicTab.HOME
                             }
-                        } else {
-                            if (selectedMusicTab == YouTubeMusicTab.LIBRARY) {
-                                showAccountSheet = true
+                            activeChannelVideo = null
+                            activePlaylist = null
+                            isSearchActive = false
+                            if (wasAlreadyOnHome) {
+                                homeScrollToTopTrigger++
+                            }
+                            if (appMode == AppMode.YOUTUBE) {
+                                selectedYTTab = YouTubeTab.HOME
                             } else {
-                                selectedMusicTab = YouTubeMusicTab.LIBRARY
+                                selectedMusicTab = YouTubeMusicTab.HOME
                             }
+                        },
+                        onSearchClick = {
+                            activeChannelVideo = null
+                            activePlaylist = null
+                            isSearchActive = true
+                        },
+                        onAccountClick = {
+                            activeChannelVideo = null
+                            activePlaylist = null
+                            isSearchActive = false
+                            if (appMode == AppMode.YOUTUBE) {
+                                if (selectedYTTab == YouTubeTab.YOU) {
+                                    showAccountSheet = true
+                                } else {
+                                    selectedYTTab = YouTubeTab.YOU
+                                }
+                            } else {
+                                if (selectedMusicTab == YouTubeMusicTab.LIBRARY) {
+                                    showAccountSheet = true
+                                } else {
+                                    selectedMusicTab = YouTubeMusicTab.LIBRARY
+                                }
+                            }
+                        },
+                        onYTTabSelected = { tab ->
+                            activeChannelVideo = null
+                            activePlaylist = null
+                            isSearchActive = false
+                            selectedYTTab = tab
+                        },
+                        onMusicTabSelected = { tab ->
+                            activeChannelVideo = null
+                            activePlaylist = null
+                            isSearchActive = false
+                            selectedMusicTab = tab
                         }
-                    },
-                    onYTTabSelected = { tab ->
-                        activeChannelVideo = null
-                        activePlaylist = null
-                        isSearchActive = false
-                        selectedYTTab = tab
-                    },
-                    onMusicTabSelected = { tab ->
-                        activeChannelVideo = null
-                        activePlaylist = null
-                        isSearchActive = false
-                        selectedMusicTab = tab
-                    }
-                )
+                    )
+                }
             }
         }
 

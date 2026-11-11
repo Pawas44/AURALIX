@@ -231,6 +231,7 @@ object PlaybackController {
         if (duration > 0f) {
             _durationSeconds.value = duration
         }
+        MediaPlaybackService.syncProgress(current, _durationSeconds.value)
     }
 
     fun seekTo(seconds: Float) {

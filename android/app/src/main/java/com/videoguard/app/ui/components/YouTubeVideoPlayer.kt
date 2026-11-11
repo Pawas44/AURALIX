@@ -23,21 +23,38 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.videoguard.app.service.PlaybackController
 
 class BackgroundPlayWebView(context: Context) : WebView(context) {
+    override fun getWindowVisibility(): Int {
+        return if (PlaybackController.isBackgroundPlayEnabled.value) View.VISIBLE else super.getWindowVisibility()
+    }
+
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(if (PlaybackController.isBackgroundPlayEnabled.value) true else isVisible)
+        if (PlaybackController.isBackgroundPlayEnabled.value) {
+            resumeTimers()
+        }
+    }
+
     override fun onWindowVisibilityChanged(visibility: Int) {
-        // Report VISIBLE so Chromium does not kill audio decoder in background
-        super.onWindowVisibilityChanged(View.VISIBLE)
+        // Report VISIBLE so Chromium does not kill audio decoder in background or lock screen
+        val effective = if (PlaybackController.isBackgroundPlayEnabled.value) View.VISIBLE else visibility
+        super.onWindowVisibilityChanged(effective)
+        if (PlaybackController.isBackgroundPlayEnabled.value) {
+            resumeTimers()
+        }
     }
 
     override fun dispatchWindowVisibilityChanged(visibility: Int) {
-        super.dispatchWindowVisibilityChanged(View.VISIBLE)
+        val effective = if (PlaybackController.isBackgroundPlayEnabled.value) View.VISIBLE else visibility
+        super.dispatchWindowVisibilityChanged(effective)
     }
 
     override fun onVisibilityChanged(changedView: View, visibility: Int) {
-        super.onVisibilityChanged(changedView, View.VISIBLE)
+        val effective = if (PlaybackController.isBackgroundPlayEnabled.value) View.VISIBLE else visibility
+        super.onVisibilityChanged(changedView, effective)
     }
 
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
-        super.onWindowFocusChanged(true)
+        super.onWindowFocusChanged(if (PlaybackController.isBackgroundPlayEnabled.value) true else hasWindowFocus)
     }
 
     override fun onTouchEvent(event: MotionEvent?): Boolean {
@@ -507,6 +524,28 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             }
             setInterval(cleanEmbedDOM, 50);
 
+            // Silent WebAudio keep-alive so Android Chromium does not suspend audio thread on lock screen
+            window._vgAudioCtx = null;
+            function ensureAudioKeepAlive() {
+              try {
+                if (!window._vgAudioCtx) {
+                  var AC = window.AudioContext || window.webkitAudioContext;
+                  if (AC) {
+                    window._vgAudioCtx = new AC();
+                    var osc = window._vgAudioCtx.createOscillator();
+                    var gain = window._vgAudioCtx.createGain();
+                    gain.gain.value = 0.00001;
+                    osc.connect(gain);
+                    gain.connect(window._vgAudioCtx.destination);
+                    osc.start();
+                  }
+                }
+                if (window._vgAudioCtx && window._vgAudioCtx.state === 'suspended') {
+                  window._vgAudioCtx.resume();
+                }
+              } catch(e) {}
+            }
+
             setInterval(function() {
               if (window.ytPlayer && typeof window.ytPlayer.getCurrentTime === 'function' && typeof window.ytPlayer.getDuration === 'function') {
                 try {
@@ -519,7 +558,17 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                   }
                 } catch(e) {}
               }
-            }, 500);
+              // Lock-screen / background auto-resume watchdog
+              if (window.userWantsPlay && window.ytPlayer && typeof window.ytPlayer.getPlayerState === 'function') {
+                try {
+                  var st = window.ytPlayer.getPlayerState();
+                  if (st === 2 || st === 5) {
+                    ensureAudioKeepAlive();
+                    window.ytPlayer.playVideo();
+                  }
+                } catch(e) {}
+              }
+            }, 450);
           </script>
         </head>
         <body>
@@ -584,15 +633,22 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               if (state === 1) { // PLAYING
                 window.isLoadingNewVideo = false;
                 window.userWantsPlay = true;
+                ensureAudioKeepAlive();
                 if (window.AndroidBridge && window.AndroidBridge.onStateChange) {
                   window.AndroidBridge.onStateChange(1);
                 }
               } else if (state === 2) { // PAUSED
                 // If a new track was loaded or user requested playback,
-                // ignore transient unload pause and ensure playVideo is called!
+                // ignore transient unload / lock-screen pause and keep playing!
                 if (window.isLoadingNewVideo || window.userWantsPlay) {
+                  ensureAudioKeepAlive();
                   if (window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
                     window.ytPlayer.playVideo();
+                    setTimeout(function() {
+                      if (window.userWantsPlay && window.ytPlayer && window.ytPlayer.playVideo) {
+                        window.ytPlayer.playVideo();
+                      }
+                    }, 180);
                   }
                 } else {
                   window.userWantsPlay = false;
