@@ -169,7 +169,6 @@ fun SupportScreen(
                         settings.apply {
                             javaScriptEnabled = true
                             domStorageEnabled = true
-                            databaseEnabled = true
                             javaScriptCanOpenWindowsAutomatically = true
                             setSupportMultipleWindows(true)
                             useWideViewPort = true
