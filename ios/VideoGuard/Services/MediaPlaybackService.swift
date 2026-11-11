@@ -197,7 +197,7 @@ class MediaPlaybackService: ObservableObject {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
             MPMediaItemPropertyArtist: track.artist.isEmpty ? track.channelName : track.artist,
-            MPMediaItemPropertyAlbumTitle: "VideoGuard",
+            MPMediaItemPropertyAlbumTitle: "AURALIX",
             MPMediaItemPropertyPlaybackDuration: dur,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTimeSeconds,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? Double(playbackSpeed) : 0.0

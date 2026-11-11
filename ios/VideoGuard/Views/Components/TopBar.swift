@@ -15,7 +15,7 @@ struct YouTubeTopBar: View {
         VStack(spacing: 0) {
             HStack {
                 Button(action: onTitleClick) {
-                    Text("VideoGuard")
+                    Text("AURALIX")
                         .font(.system(size: 21, weight: .heavy))
                         .tracking(-0.5)
                         .foregroundColor(.white)

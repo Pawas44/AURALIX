@@ -51,7 +51,7 @@ class MediaPlaybackService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var mediaSession: MediaSessionCompat? = null
 
-    private var currentTitle: String = "VideoGuard Audio"
+    private var currentTitle: String = "AURALIX Audio"
     private var currentArtist: String = "YouTube & YT Music"
     private var isPlaying: Boolean = false
     private var currentThumbnailUrl: String? = null
@@ -231,7 +231,7 @@ class MediaPlaybackService : Service() {
         val metadataBuilder = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_TITLE, currentTitle)
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, currentArtist)
-            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, "VideoGuard")
+            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, "AURALIX")
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ARTIST, currentArtist)
 
         if (durMs > 0) {
@@ -299,7 +299,7 @@ class MediaPlaybackService : Service() {
                 "Media Playback Controls",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Background and Lock Screen playback controls for VideoGuard"
+                description = "Background and Lock Screen playback controls for AURALIX"
                 setShowBadge(false)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 setSound(null, null)
@@ -364,7 +364,7 @@ class MediaPlaybackService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
-            .setSubText("VideoGuard")
+            .setSubText("AURALIX")
             .setContentIntent(openAppPendingIntent)
             .setOngoing(isPlaying)
             .setSilent(true)

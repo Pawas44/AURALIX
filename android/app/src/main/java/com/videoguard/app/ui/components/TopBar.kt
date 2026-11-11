@@ -64,7 +64,7 @@ fun TopBar(
                     .padding(vertical = 4.dp, horizontal = 2.dp)
             ) {
                 Text(
-                    text = "VideoGuard",
+                    text = "AURALIX",
                     color = Color.White,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 21.sp,
