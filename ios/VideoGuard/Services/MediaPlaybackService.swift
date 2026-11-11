@@ -82,19 +82,24 @@ class MediaPlaybackService: ObservableObject {
         let chunkSize = 36 + dataSize
 
         var wav = Data()
+        func appendLE<T: FixedWidthInteger>(_ val: T) {
+            var v = val.littleEndian
+            withUnsafeBytes(of: &v) { wav.append(contentsOf: $0) }
+        }
+
         wav.append(contentsOf: "RIFF".utf8)
-        wav.append(withUnsafeBytes(of: chunkSize.littleEndian) { Data($0) })
+        appendLE(chunkSize)
         wav.append(contentsOf: "WAVE".utf8)
         wav.append(contentsOf: "fmt ".utf8)
-        wav.append(withUnsafeBytes(of: UInt32(16).littleEndian) { Data($0) })
-        wav.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) }) // PCM
-        wav.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) }) // Mono
-        wav.append(withUnsafeBytes(of: sampleRate.littleEndian) { Data($0) })
-        wav.append(withUnsafeBytes(of: (sampleRate * 2).littleEndian) { Data($0) })
-        wav.append(withUnsafeBytes(of: UInt16(2).littleEndian) { Data($0) })
-        wav.append(withUnsafeBytes(of: UInt16(16).littleEndian) { Data($0) })
+        appendLE(UInt32(16))
+        appendLE(UInt16(1)) // PCM
+        appendLE(UInt16(1)) // Mono
+        appendLE(sampleRate)
+        appendLE(sampleRate * 2)
+        appendLE(UInt16(2))
+        appendLE(UInt16(16))
         wav.append(contentsOf: "data".utf8)
-        wav.append(withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
+        appendLE(dataSize)
         wav.append(Data(count: Int(dataSize)))
 
         do {

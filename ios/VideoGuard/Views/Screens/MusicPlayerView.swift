@@ -384,7 +384,7 @@ struct MusicPlayerView: View {
             .clipShape(RoundedCornerShape(radius: 24, corners: [.topLeft, .topRight]))
             .overlay(
                 RoundedCornerShape(radius: 24, corners: [.topLeft, .topRight])
-                    .strokeBorder(LiquidGlassDefaults.borderSpecular, lineWidth: 1)
+                    .stroke(LiquidGlassDefaults.borderSpecular, lineWidth: 1)
             )
         }
         .background(
