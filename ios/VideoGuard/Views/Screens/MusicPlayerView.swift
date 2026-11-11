@@ -121,13 +121,12 @@ struct MusicPlayerView: View {
                     // Audio Visualizer Bar
                     if isPlaying {
                         HStack(spacing: 4) {
+                            let activeHeights: [CGFloat] = [16, 8, 18, 10, 15]
+                            let restHeights: [CGFloat] = [6, 17, 7, 16, 8]
                             ForEach(0..<5, id: \.self) { idx in
-                                let h: CGFloat = wavePhase
-                                    ? [16, 8, 18, 10, 15][idx]
-                                    : [6, 17, 7, 16, 8][idx]
                                 RoundedRectangle(cornerRadius: 2)
                                     .fill(AppTheme.ytMusicRedAccent)
-                                    .frame(width: 3.5, height: h)
+                                    .frame(width: 3.5, height: wavePhase ? activeHeights[idx] : restHeights[idx])
                             }
                             Text("High Quality Audio")
                                 .font(.system(size: 11, weight: .medium))

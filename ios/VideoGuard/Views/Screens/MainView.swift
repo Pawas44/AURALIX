@@ -253,6 +253,9 @@ struct MainView: View {
 
             // Persistent YouTube Video Player (Stays alive across all screens & background!)
             if let track = playbackService.currentTrack {
+                let playerWidth: CGFloat? = (isFullscreen || showVideoInYT) ? nil : 240
+                let playerHeight: CGFloat? = (isFullscreen || showVideoInYT) ? nil : 135
+
                 ZStack {
                     YouTubeVideoPlayer(
                         videoId: track.id,
@@ -282,10 +285,7 @@ struct MainView: View {
                         )
                     }
                 }
-                .frame(
-                    width: isFullscreen ? nil : ((showVideoInYT) ? nil : 240),
-                    height: isFullscreen ? nil : ((showVideoInYT) ? nil : 135)
-                )
+                .frame(width: playerWidth, height: playerHeight)
                 .frame(
                     maxWidth: (isFullscreen || showVideoInYT) ? .infinity : nil,
                     maxHeight: isFullscreen ? .infinity : nil
