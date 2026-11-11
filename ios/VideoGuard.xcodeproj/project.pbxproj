@@ -42,6 +42,7 @@
 		VG000033 /* YouTubeVideoPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00034 /* YouTubeVideoPlayer.swift */; };
 		VG000034 /* PlayerControlsOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00035 /* PlayerControlsOverlay.swift */; };
 		VG000035 /* GoogleAuthSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00036 /* GoogleAuthSheet.swift */; };
+		VG000036 /* SupportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00037 /* SupportView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -82,6 +83,7 @@
 		VGF00034 /* YouTubeVideoPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YouTubeVideoPlayer.swift; sourceTree = "<group>"; };
 		VGF00035 /* PlayerControlsOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerControlsOverlay.swift; sourceTree = "<group>"; };
 		VGF00036 /* GoogleAuthSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuthSheet.swift; sourceTree = "<group>"; };
+		VGF00037 /* SupportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -198,6 +200,7 @@
 				VGF00027 /* YouView.swift */,
 				VGF00028 /* PlaylistDetailView.swift */,
 				VGF00029 /* MainView.swift */,
+				VGF00037 /* SupportView.swift */,
 			);
 			path = Screens;
 			sourceTree = "<group>";
@@ -313,6 +316,7 @@
 				VG000033 /* YouTubeVideoPlayer.swift in Sources */,
 				VG000034 /* PlayerControlsOverlay.swift in Sources */,
 				VG000035 /* GoogleAuthSheet.swift in Sources */,
+				VG000036 /* SupportView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

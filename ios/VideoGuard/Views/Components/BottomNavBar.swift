@@ -4,9 +4,11 @@ struct LiquidBottomNavBar: View {
     let isHomeSelected: Bool
     let isSearchSelected: Bool
     let isAccountSelected: Bool
+    let isSupportSelected: Bool
     let onHomeClick: () -> Void
     let onSearchClick: () -> Void
     let onAccountClick: () -> Void
+    let onSupportClick: () -> Void
 
     @ObservedObject var accountRepo = AccountRepository.shared
 
@@ -51,6 +53,20 @@ struct LiquidBottomNavBar: View {
                 .foregroundColor(isAccountSelected ? .white : Color(hex: 0x9E9EAF))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(isAccountSelected ? Color.white.opacity(0.12) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+            }
+
+            // 4. Support
+            Button(action: onSupportClick) {
+                VStack(spacing: 2) {
+                    Image(systemName: isSupportSelected ? "cup.and.saucer.fill" : "cup.and.saucer")
+                        .font(.system(size: 19))
+                    Text("Support")
+                        .font(.system(size: 10, weight: isSupportSelected ? .bold : .medium))
+                }
+                .foregroundColor(isSupportSelected ? Color(hex: 0xFFDD00) : Color(hex: 0x9E9EAF))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(isSupportSelected ? Color(hex: 0xFFDD00).opacity(0.14) : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
             }
         }

@@ -9,10 +9,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Coffee
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
@@ -44,16 +46,18 @@ fun BottomNavBar(
     selectedYTTab: YouTubeTab = YouTubeTab.HOME,
     selectedMusicTab: YouTubeMusicTab = YouTubeMusicTab.HOME,
     isSearchActive: Boolean = false,
+    isSupportActive: Boolean = false,
     onHomeClick: () -> Unit = {},
     onSearchClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
+    onSupportClick: () -> Unit = {},
     onYTTabSelected: (YouTubeTab) -> Unit = {},
     onMusicTabSelected: (YouTubeMusicTab) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isMusic = currentMode == AppMode.YOUTUBE_MUSIC
 
-    val isHomeSelected = !isSearchActive && if (!isMusic) {
+    val isHomeSelected = !isSearchActive && !isSupportActive && if (!isMusic) {
         selectedYTTab == YouTubeTab.HOME
     } else {
         selectedMusicTab == YouTubeMusicTab.HOME
@@ -61,11 +65,13 @@ fun BottomNavBar(
 
     val isSearchSelected = isSearchActive
 
-    val isAccountSelected = !isSearchActive && if (!isMusic) {
+    val isAccountSelected = !isSearchActive && !isSupportActive && if (!isMusic) {
         selectedYTTab == YouTubeTab.YOU
     } else {
         selectedMusicTab == YouTubeMusicTab.LIBRARY
     }
+
+    val isSupportSelected = !isSearchActive && isSupportActive
 
     Box(
         modifier = modifier
@@ -136,6 +142,15 @@ fun BottomNavBar(
                         onMusicTabSelected(YouTubeMusicTab.LIBRARY)
                     }
                 )
+
+                // 4. Support
+                BottomNavItem(
+                    title = "Support",
+                    icon = if (isSupportSelected) Icons.Filled.Coffee else Icons.Outlined.Coffee,
+                    isSelected = isSupportSelected,
+                    selectedTint = Color(0xFFFFDD00),
+                    onClick = onSupportClick
+                )
             }
         }
     }
@@ -146,10 +161,11 @@ private fun RowScope.BottomNavItem(
     title: String,
     icon: ImageVector,
     isSelected: Boolean,
+    selectedTint: Color = Color.White,
     onClick: () -> Unit
 ) {
-    val iconTint by animateColorAsState(if (isSelected) Color.White else Color(0xFF9E9EAF), label = "tint")
-    val pillBg = if (isSelected) Color.White.copy(alpha = 0.12f) else Color.Transparent
+    val iconTint by animateColorAsState(if (isSelected) selectedTint else Color(0xFF9E9EAF), label = "tint")
+    val pillBg = if (isSelected) selectedTint.copy(alpha = 0.14f) else Color.Transparent
 
     Box(
         modifier = Modifier

@@ -9,6 +9,7 @@ struct MainView: View {
     @State private var isFullscreen: Bool = false
     @State private var isPlayerExpanded: Bool = false
     @State private var isSearchActive: Bool = false
+    @State private var isSupportActive: Bool = false
     @State private var showAccountSheet: Bool = false
     @State private var showGoogleAuthSheet: Bool = false
 
@@ -28,7 +29,7 @@ struct MainView: View {
 
             // Main Persistent Shell
             VStack(spacing: 0) {
-                if !isSearchActive && activeChannelVideo == nil && activePlaylist == nil {
+                if !isSearchActive && !isSupportActive && activeChannelVideo == nil && activePlaylist == nil {
                     if (appMode == .youtube && selectedYTTab != .you) ||
                        (appMode == .youtubeMusic && selectedMusicTab != .library) {
                         YouTubeTopBar(
@@ -75,6 +76,8 @@ struct MainView: View {
                                 isSearchActive = false
                             }
                         )
+                    } else if isSupportActive {
+                        SupportView()
                     } else if let pl = activePlaylist {
                         PlaylistDetailView(
                             playlistId: pl.id,
@@ -168,18 +171,20 @@ struct MainView: View {
                             }
                         }
 
-                        let isHomeSelected = !isSearchActive && activeChannelVideo == nil && activePlaylist == nil && (appMode == .youtube ? selectedYTTab == .home : selectedMusicTab == .home)
-                        let isAccountSelected = !isSearchActive && activeChannelVideo == nil && activePlaylist == nil && (appMode == .youtube ? selectedYTTab == .you : selectedMusicTab == .library)
+                        let isHomeSelected = !isSearchActive && !isSupportActive && activeChannelVideo == nil && activePlaylist == nil && (appMode == .youtube ? selectedYTTab == .home : selectedMusicTab == .home)
+                        let isAccountSelected = !isSearchActive && !isSupportActive && activeChannelVideo == nil && activePlaylist == nil && (appMode == .youtube ? selectedYTTab == .you : selectedMusicTab == .library)
 
                         LiquidBottomNavBar(
                             isHomeSelected: isHomeSelected,
                             isSearchSelected: isSearchActive,
                             isAccountSelected: isAccountSelected,
+                            isSupportSelected: !isSearchActive && isSupportActive,
                             onHomeClick: {
                                 let alreadyOnHome = isHomeSelected
                                 activeChannelVideo = nil
                                 activePlaylist = nil
                                 isSearchActive = false
+                                isSupportActive = false
                                 if alreadyOnHome {
                                     homeScrollToTopTrigger += 1
                                 }
@@ -189,12 +194,14 @@ struct MainView: View {
                             onSearchClick: {
                                 activeChannelVideo = nil
                                 activePlaylist = nil
+                                isSupportActive = false
                                 isSearchActive = true
                             },
                             onAccountClick: {
                                 activeChannelVideo = nil
                                 activePlaylist = nil
                                 isSearchActive = false
+                                isSupportActive = false
                                 if appMode == .youtube {
                                     if selectedYTTab == .you { showAccountSheet = true }
                                     else { selectedYTTab = .you }
@@ -202,6 +209,12 @@ struct MainView: View {
                                     if selectedMusicTab == .library { showAccountSheet = true }
                                     else { selectedMusicTab = .library }
                                 }
+                            },
+                            onSupportClick: {
+                                activeChannelVideo = nil
+                                activePlaylist = nil
+                                isSearchActive = false
+                                isSupportActive = true
                             }
                         )
                     }
