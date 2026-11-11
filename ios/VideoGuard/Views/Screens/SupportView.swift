@@ -1,307 +1,172 @@
 import SwiftUI
 
-private struct CoffeeTier: Identifiable {
+private struct SupportOption: Identifiable {
     let id: Int
-    let title: String
+    let emoji: String
+    let label: String
     let price: String
-    let note: String
 }
 
-private let coffeeTiers: [CoffeeTier] = [
-    CoffeeTier(id: 1, title: "1 Cup", price: "$5", note: "A quick caffeine boost for late-night coding."),
-    CoffeeTier(id: 3, title: "3 Cups", price: "$15", note: "Fuels a full weekend of polishing & updates."),
-    CoffeeTier(id: 5, title: "5 Cups", price: "$25", note: "Pure legend status — keeps the builds flowing!")
+private let supportOptions: [SupportOption] = [
+    SupportOption(id: 1, emoji: "☕", label: "Buy 1 Coffee", price: "$5"),
+    SupportOption(id: 3, emoji: "🫶", label: "Buy 3 Coffees", price: "$15"),
+    SupportOption(id: 5, emoji: "⚡", label: "Buy 5 Coffees", price: "$25")
 ]
 
 struct SupportView: View {
     @State private var selectedCups: Int = 1
     @State private var copiedLink: Bool = false
-    @State private var pulseGlow: Bool = false
 
     private let bmcURL = URL(string: "https://buymeacoffee.com/FINDEX")!
     private let bmcDisplay = "buymeacoffee.com/FINDEX"
 
-    private let coffeeGold = Color(hex: 0xFFDD00)
-    private let coffeeAmber = Color(hex: 0xFFB703)
-    private let auralixPurple = Color(hex: 0xA855F7)
-    private let auralixViolet = Color(hex: 0x7C3AED)
-
-    private var activeTier: CoffeeTier {
-        coffeeTiers.first { $0.id == selectedCups } ?? coffeeTiers[0]
+    private var selectedOption: SupportOption {
+        supportOptions.first { $0.id == selectedCups } ?? supportOptions[0]
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 16) {
-                // Top Creator Pill
-                HStack(spacing: 7) {
-                    Circle()
-                        .fill(coffeeGold)
-                        .frame(width: 7, height: 7)
-                    Text("SUPPORT THE CREATOR")
-                        .font(.system(size: 11, weight: .bold))
-                        .tracking(1.2)
-                        .foregroundColor(.white)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(
-                    LinearGradient(
-                        colors: [auralixPurple.opacity(0.22), coffeeGold.opacity(0.14)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule().strokeBorder(
-                        LinearGradient(
-                            colors: [auralixPurple.opacity(0.60), coffeeGold.opacity(0.60)],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        ),
-                        lineWidth: 1
-                    )
-                )
+        GeometryReader { geo in
+            ScrollView(showsIndicators: false) {
+                VStack {
+                    Spacer(minLength: 20)
 
-                // Main Floating Glass Card
-                VStack(spacing: 0) {
-                    // Pulsing Emblem
-                    ZStack {
-                        Circle()
-                            .fill(
-                                RadialGradient(
-                                    colors: [coffeeGold.opacity(0.45), auralixPurple.opacity(0.22), .clear],
-                                    center: .center,
-                                    startRadius: 4,
-                                    endRadius: 50
-                                )
-                            )
-                            .frame(width: 96, height: 96)
-                            .scaleEffect(pulseGlow ? 1.07 : 0.94)
-                            .opacity(pulseGlow ? 0.65 : 0.35)
+                ZStack(alignment: .top) {
+                    // Card Body
+                    VStack(spacing: 0) {
+                        Text("Support Findex")
+                            .font(.system(size: 21, weight: .bold))
+                            .foregroundColor(.white)
 
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color(hex: 0x2B1E3E), Color(hex: 0x1A1426)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 76, height: 76)
-                            .overlay(
-                                Circle().strokeBorder(
-                                    LinearGradient(
-                                        colors: [coffeeGold, auralixPurple],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    lineWidth: 1.5
-                                )
-                            )
+                        Spacer().frame(height: 4)
 
-                        Image(systemName: "cup.and.saucer.fill")
-                            .font(.system(size: 32))
-                            .foregroundColor(coffeeGold)
-                    }
-                    .frame(height: 104)
+                        Text("Creator of AURALIX")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Color(hex: 0x8C8FA3))
 
-                    Spacer().frame(height: 10)
+                        Spacer().frame(height: 22)
 
-                    // Handle Badge
-                    Text("@FINDEX")
-                        .font(.system(size: 11.5, weight: .heavy))
-                        .tracking(1.0)
-                        .foregroundColor(coffeeGold)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
-                        )
-
-                    Spacer().frame(height: 14)
-
-                    Text("Enjoying the vibe?")
-                        .font(.system(size: 24, weight: .heavy))
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-
-                    Spacer().frame(height: 8)
-
-                    Text("AURALIX is 100% free for everyone — crafted solo with late nights, good music, and lots of coffee. If it made your day better, feel free to drop a coffee. Zero pressure, always appreciated.")
-                        .font(.system(size: 13.5))
-                        .foregroundColor(Color(hex: 0xBDBDD0))
-                        .multilineTextAlignment(.center)
-                        .lineSpacing(3)
-
-                    Spacer().frame(height: 22)
-
-                    // Cup Selector
-                    HStack(spacing: 10) {
-                        ForEach(coffeeTiers) { tier in
-                            cupTierButton(tier)
+                        // Clean Selectable Rows
+                        VStack(spacing: 10) {
+                            ForEach(supportOptions) { option in
+                                let isSelected = selectedCups == option.id
+                                Button(action: {
+                                    selectedCups = option.id
+                                }) {
+                                    HStack {
+                                        HStack(spacing: 10) {
+                                            Text(option.emoji)
+                                                .font(.system(size: 15))
+                                            Text(option.label)
+                                                .font(.system(size: 14.5, weight: .medium))
+                                                .foregroundColor(isSelected ? .white : Color(hex: 0xD6D8E5))
+                                                .lineLimit(1)
+                                        }
+                                        Spacer()
+                                        Text(option.price)
+                                            .font(.system(size: 14.5, weight: .bold))
+                                            .foregroundColor(isSelected ? Color(hex: 0xFFDD00) : .white)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                    .background(isSelected ? Color(hex: 0x211E33) : Color(hex: 0x1D1E2A))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .strokeBorder(
+                                                isSelected ? Color(hex: 0x8B5CF6).opacity(0.75) : Color.white.opacity(0.05),
+                                                lineWidth: 1
+                                            )
+                                    )
+                                }
+                            }
                         }
-                    }
 
-                    Spacer().frame(height: 10)
+                        Spacer().frame(height: 18)
 
-                    Text(activeTier.note)
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(hex: 0x9E9EAF))
-                        .multilineTextAlignment(.center)
-                        .animation(.easeInOut(duration: 0.2), value: selectedCups)
-
-                    Spacer().frame(height: 20)
-
-                    // Primary Golden CTA
-                    Button(action: {
-                        UIApplication.shared.open(bmcURL)
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "cup.and.saucer.fill")
-                                .font(.system(size: 16, weight: .bold))
-                            Text(selectedCups == 1 ? "Buy Me a Coffee" : "Buy \(selectedCups) Coffees")
-                                .font(.system(size: 15.5, weight: .heavy))
-                            Image(systemName: "arrow.up.right")
-                                .font(.system(size: 13, weight: .bold))
-                        }
-                        .foregroundColor(Color(hex: 0x14110B))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 54)
-                        .background(
-                            LinearGradient(
-                                colors: [coffeeGold, coffeeAmber],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 18))
-                        .shadow(color: coffeeGold.opacity(0.40), radius: 12, x: 0, y: 5)
-                    }
-
-                    Spacer().frame(height: 12)
-
-                    // Copy & Share Row
-                    HStack(spacing: 10) {
+                        // Discreet Link Bar
                         Button(action: {
                             UIPasteboard.general.string = bmcURL.absoluteString
                             copiedLink = true
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
                                 copiedLink = false
                             }
                         }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: copiedLink ? "checkmark" : "doc.on.doc")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundColor(copiedLink ? Color(hex: 0x4ADE80) : coffeeGold)
-                                Text(copiedLink ? "Link Copied!" : bmcDisplay)
-                                    .font(.system(size: 11.5, weight: .semibold))
-                                    .foregroundColor(copiedLink ? Color(hex: 0x4ADE80) : Color(hex: 0xE5E5F2))
+                            HStack {
+                                Text(bmcDisplay)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(Color(hex: 0x9EA2B7))
                                     .lineLimit(1)
+                                Spacer()
+                                HStack(spacing: 5) {
+                                    Image(systemName: copiedLink ? "checkmark" : "doc.on.doc")
+                                        .font(.system(size: 11.5, weight: .semibold))
+                                    Text(copiedLink ? "Copied" : "Copy")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                                .foregroundColor(copiedLink ? Color(hex: 0x4ADE80) : Color(hex: 0x9EA2B7))
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 11)
-                            .background(Color.white.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(Color(hex: 0x1B1C27))
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                                RoundedRectangle(cornerRadius: 12)
+                                    .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
                             )
                         }
 
-                        ShareLink(item: bmcURL, message: Text("Support Findex (creator of AURALIX) on Buy Me a Coffee")) {
-                            HStack(spacing: 5) {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.system(size: 12, weight: .semibold))
-                                Text("Share")
-                                    .font(.system(size: 11.5, weight: .semibold))
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 11)
-                            .background(Color.white.opacity(0.06))
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
-                            )
+                        Spacer().frame(height: 14)
+
+                        // Clean Primary Action Button
+                        Button(action: {
+                            UIApplication.shared.open(bmcURL)
+                        }) {
+                            Text("\(selectedOption.label) for \(selectedOption.price)")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(Color(hex: 0x111111))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 50)
+                                .background(Color(hex: 0xFFDD00))
+                                .clipShape(RoundedRectangle(cornerRadius: 13))
                         }
                     }
-                }
-                .padding(.horizontal, 22)
-                .padding(.vertical, 26)
-                .background(
-                    LinearGradient(
-                        colors: [Color(hex: 0x1F1630), Color(hex: 0x14111E), Color(hex: 0x0C0B13)],
-                        startPoint: .top,
-                        endPoint: .bottom
+                    .padding(.horizontal, 22)
+                    .padding(.top, 50)
+                    .padding(.bottom, 24)
+                    .background(Color(hex: 0x151621))
+                    .clipShape(RoundedRectangle(cornerRadius: 24))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24)
+                            .strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
                     )
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 28))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 28)
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [auralixPurple.opacity(0.75), coffeeGold.opacity(0.55), Color.white.opacity(0.18)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1.2
-                        )
-                )
-                .shadow(color: auralixViolet.opacity(0.28), radius: 18, x: 0, y: 8)
+                    .shadow(color: Color.black.opacity(0.55), radius: 20, x: 0, y: 10)
+                    .padding(.top, 36)
 
-                // Minimal Footer
-                HStack(spacing: 5) {
-                    Text("Crafted with")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(hex: 0x7E7E92))
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 11))
-                        .foregroundColor(auralixPurple)
-                    Text("& caffeine by Findex")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(hex: 0x7E7E92))
+                    // Overlapping Circular Avatar
+                    ZStack {
+                        Circle()
+                            .fill(Color.black)
+                        Image("AuralixAvatar")
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 68, height: 68)
+                            .clipShape(Circle())
+                    }
+                    .frame(width: 72, height: 72)
+                    .clipShape(Circle())
+                    .overlay(
+                        Circle().strokeBorder(Color(hex: 0x282A3A), lineWidth: 2.5)
+                    )
+                    .shadow(color: Color.black.opacity(0.5), radius: 10, x: 0, y: 4)
                 }
-                .padding(.top, 4)
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 18)
-            .padding(.bottom, 120)
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) {
-                pulseGlow = true
-            }
-        }
-    }
+                .frame(maxWidth: 400)
 
-    @ViewBuilder
-    private func cupTierButton(_ tier: CoffeeTier) -> some View {
-        let isSelected = selectedCups == tier.id
-        Button(action: { selectedCups = tier.id }) {
-            VStack(spacing: 3) {
-                Text(tier.title)
-                    .font(.system(size: 13.5, weight: .bold))
-                    .foregroundColor(isSelected ? coffeeGold : .white)
-                Text(tier.price)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(isSelected ? .white : Color(hex: 0x9E9EAF))
+                Spacer(minLength: 20)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(isSelected ? coffeeGold.opacity(0.18) : Color.white.opacity(0.05))
-            .clipShape(RoundedRectangle(cornerRadius: 18))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18)
-                    .strokeBorder(isSelected ? coffeeGold : Color.white.opacity(0.14), lineWidth: isSelected ? 1.5 : 1)
-            )
-            .animation(.easeInOut(duration: 0.18), value: isSelected)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 110)
+            .frame(maxWidth: .infinity, minHeight: max(0, geo.size.height - 90))
+            }
         }
     }
 }
