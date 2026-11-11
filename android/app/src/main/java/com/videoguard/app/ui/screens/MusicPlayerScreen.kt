@@ -67,9 +67,11 @@ fun MusicPlayerScreen(
     var isLiked by remember { mutableStateOf(false) }
     var isDisliked by remember { mutableStateOf(false) }
     var isShuffle by remember { mutableStateOf(false) }
-    var isRepeat by remember { mutableStateOf(false) }
+    val isRepeat by com.videoguard.app.service.PlaybackController.isLoopEnabled.collectAsState()
     var sliderPosition by remember { mutableFloatStateOf(0.35f) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+
+    val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     val liveQueue by com.videoguard.app.service.PlaybackController.playbackQueue.collectAsState()
     var dynamicRelated by remember(track.id) { mutableStateOf<List<VideoItem>>(emptyList()) }
@@ -106,7 +108,7 @@ fun MusicPlayerScreen(
     }
 
     val sheetHeight by animateDpAsState(
-        targetValue = if (isSheetExpanded) 360.dp else 180.dp,
+        targetValue = (if (isSheetExpanded) 360.dp else 180.dp) + navBarBottom,
         label = "sheetHeight"
     )
 
@@ -445,7 +447,7 @@ fun MusicPlayerScreen(
             }
 
             IconButton(
-                onClick = { isRepeat = !isRepeat },
+                onClick = { com.videoguard.app.service.PlaybackController.toggleLoop() },
                 modifier = Modifier.size(42.dp)
             ) {
                 Icon(
@@ -538,7 +540,9 @@ fun MusicPlayerScreen(
                                     CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                                 }
                             } else {
-                                LazyColumn {
+                                LazyColumn(
+                                    contentPadding = PaddingValues(bottom = navBarBottom + 8.dp)
+                                ) {
                                     items(queueTracks, key = { it.id }) { qTrack ->
                                         Row(
                                             modifier = Modifier
@@ -592,7 +596,7 @@ fun MusicPlayerScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .verticalScroll(rememberScrollState())
-                                    .padding(vertical = 6.dp)
+                                    .padding(top = 6.dp, bottom = navBarBottom + 8.dp)
                             ) {
                                 Text(
                                     text = track.lyrics.ifEmpty {
@@ -610,7 +614,7 @@ fun MusicPlayerScreen(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .verticalScroll(rememberScrollState())
-                                    .padding(vertical = 6.dp)
+                                    .padding(top = 6.dp, bottom = navBarBottom + 8.dp)
                             ) {
                                 Text(
                                     text = "About the Artist",
@@ -672,7 +676,12 @@ private fun TabPill(
 
 private fun formatMusicTime(seconds: Float): String {
     val totalSec = seconds.toInt().coerceAtLeast(0)
-    val m = totalSec / 60
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
     val s = totalSec % 60
-    return String.format("%d:%02d", m, s)
+    return if (h > 0) {
+        String.format("%d:%02d:%02d", h, m, s)
+    } else {
+        String.format("%d:%02d", m, s)
+    }
 }

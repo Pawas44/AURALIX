@@ -55,6 +55,9 @@ object PlaybackController {
 
     private var sleepTimerJob: kotlinx.coroutines.Job? = null
     private var lastTrackChangeTimeMs: Long = 0L
+    private var lastServiceSyncTimeMs: Long = 0L
+    private var lastServiceSyncedPositionSec: Float = -1f
+    private var lastServiceSyncedDurationSec: Float = -1f
 
     // Listener to dispatch JavaScript commands directly to the active YouTube WebView
     private var webViewCommandListener: ((String) -> Unit)? = null
@@ -66,6 +69,7 @@ object PlaybackController {
     fun setPlaybackSpeed(speed: Float) {
         _playbackSpeed.value = speed
         sendCommand("setPlaybackRate($speed)")
+        syncServiceProgress(force = true)
     }
 
     fun setPlaybackQuality(quality: String) {
@@ -171,6 +175,12 @@ object PlaybackController {
         lastTrackChangeTimeMs = System.currentTimeMillis()
         _currentTrack.value = track
         _isPlaying.value = true
+        val initialDurationSec = parseDurationSeconds(track.duration)
+        _currentTimeSeconds.value = 0f
+        _durationSeconds.value = initialDurationSec
+        lastServiceSyncTimeMs = System.currentTimeMillis()
+        lastServiceSyncedPositionSec = 0f
+        lastServiceSyncedDurationSec = initialDurationSec
 
         // Automatically record to User History
         com.videoguard.app.data.UserDataRepository.addToHistory(track)
@@ -227,21 +237,29 @@ object PlaybackController {
     }
 
     fun updateProgress(current: Float, duration: Float) {
-        _currentTimeSeconds.value = current
+        val safeCurrent = current.coerceAtLeast(0f)
+        _currentTimeSeconds.value = safeCurrent
         if (duration > 0f) {
             _durationSeconds.value = duration
         }
+        syncServiceProgress(force = false)
     }
 
     fun seekTo(seconds: Float) {
-        _currentTimeSeconds.value = seconds
-        sendCommand("seekTo($seconds)")
+        val dur = _durationSeconds.value
+        val target = if (dur > 0f) seconds.coerceIn(0f, dur) else seconds.coerceAtLeast(0f)
+        _currentTimeSeconds.value = target
+        sendCommand("seekTo($target)")
+        syncServiceProgress(force = true)
     }
 
     fun seekBy(seconds: Int) {
-        val newTime = (_currentTimeSeconds.value + seconds).coerceAtLeast(0f)
+        val dur = _durationSeconds.value
+        val rawNew = _currentTimeSeconds.value + seconds
+        val newTime = if (dur > 0f) rawNew.coerceIn(0f, dur) else rawNew.coerceAtLeast(0f)
         _currentTimeSeconds.value = newTime
         sendCommand("seekBy($seconds)")
+        syncServiceProgress(force = true)
     }
 
     fun nextTrack() {
@@ -263,6 +281,8 @@ object PlaybackController {
     fun stop() {
         _isPlaying.value = false
         _currentTrack.value = null
+        _currentTimeSeconds.value = 0f
+        _durationSeconds.value = 0f
         sendCommand("setPlaybackState(false)")
         stopService()
     }
@@ -282,9 +302,56 @@ object PlaybackController {
         }
     }
 
+    private fun parseDurationSeconds(durationStr: String): Float {
+        val parts = durationStr.trim().split(":").mapNotNull { it.toIntOrNull() }
+        return when (parts.size) {
+            2 -> (parts[0] * 60 + parts[1]).toFloat()
+            3 -> (parts[0] * 3600 + parts[1] * 60 + parts[2]).toFloat()
+            else -> 0f
+        }
+    }
+
+    private fun syncServiceProgress(force: Boolean) {
+        if (_currentTrack.value == null) return
+        val now = System.currentTimeMillis()
+        val cur = _currentTimeSeconds.value
+        val dur = _durationSeconds.value
+        val playing = _isPlaying.value
+        val speed = _playbackSpeed.value
+
+        val durationChanged = dur > 0f && kotlin.math.abs(dur - lastServiceSyncedDurationSec) > 0.5f
+        val elapsedSinceSyncSec = ((now - lastServiceSyncTimeMs).coerceAtLeast(0L) / 1000f)
+        val expectedPos = if (lastServiceSyncedPositionSec >= 0f) {
+            lastServiceSyncedPositionSec + if (playing) elapsedSinceSyncSec * speed else 0f
+        } else {
+            cur
+        }
+        val positionJumped = kotlin.math.abs(cur - expectedPos) > 1.5f
+        val periodicDue = playing && (now - lastServiceSyncTimeMs >= 4000L)
+
+        if (force || durationChanged || positionJumped || periodicDue) {
+            lastServiceSyncTimeMs = now
+            lastServiceSyncedPositionSec = cur
+            if (dur > 0f) {
+                lastServiceSyncedDurationSec = dur
+            }
+            MediaPlaybackService.syncProgress(
+                positionSec = cur,
+                durationSec = dur,
+                isPlaying = playing,
+                playbackSpeed = speed
+            )
+        }
+    }
+
     private fun startOrUpdateService() {
         val ctx = appContext ?: return
         val track = _currentTrack.value ?: return
+
+        val now = System.currentTimeMillis()
+        lastServiceSyncTimeMs = now
+        lastServiceSyncedPositionSec = _currentTimeSeconds.value
+        lastServiceSyncedDurationSec = _durationSeconds.value
 
         val intent = Intent(ctx, MediaPlaybackService::class.java).apply {
             action = MediaPlaybackService.ACTION_UPDATE
@@ -294,6 +361,7 @@ object PlaybackController {
             putExtra(MediaPlaybackService.EXTRA_THUMBNAIL_URL, track.thumbnailUrl)
             putExtra(MediaPlaybackService.EXTRA_DURATION_SEC, _durationSeconds.value)
             putExtra(MediaPlaybackService.EXTRA_POSITION_SEC, _currentTimeSeconds.value)
+            putExtra(MediaPlaybackService.EXTRA_PLAYBACK_SPEED, _playbackSpeed.value)
         }
 
         try {

@@ -81,8 +81,8 @@ fun YouTubeVideoPlayer(
     // Register with PlaybackController so transport buttons execute JS commands directly
     DisposableEffect(webViewRef) {
         PlaybackController.setCommandListener { command ->
-            if (command.startsWith("loadVideo(")) {
-                currentLoadedId = videoId
+            if (command.startsWith("loadVideo('") && command.endsWith("')")) {
+                currentLoadedId = command.removePrefix("loadVideo('").removeSuffix("')")
             }
             webViewRef?.post {
                 webViewRef?.evaluateJavascript(command, null)
@@ -324,6 +324,11 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               window.currentVideoId = id;
               window.userWantsPlay = true;
               window.isLoadingNewVideo = true;
+              setTimeout(function() {
+                if (window.currentVideoId === id) {
+                  window.isLoadingNewVideo = false;
+                }
+              }, 2500);
 
               if (window.ytPlayer && typeof window.ytPlayer.loadVideoById === 'function') {
                 try {
@@ -508,11 +513,18 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             setInterval(cleanEmbedDOM, 50);
 
             setInterval(function() {
+              if (window.isLoadingNewVideo) return;
               if (window.ytPlayer && typeof window.ytPlayer.getCurrentTime === 'function' && typeof window.ytPlayer.getDuration === 'function') {
                 try {
+                  if (typeof window.ytPlayer.getVideoData === 'function') {
+                    var vData = window.ytPlayer.getVideoData();
+                    if (vData && vData.video_id && window.currentVideoId && vData.video_id !== window.currentVideoId) {
+                      return;
+                    }
+                  }
                   var cur = window.ytPlayer.getCurrentTime();
                   var dur = window.ytPlayer.getDuration();
-                  if (typeof cur === 'number' && typeof dur === 'number' && !isNaN(cur) && !isNaN(dur) && cur >= 0) {
+                  if (typeof cur === 'number' && typeof dur === 'number' && !isNaN(cur) && !isNaN(dur) && cur >= 0 && dur > 0) {
                     if (window.AndroidBridge && window.AndroidBridge.onTimeUpdate) {
                       window.AndroidBridge.onTimeUpdate(cur, dur);
                     }

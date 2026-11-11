@@ -11,8 +11,11 @@ import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import android.media.AudioManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -46,6 +49,30 @@ class MediaPlaybackService : Service() {
         const val EXTRA_THUMBNAIL_URL = "extra_thumbnail_url"
         const val EXTRA_DURATION_SEC = "extra_duration_sec"
         const val EXTRA_POSITION_SEC = "extra_position_sec"
+        const val EXTRA_PLAYBACK_SPEED = "extra_playback_speed"
+
+        @Volatile
+        private var activeInstance: MediaPlaybackService? = null
+        private val mainHandler = Handler(Looper.getMainLooper())
+
+        fun syncProgress(
+            positionSec: Float,
+            durationSec: Float,
+            isPlaying: Boolean,
+            playbackSpeed: Float
+        ) {
+            val instance = activeInstance ?: return
+            mainHandler.post {
+                if (activeInstance !== instance) return@post
+                instance.positionSec = positionSec.coerceAtLeast(0f)
+                if (durationSec > 0f) {
+                    instance.durationSec = durationSec
+                }
+                instance.isPlaying = isPlaying
+                instance.playbackSpeed = playbackSpeed
+                instance.updateMediaSessionState(forceMetadata = false)
+            }
+        }
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -54,10 +81,16 @@ class MediaPlaybackService : Service() {
     private var currentTitle: String = "AURALIX Audio"
     private var currentArtist: String = "YouTube & YT Music"
     private var isPlaying: Boolean = false
+    private var playbackSpeed: Float = 1.0f
     private var currentThumbnailUrl: String? = null
     private var durationSec: Float = 0f
     private var positionSec: Float = 0f
     private var cachedArtwork: Bitmap? = null
+
+    private var lastMetaTitle: String? = null
+    private var lastMetaArtist: String? = null
+    private var lastMetaDurationMs: Long = -1L
+    private var lastMetaArtwork: Bitmap? = null
 
     private val serviceScope = CoroutineScope(Dispatchers.Main)
 
@@ -107,6 +140,7 @@ class MediaPlaybackService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         createNotificationChannel()
         registerNoisyReceiver()
 
@@ -165,17 +199,21 @@ class MediaPlaybackService : Service() {
                 val newArtist = intent.getStringExtra(EXTRA_ARTIST) ?: currentArtist
                 val newIsPlaying = intent.getBooleanExtra(EXTRA_IS_PLAYING, true)
                 val newThumbUrl = intent.getStringExtra(EXTRA_THUMBNAIL_URL)
-                durationSec = intent.getFloatExtra(EXTRA_DURATION_SEC, durationSec)
-                positionSec = intent.getFloatExtra(EXTRA_POSITION_SEC, positionSec)
+                durationSec = intent.getFloatExtra(EXTRA_DURATION_SEC, durationSec).coerceAtLeast(0f)
+                positionSec = intent.getFloatExtra(EXTRA_POSITION_SEC, positionSec).coerceAtLeast(0f)
+                playbackSpeed = intent.getFloatExtra(EXTRA_PLAYBACK_SPEED, playbackSpeed).coerceAtLeast(0.25f)
 
-                val trackChanged = newTitle != currentTitle || newThumbUrl != currentThumbnailUrl
+                val thumbChanged = newThumbUrl != currentThumbnailUrl
                 currentTitle = newTitle
                 currentArtist = newArtist
                 isPlaying = newIsPlaying
 
-                if (trackChanged && !newThumbUrl.isNullOrBlank()) {
+                if (thumbChanged) {
+                    cachedArtwork = null
                     currentThumbnailUrl = newThumbUrl
-                    loadArtwork(newThumbUrl)
+                    if (!newThumbUrl.isNullOrBlank()) {
+                        loadArtwork(newThumbUrl)
+                    }
                 }
 
                 if (isPlaying) {
@@ -184,7 +222,7 @@ class MediaPlaybackService : Service() {
                     releaseWakeLock()
                 }
 
-                updateMediaSessionState()
+                updateMediaSessionState(forceMetadata = true)
                 showNotification()
             }
             ACTION_PLAY_PAUSE -> {
@@ -206,7 +244,7 @@ class MediaPlaybackService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun updateMediaSessionState() {
+    private fun updateMediaSessionState(forceMetadata: Boolean = false) {
         val session = mediaSession ?: return
 
         val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
@@ -218,32 +256,43 @@ class MediaPlaybackService : Service() {
                 PlaybackStateCompat.ACTION_SEEK_TO or
                 PlaybackStateCompat.ACTION_STOP
 
-        val posMs = (positionSec * 1000).toLong().coerceAtLeast(0)
-        val durMs = (durationSec * 1000).toLong().coerceAtLeast(0)
+        val posMs = (positionSec * 1000).toLong().coerceAtLeast(0L)
+        val durMs = (durationSec * 1000).toLong().coerceAtLeast(0L)
+        val speed = if (isPlaying) playbackSpeed else 0.0f
 
         session.setPlaybackState(
             PlaybackStateCompat.Builder()
                 .setActions(actions)
-                .setState(state, posMs, if (isPlaying) 1.0f else 0.0f)
+                .setState(state, posMs, speed, SystemClock.elapsedRealtime())
                 .build()
         )
 
-        val metadataBuilder = MediaMetadataCompat.Builder()
-            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, currentTitle)
-            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, currentArtist)
-            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, "AURALIX")
-            .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ARTIST, currentArtist)
+        val metadataChanged = forceMetadata ||
+                lastMetaTitle != currentTitle ||
+                lastMetaArtist != currentArtist ||
+                lastMetaDurationMs != durMs ||
+                lastMetaArtwork !== cachedArtwork
 
-        if (durMs > 0) {
-            metadataBuilder.putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durMs)
+        if (metadataChanged) {
+            lastMetaTitle = currentTitle
+            lastMetaArtist = currentArtist
+            lastMetaDurationMs = durMs
+            lastMetaArtwork = cachedArtwork
+
+            val metadataBuilder = MediaMetadataCompat.Builder()
+                .putString(MediaMetadataCompat.METADATA_KEY_TITLE, currentTitle)
+                .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, currentArtist)
+                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, "AURALIX")
+                .putString(MediaMetadataCompat.METADATA_KEY_ALBUM_ARTIST, currentArtist)
+                .putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durMs)
+
+            cachedArtwork?.let {
+                metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
+                metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, it)
+            }
+
+            session.setMetadata(metadataBuilder.build())
         }
-
-        cachedArtwork?.let {
-            metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
-            metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ART, it)
-        }
-
-        session.setMetadata(metadataBuilder.build())
         session.isActive = true
     }
 
@@ -394,6 +443,9 @@ class MediaPlaybackService : Service() {
     }
 
     override fun onDestroy() {
+        if (activeInstance === this) {
+            activeInstance = null
+        }
         unregisterNoisyReceiver()
         try {
             mediaSession?.apply {
