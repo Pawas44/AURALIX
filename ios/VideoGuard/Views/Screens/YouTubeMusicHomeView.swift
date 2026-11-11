@@ -112,14 +112,32 @@ struct YouTubeMusicHomeView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("START RADIO FROM A SONG")
-                                    .font(.system(size: 10, weight: .semibold))
+                                Text(selectedMood.isEmpty ? "START RADIO FROM A SONG" : selectedMood.uppercased())
+                                    .font(.system(size: 11, weight: .bold))
+                                    .tracking(0.8)
                                     .foregroundColor(AppTheme.ytMusicTextSecondary)
-                                Text("Quick picks")
-                                    .font(.system(size: 20, weight: .bold))
+                                Text(selectedMood.isEmpty ? "Quick picks" : "\(selectedMood) Picks")
+                                    .font(.system(size: 22, weight: .bold))
                                     .foregroundColor(.white)
                             }
                             Spacer()
+                            Button(action: {
+                                if let first = quickPicks.first ?? allMusicTracks.first {
+                                    onTrackSelected(first, quickPicks.isEmpty ? allMusicTracks : quickPicks)
+                                }
+                            }) {
+                                Text("Play all")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                                    .background(Color.white.opacity(0.10))
+                                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .strokeBorder(LiquidGlassDefaults.borderSpecular, lineWidth: 1)
+                                    )
+                            }
                         }
                         .padding(.horizontal, 14)
 

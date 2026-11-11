@@ -19,6 +19,32 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
 
         let contentController = WKUserContentController()
         contentController.add(context.coordinator, name: "iOSBridge")
+
+        // Inject visibility bypass into ALL frames (including youtube-nocookie iframe!)
+        // so iOS WebKit does not report hidden state to YouTube's player when screen locks.
+        let visibilityBypassScript = WKUserScript(
+            source: """
+            (function() {
+                try {
+                    Object.defineProperty(document, 'hidden', { get: function() { return false; }, configurable: true });
+                    Object.defineProperty(document, 'webkitHidden', { get: function() { return false; }, configurable: true });
+                    Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; }, configurable: true });
+                    Object.defineProperty(document, 'webkitVisibilityState', { get: function() { return 'visible'; }, configurable: true });
+                    var block = function(e) { e.stopImmediatePropagation(); };
+                    document.addEventListener('visibilitychange', block, true);
+                    document.addEventListener('webkitvisibilitychange', block, true);
+                    window.addEventListener('visibilitychange', block, true);
+                    window.addEventListener('webkitvisibilitychange', block, true);
+                    window.addEventListener('pagehide', block, true);
+                    window.addEventListener('freeze', block, true);
+                    window.addEventListener('blur', block, true);
+                } catch(e) {}
+            })();
+            """,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        contentController.addUserScript(visibilityBypassScript)
         config.userContentController = contentController
 
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -31,6 +57,8 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
 
         context.coordinator.webView = webView
         context.coordinator.currentLoadedId = videoId
+        context.coordinator.lastSentIsPlaying = isPlaying
+        context.coordinator.registerLifecycleObservers()
 
         MediaPlaybackService.shared.setCommandListener { [weak webView, weak coord = context.coordinator] command in
             guard let webView = webView else { return }
@@ -40,6 +68,8 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
                     .replacingOccurrences(of: "')", with: "")
                 coord?.currentLoadedId = idPart
             }
+            if command == "setPlaybackState(true)" { coord?.lastSentIsPlaying = true }
+            if command == "setPlaybackState(false)" { coord?.lastSentIsPlaying = false }
             DispatchQueue.main.async {
                 webView.evaluateJavaScript(command, completionHandler: nil)
             }
@@ -54,12 +84,16 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
         context.coordinator.parent = self
         if context.coordinator.currentLoadedId != videoId {
             context.coordinator.currentLoadedId = videoId
+            context.coordinator.lastSentIsPlaying = isPlaying
             webView.evaluateJavaScript("loadVideo('\(videoId)');", completionHandler: nil)
+        } else if context.coordinator.lastSentIsPlaying != isPlaying {
+            context.coordinator.lastSentIsPlaying = isPlaying
+            webView.evaluateJavaScript("setPlaybackState(\(isPlaying));", completionHandler: nil)
         }
-        webView.evaluateJavaScript("setPlaybackState(\(isPlaying));", completionHandler: nil)
     }
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        coordinator.unregisterLifecycleObservers()
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "iOSBridge")
         MediaPlaybackService.shared.setCommandListener(nil)
     }
@@ -68,9 +102,65 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
         var parent: YouTubeVideoPlayer
         weak var webView: WKWebView?
         var currentLoadedId: String?
+        var lastSentIsPlaying: Bool?
+        private var observers: [NSObjectProtocol] = []
+        private var bgTask: UIBackgroundTaskIdentifier = .invalid
 
         init(_ parent: YouTubeVideoPlayer) {
             self.parent = parent
+        }
+
+        func registerLifecycleObservers() {
+            let nc = NotificationCenter.default
+            let o1 = nc.addObserver(forName: UIApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.scheduleBackgroundResume()
+            }
+            let o2 = nc.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.scheduleBackgroundResume()
+            }
+            let o3 = nc.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.endBgTask()
+            }
+            observers = [o1, o2, o3]
+        }
+
+        func unregisterLifecycleObservers() {
+            observers.forEach { NotificationCenter.default.removeObserver($0) }
+            observers.removeAll()
+            endBgTask()
+        }
+
+        private func endBgTask() {
+            if bgTask != .invalid {
+                UIApplication.shared.endBackgroundTask(bgTask)
+                bgTask = .invalid
+            }
+        }
+
+        /// Overrides iOS WebKit's automatic pause on background / lock-screen transitions
+        private func scheduleBackgroundResume() {
+            guard MediaPlaybackService.shared.isPlaying && MediaPlaybackService.shared.isBackgroundPlayEnabled else { return }
+
+            endBgTask()
+            bgTask = UIApplication.shared.beginBackgroundTask(withName: "VideoGuardBackgroundAudio") { [weak self] in
+                self?.endBgTask()
+            }
+
+            let delays: [Double] = [0.05, 0.18, 0.45, 0.90, 1.50]
+            for (idx, delay) in delays.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    guard let self = self,
+                          MediaPlaybackService.shared.isPlaying,
+                          MediaPlaybackService.shared.isBackgroundPlayEnabled else {
+                        if idx == delays.count - 1 { self?.endBgTask() }
+                        return
+                    }
+                    self.webView?.evaluateJavaScript("forceBackgroundResume();", completionHandler: nil)
+                    if idx == delays.count - 1 {
+                        self.endBgTask()
+                    }
+                }
+            }
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -82,6 +172,7 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self, let webView = self.webView else { return }
                     self.currentLoadedId = self.parent.videoId
+                    self.lastSentIsPlaying = self.parent.isPlaying
                     webView.evaluateJavaScript("setPlaybackState(\(self.parent.isPlaying));", completionHandler: nil)
                     if MediaPlaybackService.shared.isCaptionsEnabled {
                         webView.evaluateJavaScript("setCaptions(true);", completionHandler: nil)
@@ -94,7 +185,11 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
                         case 1:
                             MediaPlaybackService.shared.setPlayingState(true)
                         case 2:
-                            MediaPlaybackService.shared.setPlayingState(false)
+                            if MediaPlaybackService.shared.isPlaying && MediaPlaybackService.shared.isBackgroundPlayEnabled {
+                                self.webView?.evaluateJavaScript("forceBackgroundResume();", completionHandler: nil)
+                            } else {
+                                MediaPlaybackService.shared.setPlayingState(false)
+                            }
                         case 0:
                             if MediaPlaybackService.shared.isLoopEnabled {
                                 MediaPlaybackService.shared.seekTo(seconds: 0)
@@ -138,22 +233,26 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
             window.isLoadingNewVideo = false;
             window.currentVideoId = '\(videoId)';
 
-            try {
-              Object.defineProperty(document, 'hidden', { get: function() { return false; } });
-              Object.defineProperty(document, 'visibilityState', { get: function() { return 'visible'; } });
-              Object.defineProperty(document, 'webkitVisibilityState', { get: function() { return 'visible'; } });
-              document.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
-              window.addEventListener('visibilitychange', function(e) { e.stopImmediatePropagation(); }, true);
-              window.addEventListener('pagehide', function(e) { e.stopImmediatePropagation(); }, true);
-              window.addEventListener('blur', function(e) { e.stopImmediatePropagation(); }, true);
-            } catch(e) {}
-
             function postBridge(payload) {
               try {
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iOSBridge) {
                   window.webkit.messageHandlers.iOSBridge.postMessage(payload);
                 }
               } catch(e) {}
+            }
+
+            function forceBackgroundResume() {
+              if (!window.userWantsPlay) return;
+              if (window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
+                try {
+                  var st = window.ytPlayer.getPlayerState ? window.ytPlayer.getPlayerState() : -1;
+                  if (st !== 1 && st !== 3) {
+                    window.ytPlayer.playVideo();
+                  }
+                } catch(e) {
+                  window.ytPlayer.playVideo();
+                }
+              }
             }
 
             function setPlaybackState(play) {
@@ -265,7 +364,15 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
                   }
                 } catch(e) {}
               }
-            }, 500);
+              if (window.userWantsPlay && window.ytPlayer && typeof window.ytPlayer.getPlayerState === 'function') {
+                try {
+                  var st = window.ytPlayer.getPlayerState();
+                  if (st === 2 || st === 5) {
+                    window.ytPlayer.playVideo();
+                  }
+                } catch(e) {}
+              }
+            }, 450);
           </script>
         </head>
         <body>

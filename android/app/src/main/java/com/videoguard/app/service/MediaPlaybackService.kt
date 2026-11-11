@@ -9,8 +9,6 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
@@ -48,21 +46,10 @@ class MediaPlaybackService : Service() {
         const val EXTRA_THUMBNAIL_URL = "extra_thumbnail_url"
         const val EXTRA_DURATION_SEC = "extra_duration_sec"
         const val EXTRA_POSITION_SEC = "extra_position_sec"
-
-        @Volatile
-        private var activeInstance: MediaPlaybackService? = null
-
-        fun syncProgress(positionSec: Float, durationSec: Float) {
-            activeInstance?.onProgressUpdated(positionSec, durationSec)
-        }
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var mediaSession: MediaSessionCompat? = null
-    private var audioManager: AudioManager? = null
-    private var audioFocusRequest: AudioFocusRequest? = null
-    private var hasAudioFocus = false
-    private var lastSyncedDurationSec: Float = 0f
 
     private var currentTitle: String = "VideoGuard Audio"
     private var currentArtist: String = "YouTube & YT Music"
@@ -120,8 +107,6 @@ class MediaPlaybackService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        activeInstance = this
-        audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         createNotificationChannel()
         registerNoisyReceiver()
 
@@ -194,7 +179,6 @@ class MediaPlaybackService : Service() {
                 }
 
                 if (isPlaying) {
-                    requestAudioFocus()
                     acquireWakeLock()
                 } else {
                     releaseWakeLock()
@@ -213,103 +197,13 @@ class MediaPlaybackService : Service() {
                 PlaybackController.prevTrack()
             }
             ACTION_STOP -> {
-                abandonAudioFocus()
                 releaseWakeLock()
                 mediaSession?.isActive = false
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
         }
-        return if (isPlaying) START_STICKY else START_NOT_STICKY
-    }
-
-    private fun onProgressUpdated(pos: Float, dur: Float) {
-        positionSec = pos
-        val durChanged = dur > 0f && kotlin.math.abs(dur - lastSyncedDurationSec) > 1.5f
-        if (dur > 0f) {
-            durationSec = dur
-        }
-        val session = mediaSession ?: return
-        val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
-        val actions = PlaybackStateCompat.ACTION_PLAY or
-                PlaybackStateCompat.ACTION_PAUSE or
-                PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                PlaybackStateCompat.ACTION_SEEK_TO or
-                PlaybackStateCompat.ACTION_STOP
-        val posMs = (positionSec * 1000).toLong().coerceAtLeast(0)
-        session.setPlaybackState(
-            PlaybackStateCompat.Builder()
-                .setActions(actions)
-                .setState(state, posMs, if (isPlaying) 1.0f else 0.0f)
-                .build()
-        )
-        if (durChanged) {
-            lastSyncedDurationSec = dur
-            updateMediaSessionState()
-        }
-    }
-
-    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-        when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS -> {
-                hasAudioFocus = false
-                PlaybackController.pause()
-            }
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                // Transient loss (e.g., phone call) - pause until regained
-                PlaybackController.pause()
-            }
-        }
-    }
-
-    private fun requestAudioFocus() {
-        if (hasAudioFocus) return
-        val am = audioManager ?: return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                val attrs = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-                val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(attrs)
-                    .setAcceptsDelayedFocusGain(true)
-                    .setOnAudioFocusChangeListener(audioFocusChangeListener)
-                    .build()
-                audioFocusRequest = req
-                val res = am.requestAudioFocus(req)
-                hasAudioFocus = (res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
-            } else {
-                @Suppress("DEPRECATION")
-                val res = am.requestAudioFocus(
-                    audioFocusChangeListener,
-                    AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN
-                )
-                hasAudioFocus = (res == AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun abandonAudioFocus() {
-        if (!hasAudioFocus) return
-        val am = audioManager ?: return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                audioFocusRequest?.let { am.abandonAudioFocusRequest(it) }
-            } else {
-                @Suppress("DEPRECATION")
-                am.abandonAudioFocus(audioFocusChangeListener)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            hasAudioFocus = false
-        }
+        return START_NOT_STICKY
     }
 
     private fun updateMediaSessionState() {
@@ -467,15 +361,14 @@ class MediaPlaybackService : Service() {
             .setCancelButtonIntent(stopPending)
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_videoguard)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
             .setSubText("VideoGuard")
-            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setContentIntent(openAppPendingIntent)
             .setOngoing(isPlaying)
             .setSilent(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .addAction(android.R.drawable.ic_media_previous, "Previous", prevPending)
             .addAction(playPauseIcon, playPauseTitle, playPausePending)
@@ -501,8 +394,6 @@ class MediaPlaybackService : Service() {
     }
 
     override fun onDestroy() {
-        activeInstance = null
-        abandonAudioFocus()
         unregisterNoisyReceiver()
         try {
             mediaSession?.apply {

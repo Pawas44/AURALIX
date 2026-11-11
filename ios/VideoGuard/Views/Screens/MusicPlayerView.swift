@@ -28,6 +28,7 @@ struct MusicPlayerView: View {
     @State private var showSettingsSheet = false
     @State private var dynamicRelated: [VideoItem] = []
     @State private var isLoadingRelated = false
+    @State private var wavePhase = false
 
     private var queueTracks: [VideoItem] {
         let queue = playbackService.playbackQueue
@@ -47,77 +48,110 @@ struct MusicPlayerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Top Bar: Collapse, Song/Video Switch, Settings
-            HStack {
-                Button(action: onCollapse) {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(10)
-                }
-
-                Spacer()
-
-                HStack(spacing: 0) {
-                    Text("Song")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.black)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(Color.white)
-                        .cornerRadius(16)
-
-                    Button(action: onSwitchToVideoMode) {
-                        Text("Video")
-                            .font(.system(size: 12, weight: .medium))
+            // Top Bar: Glass Collapse | Liquid Glass "Video" Pill | Glass Options
+            ZStack {
+                HStack {
+                    Button(action: onCollapse) {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 18, weight: .bold))
                             .foregroundColor(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
+                            .frame(width: 38, height: 38)
+                            .background(Color.white.opacity(0.12))
+                            .clipShape(Circle())
+                            .overlay(Circle().strokeBorder(LiquidGlassDefaults.borderSpecular, lineWidth: 1))
+                            .shadow(color: Color.black.opacity(0.45), radius: 6, x: 0, y: 3)
+                    }
+
+                    Spacer()
+
+                    Button(action: { showSettingsSheet = true }) {
+                        Image(systemName: "ellipsis")
+                            .rotationEffect(.degrees(90))
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(width: 38, height: 38)
+                            .background(Color.white.opacity(0.12))
+                            .clipShape(Circle())
+                            .overlay(Circle().strokeBorder(LiquidGlassDefaults.borderSpecular, lineWidth: 1))
+                            .shadow(color: Color.black.opacity(0.45), radius: 6, x: 0, y: 3)
                     }
                 }
-                .padding(3)
-                .background(Color.white.opacity(0.12))
-                .cornerRadius(20)
 
-                Spacer()
-
-                Button(action: { showSettingsSheet = true }) {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(10)
+                // Center Video Switcher Pill
+                Button(action: onSwitchToVideoMode) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(AppTheme.youTubeRed)
+                        Text("Video")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .background(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.16), Color.white.opacity(0.05)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                    .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(LiquidGlassDefaults.borderSpecular, lineWidth: 1))
+                    .shadow(color: Color.black.opacity(0.45), radius: 6, x: 0, y: 3)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 14)
             .padding(.top, 8)
 
             if !isSheetExpanded {
                 Spacer(minLength: 10)
 
-                // Large Artwork
-                AsyncImage(url: URL(string: track.thumbnailUrl)) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    Rectangle().fill(AppTheme.ytMusicCardBg)
+                VStack(spacing: 16) {
+                    // Square Album Artwork with Red Glow Shadow (Matches Android MusicPlayerScreen)
+                    AsyncImage(url: URL(string: track.thumbnailUrl)) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Rectangle().fill(AppTheme.ytMusicCardBg)
+                    }
+                    .frame(width: min(UIScreen.main.bounds.width * 0.84, 320), height: min(UIScreen.main.bounds.width * 0.84, 320))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .shadow(color: Color(hex: 0xFF1744, alpha: 0.40), radius: 22, x: 0, y: 10)
+
+                    // Audio Visualizer Bar
+                    if isPlaying {
+                        HStack(spacing: 4) {
+                            ForEach(0..<5, id: \.self) { idx in
+                                let h: CGFloat = wavePhase
+                                    ? [16, 8, 18, 10, 15][idx]
+                                    : [6, 17, 7, 16, 8][idx]
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(AppTheme.ytMusicRedAccent)
+                                    .frame(width: 3.5, height: h)
+                            }
+                            Text("High Quality Audio")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(Color(hex: 0xAAAAAA))
+                                .padding(.leading, 6)
+                        }
+                        .frame(height: 18)
+                        .animation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true), value: wavePhase)
+                    }
                 }
-                .frame(width: 280, height: 280)
-                .cornerRadius(16)
-                .shadow(color: Color.black.opacity(0.6), radius: 18, x: 0, y: 8)
-                .padding(.vertical, 12)
 
                 Spacer(minLength: 8)
             }
 
-            // Title, Artist, Like/Dislike
+            // Track Info & Like / Dislike
             HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(track.title)
                         .font(.system(size: 20, weight: .bold))
                         .foregroundColor(.white)
                         .lineLimit(1)
                     Text(track.artist.isEmpty ? track.channelName : track.artist)
-                        .font(.system(size: 15))
-                        .foregroundColor(AppTheme.ytMusicTextSecondary)
+                        .font(.system(size: 14))
+                        .foregroundColor(Color(hex: 0xAAAAAA))
                         .lineLimit(1)
                 }
 
@@ -126,7 +160,7 @@ struct MusicPlayerView: View {
                 Button(action: { userData.toggleDislike(track.id) }) {
                     Image(systemName: userData.isDisliked(track.id) ? "hand.thumbsdown.fill" : "hand.thumbsdown")
                         .font(.system(size: 20))
-                        .foregroundColor(.white)
+                        .foregroundColor(userData.isDisliked(track.id) ? AppTheme.ytMusicRedAccent : .white)
                         .padding(8)
                 }
 
@@ -139,7 +173,7 @@ struct MusicPlayerView: View {
             }
             .padding(.horizontal, 24)
 
-            // Progress Slider
+            // Red YTMusic Slider
             let maxDur = max(playbackService.durationSeconds, 1.0)
             let displayTime = isUserScrubbing ? scrubPosition : playbackService.currentTimeSeconds
 
@@ -160,34 +194,40 @@ struct MusicPlayerView: View {
                         }
                     }
                 )
-                .tint(.white)
+                .tint(AppTheme.ytMusicRedAccent)
 
                 HStack {
                     Text(formatTime(displayTime))
-                        .font(.system(size: 11))
-                        .foregroundColor(AppTheme.ytMusicTextSecondary)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color(hex: 0xAAAAAA))
                     Spacer()
-                    Text(formatTime(maxDur))
-                        .font(.system(size: 11))
-                        .foregroundColor(AppTheme.ytMusicTextSecondary)
+                    Text(playbackService.durationSeconds > 0 ? formatTime(maxDur) : track.duration)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color(hex: 0xAAAAAA))
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.top, 10)
+            .padding(.top, 8)
 
             // Transport Controls
-            HStack(spacing: 28) {
+            HStack {
                 Button(action: { playbackService.toggleShuffle() }) {
                     Image(systemName: "shuffle")
                         .font(.system(size: 20))
-                        .foregroundColor(playbackService.isShuffled ? AppTheme.ytMusicRedAccent : .white)
+                        .foregroundColor(playbackService.isShuffled ? AppTheme.ytMusicRedAccent : Color(hex: 0xAAAAAA))
+                        .frame(width: 42, height: 42)
                 }
+
+                Spacer()
 
                 Button(action: onPrevTrack) {
                     Image(systemName: "backward.end.fill")
                         .font(.system(size: 28))
                         .foregroundColor(.white)
+                        .frame(width: 48, height: 48)
                 }
+
+                Spacer()
 
                 Button(action: onPlayPauseToggle) {
                     ZStack {
@@ -200,63 +240,88 @@ struct MusicPlayerView: View {
                     }
                 }
 
+                Spacer()
+
                 Button(action: onNextTrack) {
                     Image(systemName: "forward.end.fill")
                         .font(.system(size: 28))
                         .foregroundColor(.white)
+                        .frame(width: 48, height: 48)
                 }
+
+                Spacer()
 
                 Button(action: { playbackService.toggleRepeat() }) {
                     Image(systemName: playbackService.repeatMode == .one ? "repeat.1" : "repeat")
                         .font(.system(size: 20))
-                        .foregroundColor(playbackService.repeatMode != .off ? AppTheme.ytMusicRedAccent : .white)
+                        .foregroundColor(playbackService.repeatMode != .off ? AppTheme.ytMusicRedAccent : Color(hex: 0xAAAAAA))
+                        .frame(width: 42, height: 42)
                 }
             }
-            .padding(.vertical, 16)
+            .padding(.horizontal, 22)
+            .padding(.vertical, 10)
 
-            // Bottom Drawer: Up Next / Lyrics / Related
+            // Liquid Glass Bottom Dock: [ UP NEXT | LYRICS | RELATED ]
             VStack(spacing: 0) {
-                Button(action: {
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-                        isSheetExpanded.toggle()
-                    }
-                }) {
-                    Capsule()
-                        .fill(Color.white.opacity(0.3))
-                        .frame(width: 38, height: 4)
-                        .padding(.vertical, 8)
-                }
+                Capsule()
+                    .fill(Color.white.opacity(0.35))
+                    .frame(width: 38, height: 4)
+                    .padding(.top, 8)
+                    .padding(.bottom, 6)
 
                 HStack {
-                    ForEach(MusicSheetTab.allCases, id: \.self) { tab in
-                        Button(action: {
-                            activeTab = tab
-                            if !isSheetExpanded {
-                                withAnimation { isSheetExpanded = true }
-                            }
-                        }) {
-                            VStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        ForEach(MusicSheetTab.allCases, id: \.self) { tab in
+                            let isActive = activeTab == tab
+                            Button(action: {
+                                activeTab = tab
+                                if !isSheetExpanded {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                        isSheetExpanded = true
+                                    }
+                                }
+                            }) {
                                 Text(tab.rawValue)
-                                    .font(.system(size: 12, weight: activeTab == tab ? .bold : .medium))
-                                    .foregroundColor(activeTab == tab ? .white : AppTheme.ytMusicTextSecondary)
-                                Rectangle()
-                                    .fill(activeTab == tab ? Color.white : Color.clear)
-                                    .frame(height: 2)
+                                    .font(.system(size: 11, weight: isActive ? .bold : .medium))
+                                    .foregroundColor(isActive ? .white : Color(hex: 0x9E9EAF))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(isActive ? Color.white.opacity(0.16) : Color.white.opacity(0.04))
+                                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .strokeBorder(isActive ? LiquidGlassDefaults.borderSpecular : LiquidGlassDefaults.borderSubtle, lineWidth: 1)
+                                    )
                             }
-                            .frame(maxWidth: .infinity)
                         }
                     }
+
+                    Spacer()
+
+                    Button(action: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            isSheetExpanded.toggle()
+                        }
+                    }) {
+                        Image(systemName: isSheetExpanded ? "chevron.down" : "chevron.up")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(Color(hex: 0xAAAAAA))
+                            .padding(6)
+                    }
                 }
-                .padding(.horizontal, 16)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 6)
+
+                Divider().background(Color(hex: 0x333333))
 
                 ScrollView {
                     switch activeTab {
-                    case .upNext, .related:
-                        LazyVStack(spacing: 10) {
+                    case .upNext:
+                        LazyVStack(spacing: 8) {
                             if isLoadingRelated && queueTracks.isEmpty {
                                 ProgressView()
                                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .padding()
+                                    .padding(24)
                             } else {
                                 ForEach(queueTracks) { item in
                                     Button(action: { onTrackSelected(item) }) {
@@ -266,44 +331,72 @@ struct MusicPlayerView: View {
                                             } placeholder: {
                                                 Rectangle().fill(AppTheme.ytMusicCardBg)
                                             }
-                                            .frame(width: 48, height: 48)
-                                            .cornerRadius(6)
-                                            .clipped()
+                                            .frame(width: 40, height: 40)
+                                            .clipShape(RoundedRectangle(cornerRadius: 6))
 
                                             VStack(alignment: .leading, spacing: 2) {
                                                 Text(item.title)
-                                                    .font(.system(size: 14, weight: .medium))
+                                                    .font(.system(size: 13, weight: .medium))
                                                     .foregroundColor(.white)
                                                     .lineLimit(1)
-                                                Text("\(item.artist.isEmpty ? item.channelName : item.artist) • \(item.duration)")
-                                                    .font(.system(size: 12))
-                                                    .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                                Text(item.artist.isEmpty ? item.channelName : item.artist)
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(Color(hex: 0xAAAAAA))
                                                     .lineLimit(1)
                                             }
                                             Spacer()
+                                            Text(item.duration)
+                                                .font(.system(size: 12))
+                                                .foregroundColor(Color(hex: 0x888888))
                                         }
-                                        .padding(.horizontal, 16)
-                                        .padding(.vertical, 4)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 5)
                                     }
                                 }
                             }
                         }
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 6)
+
                     case .lyrics:
-                        Text(track.lyrics.isEmpty ? "Lyrics unavailable for this track.\n\nPlaying: \(track.title)\nArtist: \(track.artist.isEmpty ? track.channelName : track.artist)" : track.lyrics)
+                        Text(track.lyrics.isEmpty ? "Lyrics are not currently available for this track." : track.lyrics)
                             .font(.system(size: 15))
-                            .foregroundColor(.white.opacity(0.85))
-                            .multilineTextAlignment(.center)
-                            .padding(24)
-                            .frame(maxWidth: .infinity)
+                            .foregroundColor(Color(hex: 0xEEEEEE))
+                            .lineSpacing(6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+
+                    case .related:
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("About the Artist")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.white)
+                            Text("\(track.artist.isEmpty ? track.channelName : track.artist) has over \(track.views) across YouTube and YouTube Music. Album: \(track.album.isEmpty ? "Single" : track.album).")
+                                .font(.system(size: 12))
+                                .foregroundColor(Color(hex: 0xCCCCCC))
+                                .lineSpacing(4)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
                     }
                 }
             }
-            .frame(height: isSheetExpanded ? 360 : 170)
-            .background(Color(hex: 0x15101D).opacity(0.96))
-            .cornerRadius(20, corners: [.topLeft, .topRight])
+            .frame(height: isSheetExpanded ? 360 : 175)
+            .background(Color(hex: 0x161726, alpha: 0.95))
+            .clipShape(RoundedCornerShape(radius: 24, corners: [.topLeft, .topRight]))
+            .overlay(
+                RoundedCornerShape(radius: 24, corners: [.topLeft, .topRight])
+                    .strokeBorder(LiquidGlassDefaults.borderSpecular, lineWidth: 1)
+            )
         }
-        .background(LiquidGlassDefaults.liquidMusicCanvas.ignoresSafeArea())
+        .background(
+            LinearGradient(
+                colors: [Color(hex: 0x2B0C16), Color(hex: 0x14060B), Color(hex: 0x070707)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+        )
+        .onAppear { wavePhase = true }
         .sheet(isPresented: $showSettingsSheet) {
             PlayerBottomSheet(appMode: .youtubeMusic, onDismiss: { showSettingsSheet = false })
                 .presentationDetents([.medium, .large])

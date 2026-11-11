@@ -64,13 +64,11 @@ fun MusicPlayerScreen(
     modifier: Modifier = Modifier
 ) {
     var activeTab by remember { mutableStateOf(MusicSheetTab.UP_NEXT) }
-    val userPlaylists by com.videoguard.app.data.UserDataRepository.playlists.collectAsState()
-    val isLiked = remember(userPlaylists, track.id) {
-        com.videoguard.app.data.UserDataRepository.isLiked(track.id)
-    }
-    var isDisliked by remember(track.id) { mutableStateOf(false) }
+    var isLiked by remember { mutableStateOf(false) }
+    var isDisliked by remember { mutableStateOf(false) }
     var isShuffle by remember { mutableStateOf(false) }
-    val isRepeat by com.videoguard.app.service.PlaybackController.isLoopEnabled.collectAsState()
+    var isRepeat by remember { mutableStateOf(false) }
+    var sliderPosition by remember { mutableFloatStateOf(0.35f) }
     var showSettingsSheet by remember { mutableStateOf(false) }
 
     val liveQueue by com.videoguard.app.service.PlaybackController.playbackQueue.collectAsState()
@@ -330,9 +328,7 @@ fun MusicPlayerScreen(
                 IconButton(
                     onClick = {
                         isDisliked = !isDisliked
-                        if (isDisliked && isLiked) {
-                            com.videoguard.app.data.UserDataRepository.toggleLiked(track)
-                        }
+                        if (isDisliked) isLiked = false
                     }
                 ) {
                     Icon(
@@ -343,8 +339,8 @@ fun MusicPlayerScreen(
                 }
                 IconButton(
                     onClick = {
-                        com.videoguard.app.data.UserDataRepository.toggleLiked(track)
-                        isDisliked = false
+                        isLiked = !isLiked
+                        if (isLiked) isDisliked = false
                     }
                 ) {
                     Icon(
@@ -449,7 +445,7 @@ fun MusicPlayerScreen(
             }
 
             IconButton(
-                onClick = { com.videoguard.app.service.PlaybackController.toggleLoop() },
+                onClick = { isRepeat = !isRepeat },
                 modifier = Modifier.size(42.dp)
             ) {
                 Icon(
@@ -470,7 +466,7 @@ fun MusicPlayerScreen(
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
             colors = CardDefaults.cardColors(containerColor = Color(0xF2161726))
         ) {
-            Column(modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
+            Column(modifier = Modifier.fillMaxSize()) {
                 // Sleek handle bar
                 Spacer(modifier = Modifier.height(8.dp))
                 Box(

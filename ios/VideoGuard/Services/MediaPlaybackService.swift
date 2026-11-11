@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import AVFoundation
 import MediaPlayer
+import UIKit
 
 enum RepeatMode {
     case off, one, all
@@ -36,7 +37,6 @@ class MediaPlaybackService: ObservableObject {
     @Published var isShuffled: Bool = false
     @Published var repeatMode: RepeatMode = .off
 
-    // Compatibility wrapper for views referencing playbackState
     var playbackState: PlaybackState {
         let idx = currentTrack.flatMap { track in playbackQueue.firstIndex(where: { $0.id == track.id }) } ?? -1
         return PlaybackState(
@@ -56,20 +56,87 @@ class MediaPlaybackService: ObservableObject {
     private var lastTrackChangeTime: Date = .distantPast
     private var cachedArtworkImage: UIImage?
     private var cachedArtworkVideoId: String?
+    private var silentAudioPlayer: AVAudioPlayer?
+    private var lastNowPlayingUpdate: Date = .distantPast
 
     private init() {
-        setupAudioSession()
+        activateAudioSessionIfNeeded()
         setupRemoteCommands()
+        setupInterruptionObserver()
+        prepareSilentAudioAnchor()
     }
 
-    // MARK: - Audio Session & Lock Screen Controls
-    private func setupAudioSession() {
+    // MARK: - Audio Session, Silent Background Anchor & Lock Screen Controls
+    private func activateAudioSessionIfNeeded() {
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default, options: [])
-            try session.setActive(true)
-        } catch {
-            // Audio session failure is non-fatal in simulator
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {}
+    }
+
+    /// Generates an in-memory 1-second silent PCM WAV file so iOS keeps the app
+    /// alive in background & Lock Screen and preserves MPNowPlayingInfoCenter ownership.
+    private func prepareSilentAudioAnchor() {
+        let sampleRate: UInt32 = 8000
+        let numSamples: UInt32 = 8000 // 1 second
+        let dataSize = numSamples * 2
+        let chunkSize = 36 + dataSize
+
+        var wav = Data()
+        wav.append(contentsOf: "RIFF".utf8)
+        wav.append(withUnsafeBytes(of: chunkSize.littleEndian) { Data($0) })
+        wav.append(contentsOf: "WAVE".utf8)
+        wav.append(contentsOf: "fmt ".utf8)
+        wav.append(withUnsafeBytes(of: UInt32(16).littleEndian) { Data($0) })
+        wav.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) }) // PCM
+        wav.append(withUnsafeBytes(of: UInt16(1).littleEndian) { Data($0) }) // Mono
+        wav.append(withUnsafeBytes(of: sampleRate.littleEndian) { Data($0) })
+        wav.append(withUnsafeBytes(of: (sampleRate * 2).littleEndian) { Data($0) })
+        wav.append(withUnsafeBytes(of: UInt16(2).littleEndian) { Data($0) })
+        wav.append(withUnsafeBytes(of: UInt16(16).littleEndian) { Data($0) })
+        wav.append(contentsOf: "data".utf8)
+        wav.append(withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
+        wav.append(Data(count: Int(dataSize)))
+
+        do {
+            let player = try AVAudioPlayer(data: wav)
+            player.numberOfLoops = -1
+            player.volume = 0.001
+            player.prepareToPlay()
+            self.silentAudioPlayer = player
+        } catch {}
+    }
+
+    private func updateSilentAnchor() {
+        if isPlaying && isBackgroundPlayEnabled {
+            activateAudioSessionIfNeeded()
+            if silentAudioPlayer?.isPlaying == false {
+                silentAudioPlayer?.play()
+            }
+        } else {
+            if silentAudioPlayer?.isPlaying == true {
+                silentAudioPlayer?.pause()
+            }
+        }
+    }
+
+    private func setupInterruptionObserver() {
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self,
+                  let info = notification.userInfo,
+                  let typeVal = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
+
+            if type == .ended {
+                let optionsVal = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsVal)
+                if options.contains(.shouldResume) && self.currentTrack != nil {
+                    self.play()
+                }
+            }
         }
     }
 
@@ -110,16 +177,23 @@ class MediaPlaybackService: ObservableObject {
         }
     }
 
-    private func updateNowPlayingInfo() {
+    private func updateNowPlayingInfo(force: Bool = false) {
         guard let track = currentTrack else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
         }
 
+        if !force && Date().timeIntervalSince(lastNowPlayingUpdate) < 0.8 {
+            return
+        }
+        lastNowPlayingUpdate = Date()
+
+        let dur = durationSeconds > 0 ? durationSeconds : Double(parseDuration(track.duration)) / 1000.0
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: track.title,
             MPMediaItemPropertyArtist: track.artist.isEmpty ? track.channelName : track.artist,
-            MPMediaItemPropertyPlaybackDuration: durationSeconds > 0 ? durationSeconds : Double(parseDuration(track.duration)) / 1000.0,
+            MPMediaItemPropertyAlbumTitle: "VideoGuard",
+            MPMediaItemPropertyPlaybackDuration: dur,
             MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTimeSeconds,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? Double(playbackSpeed) : 0.0
         ]
@@ -163,7 +237,6 @@ class MediaPlaybackService: ObservableObject {
 
     func playTrack(_ track: VideoItem, queue: [VideoItem] = []) {
         DispatchQueue.main.async {
-            self.setupAudioSession()
             self.lastTrackChangeTime = Date()
             self.currentTrack = track
             self.isPlaying = true
@@ -178,9 +251,10 @@ class MediaPlaybackService: ObservableObject {
                 self.playbackQueue = [track]
             }
 
+            self.updateSilentAnchor()
             self.sendCommand("loadVideo('\(track.id)')")
             self.sendCommand("setPlaybackState(true)")
-            self.updateNowPlayingInfo()
+            self.updateNowPlayingInfo(force: true)
         }
     }
 
@@ -198,17 +272,18 @@ class MediaPlaybackService: ObservableObject {
         DispatchQueue.main.async {
             if self.isPlaying != playing {
                 self.isPlaying = playing
-                self.updateNowPlayingInfo()
+                self.updateSilentAnchor()
+                self.updateNowPlayingInfo(force: true)
             }
         }
     }
 
     func play() {
         DispatchQueue.main.async {
-            self.setupAudioSession()
             self.isPlaying = true
+            self.updateSilentAnchor()
             self.sendCommand("setPlaybackState(true)")
-            self.updateNowPlayingInfo()
+            self.updateNowPlayingInfo(force: true)
         }
     }
 
@@ -216,8 +291,9 @@ class MediaPlaybackService: ObservableObject {
         DispatchQueue.main.async {
             self.lastTrackChangeTime = .distantPast
             self.isPlaying = false
+            self.updateSilentAnchor()
             self.sendCommand("setPlaybackState(false)")
-            self.updateNowPlayingInfo()
+            self.updateNowPlayingInfo(force: true)
         }
     }
 
@@ -231,7 +307,7 @@ class MediaPlaybackService: ObservableObject {
             if duration > 0 {
                 self.durationSeconds = duration
             }
-            self.updateNowPlayingInfo()
+            self.updateNowPlayingInfo(force: false)
         }
     }
 
@@ -239,7 +315,7 @@ class MediaPlaybackService: ObservableObject {
         DispatchQueue.main.async {
             self.currentTimeSeconds = max(0, seconds)
             self.sendCommand("seekTo(\(seconds))")
-            self.updateNowPlayingInfo()
+            self.updateNowPlayingInfo(force: true)
         }
     }
 
@@ -252,7 +328,7 @@ class MediaPlaybackService: ObservableObject {
         DispatchQueue.main.async {
             self.currentTimeSeconds = newTime
             self.sendCommand("seekBy(\(seconds))")
-            self.updateNowPlayingInfo()
+            self.updateNowPlayingInfo(force: true)
         }
     }
 
@@ -294,14 +370,16 @@ class MediaPlaybackService: ObservableObject {
             self.currentTrack = nil
             self.currentTimeSeconds = 0
             self.durationSeconds = 0
+            self.updateSilentAnchor()
             self.sendCommand("setPlaybackState(false)")
-            self.updateNowPlayingInfo()
+            self.updateNowPlayingInfo(force: true)
         }
     }
 
     func toggleBackgroundPlay() {
         DispatchQueue.main.async {
             self.isBackgroundPlayEnabled.toggle()
+            self.updateSilentAnchor()
         }
     }
 
@@ -351,7 +429,7 @@ class MediaPlaybackService: ObservableObject {
         DispatchQueue.main.async {
             self.playbackSpeed = speed
             self.sendCommand("setPlaybackRate(\(speed))")
-            self.updateNowPlayingInfo()
+            self.updateNowPlayingInfo(force: true)
         }
     }
 

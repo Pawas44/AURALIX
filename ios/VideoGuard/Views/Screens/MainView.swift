@@ -283,11 +283,15 @@ struct MainView: View {
                     }
                 }
                 .frame(
-                    maxWidth: isFullscreen ? .infinity : (showVideoInYT ? .infinity : 1),
-                    maxHeight: isFullscreen ? .infinity : (showVideoInYT ? nil : 1)
+                    width: isFullscreen ? nil : ((showVideoInYT) ? nil : 240),
+                    height: isFullscreen ? nil : ((showVideoInYT) ? nil : 135)
+                )
+                .frame(
+                    maxWidth: (isFullscreen || showVideoInYT) ? .infinity : nil,
+                    maxHeight: isFullscreen ? .infinity : nil
                 )
                 .aspectRatio(showVideoInYT && !isFullscreen ? 16/9 : nil, contentMode: .fit)
-                .opacity((showVideoInYT || isFullscreen) ? 1.0 : 0.01)
+                .opacity((showVideoInYT || isFullscreen) ? 1.0 : 0.03)
                 .allowsHitTesting(showVideoInYT || isFullscreen)
                 .ignoresSafeArea(edges: isFullscreen ? .all : [])
                 .zIndex(isFullscreen ? 50 : (showVideoInYT ? 15 : -10))

@@ -35,6 +35,12 @@ struct VideoDetailView: View {
     }
 
     var body: some View {
+        let liveQueue = playbackService.playbackQueue
+        let currentIdx = liveQueue.firstIndex(where: { $0.id == video.id })
+        let queueText = (liveQueue.count > 1 && currentIdx != nil)
+            ? "Queue (\(currentIdx! + 1)/\(liveQueue.count))"
+            : "Up next"
+
         VStack(spacing: 0) {
             // Top Player Spacer (Pinned persistent YouTubeVideoPlayer sits above this in MainView)
             Color.clear
@@ -44,7 +50,7 @@ struct VideoDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     // Title & Stats
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(video.title)
                             .font(.system(size: 17, weight: .bold))
                             .foregroundColor(.white)
@@ -54,34 +60,33 @@ struct VideoDetailView: View {
                             .font(.system(size: 12))
                             .foregroundColor(AppTheme.youTubeTextSecondary)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.top, 12)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 10)
 
                     // Action Pills
-                    PlayerControls(video: video, onSwitchToMusic: onSwitchToMusicMode)
-                        .padding(.horizontal, 14)
-                        .padding(.top, 6)
+                    PlayerControls(video: video)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
 
-                    Divider().background(Color.white.opacity(0.1)).padding(.vertical, 8)
-
-                    // Channel Info Bar
-                    HStack(spacing: 12) {
+                    // Channel Bar + Verified + Liquid Glass Music Switcher Pill (Matches Android VideoDetailScreen)
+                    HStack(spacing: 10) {
                         Button(action: { onChannelClick(video) }) {
                             HStack(spacing: 10) {
                                 AsyncImage(url: URL(string: video.channelAvatarUrl)) { image in
                                     image.resizable().aspectRatio(contentMode: .fill)
                                 } placeholder: {
-                                    Circle().fill(Color.gray.opacity(0.4))
+                                    Circle().fill(Color(hex: 0x333333))
                                 }
-                                .frame(width: 40, height: 40)
+                                .frame(width: 38, height: 38)
                                 .clipShape(Circle())
 
-                                VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 4) {
                                     Text(video.channelName)
                                         .font(.system(size: 15, weight: .semibold))
                                         .foregroundColor(.white)
                                         .lineLimit(1)
-                                    Text(video.subscriberCount.isEmpty ? "Channel" : video.subscriberCount)
+
+                                    Image(systemName: "checkmark.circle.fill")
                                         .font(.system(size: 12))
                                         .foregroundColor(AppTheme.youTubeTextSecondary)
                                 }
@@ -90,88 +95,128 @@ struct VideoDetailView: View {
 
                         Spacer()
 
-                        let subscribed = userData.isSubscribed(video.channelName)
-                        Button(action: { userData.toggleSubscription(video.channelName) }) {
-                            Text(subscribed ? "Subscribed" : "Subscribe")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(subscribed ? .white : .black)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(subscribed ? Color.white.opacity(0.15) : Color.white)
-                                .cornerRadius(20)
+                        // Liquid Glass Music Mode Switcher Pill
+                        Button(action: onSwitchToMusicMode) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "music.note")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(AppTheme.ytMusicRedAccent)
+                                Text("Music")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color.white.opacity(0.16), Color.white.opacity(0.05)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 20))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 20)
+                                    .strokeBorder(LiquidGlassDefaults.borderSpecular, lineWidth: 1)
+                            )
+                            .shadow(color: Color.black.opacity(0.45), radius: 6, x: 0, y: 3)
                         }
-                    }
-                    .padding(.horizontal, 14)
-
-                    // Background Audio Status Banner
-                    HStack {
-                        Image(systemName: "headphones")
-                            .font(.system(size: 14))
-                            .foregroundColor(isBackgroundPlay ? Color(hex: 0x4CAF50) : AppTheme.youTubeTextSecondary)
-                        Text(isBackgroundPlay ? "Background audio play is ON" : "Background audio play is OFF")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.white)
-                        Spacer()
-                        Button(isBackgroundPlay ? "Disable" : "Enable") {
-                            onToggleBackgroundPlay()
-                        }
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color(hex: 0x3EA6FF))
                     }
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .liquidGlass(cornerRadius: 10)
-                    .padding(.horizontal, 14)
                     .padding(.top, 10)
 
-                    // Description Box
+                    // Expandable Description
                     if !video.description.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text(video.description)
-                                .font(.system(size: 13))
+                                .font(.system(size: 12))
                                 .foregroundColor(AppTheme.youTubeTextSecondary)
                                 .lineLimit(isDescriptionExpanded ? nil : 2)
 
                             Button(action: { isDescriptionExpanded.toggle() }) {
                                 Text(isDescriptionExpanded ? "Show less" : "Show more")
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .font(.system(size: 12, weight: .semibold))
                                     .foregroundColor(.white)
                             }
                         }
-                        .padding(12)
+                        .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.white.opacity(0.06))
                         .cornerRadius(10)
-                        .padding(.horizontal, 14)
+                        .padding(.horizontal, 12)
                         .padding(.top, 10)
                     }
 
-                    // Related Videos
+                    // Up Next / Queue Header
                     HStack {
-                        Text("Up next")
-                            .font(.system(size: 16, weight: .bold))
+                        Text(queueText)
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundColor(.white)
                         Spacer()
-                        if isLoadingRelated {
+                        if liveQueue.count > 1 {
+                            Text("Auto-play queue")
+                                .font(.system(size: 12))
+                                .foregroundColor(AppTheme.youTubeTextSecondary)
+                        } else if isLoadingRelated {
                             ProgressView()
                                 .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                 .scaleEffect(0.7)
                         }
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.top, 16)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 14)
                     .padding(.bottom, 8)
 
-                    LazyVStack(spacing: 14) {
+                    // Compact Horizontal Up Next Queue Rows (Matches Android 120x68 rows)
+                    LazyVStack(spacing: 12) {
                         ForEach(displayVideos) { item in
-                            YouTubeVideoCard(
-                                video: item,
-                                onClick: { onVideoSelected(item) },
-                                onChannelClick: { onChannelClick(item) }
-                            )
+                            Button(action: { onVideoSelected(item) }) {
+                                HStack(spacing: 12) {
+                                    ZStack(alignment: .bottomTrailing) {
+                                        AsyncImage(url: URL(string: item.thumbnailUrl)) { img in
+                                            img.resizable().aspectRatio(16/9, contentMode: .fill)
+                                        } placeholder: {
+                                            Rectangle().fill(Color(hex: 0x222222))
+                                        }
+                                        .frame(width: 120, height: 68)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                                        if !item.duration.isEmpty {
+                                            Text(item.duration)
+                                                .font(.system(size: 10, weight: .bold))
+                                                .foregroundColor(.white)
+                                                .padding(.horizontal, 5)
+                                                .padding(.vertical, 2)
+                                                .background(Color.black.opacity(0.85))
+                                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                                                .padding(4)
+                                        }
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(item.title)
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .lineLimit(2)
+                                            .multilineTextAlignment(.leading)
+
+                                        Text("\(item.channelName) • \(item.views)")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(AppTheme.youTubeTextSecondary)
+                                            .lineLimit(1)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                    Image(systemName: "ellipsis")
+                                        .rotationEffect(.degrees(90))
+                                        .font(.system(size: 14))
+                                        .foregroundColor(AppTheme.youTubeTextSecondary)
+                                }
+                                .padding(.horizontal, 12)
+                            }
                         }
                     }
-                    .padding(.bottom, 60)
+                    .padding(.bottom, 50)
                 }
             }
         }
