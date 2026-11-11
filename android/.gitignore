@@ -49,6 +49,7 @@ captures/
 
 # Scratch test files & screenshots
 *.png
+!app/src/main/res/**/*.png
 *.jpg
 *.jpeg
 *.json
