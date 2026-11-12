@@ -351,7 +351,7 @@ class UserDataRepository: ObservableObject {
         }
     }
 
-    private func savePlaylists() {
+    func savePlaylists() {
         if let data = try? JSONEncoder().encode(playlists) {
             UserDefaults.standard.set(data, forKey: keyPlaylists)
         }
