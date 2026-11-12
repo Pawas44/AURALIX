@@ -252,8 +252,12 @@ class MediaPlaybackService: ObservableObject {
 
             if !queue.isEmpty {
                 self.playbackQueue = queue
+                if queue.count <= 2 {
+                    self.checkAndFetchSimilarTracks(for: track)
+                }
             } else if !self.playbackQueue.contains(where: { $0.id == track.id }) {
                 self.playbackQueue = [track]
+                self.checkAndFetchSimilarTracks(for: track)
             }
 
             self.updateSilentAnchor()
@@ -340,6 +344,24 @@ class MediaPlaybackService: ObservableObject {
     func next() { nextTrack() }
     func previous() { prevTrack() }
 
+    private var isFetchingSimilar = false
+
+    func checkAndFetchSimilarTracks(for track: VideoItem) {
+        guard !isFetchingSimilar else { return }
+        isFetchingSimilar = true
+        Task {
+            let similar = await YouTubeSearchEngine.getRelatedVideos(video: track, isMusicOnly: true)
+            let existingIds = Set(self.playbackQueue.map { $0.id })
+            let newUnique = similar.filter { !existingIds.contains($0.id) }
+            if !newUnique.isEmpty {
+                await MainActor.run {
+                    self.playbackQueue.append(contentsOf: newUnique)
+                }
+            }
+            self.isFetchingSimilar = false
+        }
+    }
+
     func nextTrack() {
         guard let current = currentTrack else { return }
         let queue = playbackQueue.isEmpty ? VideoRepository.sampleVideos : playbackQueue
@@ -352,6 +374,9 @@ class MediaPlaybackService: ObservableObject {
             }
         }
         let idx = queue.firstIndex(where: { $0.id == current.id }) ?? -1
+        if idx >= queue.count - 2 || queue.count <= 2 {
+            checkAndFetchSimilarTracks(for: current)
+        }
         let nextIdx = (idx >= 0 && idx < queue.count - 1) ? idx + 1 : 0
         playTrack(queue[nextIdx], queue: queue)
     }

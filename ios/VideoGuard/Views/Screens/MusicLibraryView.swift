@@ -10,6 +10,12 @@ struct MusicLibraryView: View {
     @State private var showNewPlaylistAlert = false
     @State private var newPlaylistTitle = ""
 
+    @State private var showImportSheet = false
+    @State private var importUrlInput = ""
+    @State private var importProgress: ImportProgress? = nil
+    @State private var isImporting = false
+    @State private var importedPlaylistResult: UserPlaylist? = nil
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -68,6 +74,44 @@ struct MusicLibraryView: View {
                         }
                     }
                 }
+
+                // Spotify / Amazon Music Import Banner
+                Button(action: { showImportSheet = true }) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .fill(Color(hex: 0x1DB954, alpha: 0.2))
+                                .frame(width: 40, height: 40)
+                            Image(systemName: "link.badge.plus")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(Color(hex: 0x1DB954))
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Import from Spotify / Amazon Music")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.white)
+                            Text("Paste playlist link to sync free into AURALIX")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(hex: 0xAAAAAA))
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(Color(hex: 0x888888))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .background(Color(hex: 0x161826))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color(hex: 0x1DB954).opacity(0.4), lineWidth: 1)
+                    )
+                }
+                .padding(.horizontal, 16)
 
                 // Playlists List
                 VStack(alignment: .leading, spacing: 12) {
@@ -138,6 +182,133 @@ struct MusicLibraryView: View {
                 }
             }
             Button("Cancel", role: .cancel) { newPlaylistTitle = "" }
+        }
+        .sheet(isPresented: $showImportSheet) {
+            NavigationView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Paste any Spotify or Amazon Music playlist/track link, or enter song titles:")
+                        .font(.system(size: 13))
+                        .foregroundColor(Color(hex: 0xCCCCCC))
+
+                    VStack(alignment: .trailing, spacing: 8) {
+                        TextField("https://open.spotify.com/playlist/...", text: $importUrlInput)
+                            .padding(12)
+                            .background(Color.white.opacity(0.08))
+                            .cornerRadius(10)
+                            .foregroundColor(.white)
+
+                        Button(action: {
+                            if let clip = UIPasteboard.general.string {
+                                importUrlInput = clip
+                            }
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.on.clipboard")
+                                Text("Paste from Clipboard")
+                            }
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(Color(hex: 0x1DB954))
+                        }
+                    }
+
+                    if let prog = importProgress {
+                        VStack(alignment: .leading, spacing: 6) {
+                            if isImporting {
+                                ProgressView(value: prog.total > 0 ? Double(prog.current) / Double(prog.total) : 0)
+                                    .tint(Color(hex: 0x1DB954))
+                            }
+
+                            Text(prog.total > 0 ? "\(prog.stage) (\(prog.current)/\(prog.total))" : prog.stage)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+
+                            if !prog.currentTrackName.isEmpty {
+                                Text(prog.currentTrackName)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Color(hex: 0xAAAAAA))
+                                    .lineLimit(1)
+                            }
+                        }
+                        .padding(12)
+                        .background(Color.white.opacity(0.05))
+                        .cornerRadius(10)
+                    }
+
+                    if let res = importedPlaylistResult {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("✓ Successfully Imported!")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(Color(hex: 0x1DB954))
+                            Text("\(res.title) • \(res.videoCount) tracks")
+                                .font(.system(size: 13))
+                                .foregroundColor(.white)
+
+                            Button(action: {
+                                showImportSheet = false
+                                onPlaylistClick(res)
+                            }) {
+                                Text("Play Playlist Now")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.black)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .background(Color(hex: 0x1DB954))
+                                    .cornerRadius(8)
+                            }
+                            .padding(.top, 6)
+                        }
+                        .padding(12)
+                        .background(Color(hex: 0x1DB954, alpha: 0.15))
+                        .cornerRadius(10)
+                    }
+
+                    Spacer()
+
+                    if importedPlaylistResult == nil {
+                        Button(action: {
+                            guard !importUrlInput.isEmpty && !isImporting else { return }
+                            isImporting = true
+                            importProgress = nil
+                            Task {
+                                let result = await SpotifyImportEngine.shared.importPlaylist(from: importUrlInput) { prog in
+                                    DispatchQueue.main.async {
+                                        self.importProgress = prog
+                                    }
+                                }
+                                await MainActor.run {
+                                    self.isImporting = false
+                                    if case .success(let pl) = result {
+                                        self.importedPlaylistResult = pl
+                                    }
+                                }
+                            }
+                        }) {
+                            Text(isImporting ? "Importing..." : "Start Import")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(importUrlInput.isEmpty || isImporting ? Color.gray : Color(hex: 0x1DB954))
+                                .cornerRadius(12)
+                        }
+                        .disabled(importUrlInput.isEmpty || isImporting)
+                    }
+                }
+                .padding(20)
+                .background(Color(hex: 0x10121C).ignoresSafeArea())
+                .navigationTitle("Import Playlist")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") {
+                            showImportSheet = false
+                            importProgress = nil
+                            importedPlaylistResult = nil
+                        }
+                        .foregroundColor(.white)
+                    }
+                }
+            }
         }
     }
 }

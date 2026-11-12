@@ -187,8 +187,12 @@ object PlaybackController {
 
         if (queue.isNotEmpty()) {
             _playbackQueue.value = queue
+            if (queue.size <= 2) {
+                checkAndFetchSimilarTracks(track)
+            }
         } else if (_playbackQueue.value.none { it.id == track.id }) {
             _playbackQueue.value = listOf(track)
+            checkAndFetchSimilarTracks(track)
         }
 
         startOrUpdateService()
@@ -262,10 +266,38 @@ object PlaybackController {
         syncServiceProgress(force = true)
     }
 
+    private var isFetchingSimilar = false
+
+    fun checkAndFetchSimilarTracks(track: VideoItem) {
+        if (isFetchingSimilar) return
+        isFetchingSimilar = true
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            try {
+                val similar = com.videoguard.app.data.YouTubeSearchEngine.getRelatedVideos(track, isMusicOnly = true)
+                val currentQueue = _playbackQueue.value.toMutableList()
+                val existingIds = currentQueue.map { it.id }.toSet()
+                val newUnique = similar.filter { it.id !in existingIds }
+                if (newUnique.isNotEmpty()) {
+                    currentQueue.addAll(newUnique)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        _playbackQueue.value = currentQueue
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                isFetchingSimilar = false
+            }
+        }
+    }
+
     fun nextTrack() {
         val current = _currentTrack.value ?: return
         val queue = _playbackQueue.value.ifEmpty { VideoRepository.sampleVideos }
         val idx = queue.indexOfFirst { it.id == current.id }
+        if (idx >= queue.size - 2 || queue.size <= 2) {
+            checkAndFetchSimilarTracks(current)
+        }
         val nextIdx = if (idx in 0 until queue.lastIndex) idx + 1 else 0
         playTrack(queue[nextIdx], queue)
     }

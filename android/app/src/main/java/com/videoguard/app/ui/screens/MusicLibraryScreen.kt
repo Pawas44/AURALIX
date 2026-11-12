@@ -1,5 +1,6 @@
 package com.videoguard.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -18,12 +19,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.videoguard.app.data.AccountRepository
+import com.videoguard.app.data.ImportProgress
+import com.videoguard.app.data.MusicImportEngine
 import com.videoguard.app.data.UserDataRepository
 import com.videoguard.app.model.UserPlaylist
 import com.videoguard.app.model.VideoItem
@@ -45,6 +49,13 @@ fun MusicLibraryScreen(
     var selectedFilter by remember { mutableStateOf("Playlists") }
     val scope = rememberCoroutineScope()
     var isSyncing by remember { mutableStateOf(false) }
+
+    var showImportDialog by remember { mutableStateOf(false) }
+    var importUrlInput by remember { mutableStateOf("") }
+    var importProgress by remember { mutableStateOf<ImportProgress?>(null) }
+    var isImporting by remember { mutableStateOf(false) }
+    var importedPlaylistResult by remember { mutableStateOf<UserPlaylist?>(null) }
+    val clipboardManager = LocalClipboardManager.current
 
     Scaffold(
         topBar = {
@@ -133,6 +144,64 @@ fun MusicLibraryScreen(
                             ),
                             border = null,
                             shape = RoundedCornerShape(16.dp)
+                        )
+                    }
+                }
+            }
+
+            // Import from Spotify / Amazon Music Banner
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .clickable { showImportDialog = true },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF141722)),
+                    border = BorderStroke(1.dp, Color(0xFF1DB954).copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1DB954).copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AddLink,
+                                contentDescription = "Import",
+                                tint = Color(0xFF1DB954),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Import from Spotify / Amazon Music",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "Sync your playlists free into AURALIX",
+                                color = Color(0xFFAAAAAA),
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = Color(0xFF888888)
                         )
                     }
                 }
@@ -273,5 +342,183 @@ fun MusicLibraryScreen(
                 Spacer(modifier = Modifier.height(90.dp))
             }
         }
+    }
+
+    if (showImportDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isImporting) {
+                    showImportDialog = false
+                    importProgress = null
+                    importedPlaylistResult = null
+                }
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = null,
+                        tint = Color(0xFF1DB954),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Import Playlist",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Paste any Spotify or Amazon Music playlist link, or enter song titles line by line:",
+                        color = Color(0xFFCCCCCC),
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    OutlinedTextField(
+                        value = importUrlInput,
+                        onValueChange = { importUrlInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("https://open.spotify.com/playlist/...", fontSize = 12.sp, color = Color(0xFF666666)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF1DB954),
+                            unfocusedBorderColor = Color(0xFF444444)
+                        ),
+                        singleLine = false,
+                        maxLines = 3
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(
+                            onClick = {
+                                clipboardManager.getText()?.text?.let { importUrlInput = it }
+                            }
+                        ) {
+                            Icon(Icons.Default.ContentPaste, contentDescription = null, tint = Color(0xFF1DB954), modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Paste from Clipboard", color = Color(0xFF1DB954), fontSize = 12.sp)
+                        }
+                    }
+
+                    val progress = importProgress
+                    if (progress != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (isImporting) {
+                            LinearProgressIndicator(
+                                progress = {
+                                    if (progress.total > 0) progress.current.toFloat() / progress.total else 0f
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = Color(0xFF1DB954)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (progress.total > 0) "${progress.stage} (${progress.current}/${progress.total})" else progress.stage,
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        if (progress.currentTrackName.isNotBlank()) {
+                            Text(
+                                text = progress.currentTrackName,
+                                color = Color(0xFFAAAAAA),
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        if (progress.error != null) {
+                            Text(
+                                text = "Error: ${progress.error}",
+                                color = Color(0xFFFF5252),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    val result = importedPlaylistResult
+                    if (result != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF1DB954).copy(alpha = 0.15f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "✓ Successfully Imported!",
+                                    color = Color(0xFF1DB954),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "${result.title} • ${result.videoCount} tracks",
+                                    color = Color.White,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                val result = importedPlaylistResult
+                if (result != null) {
+                    Button(
+                        onClick = {
+                            showImportDialog = false
+                            onPlaylistClick(result)
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
+                    ) {
+                        Text("Play Playlist", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            if (importUrlInput.isNotBlank() && !isImporting) {
+                                isImporting = true
+                                importProgress = null
+                                importedPlaylistResult = null
+                                scope.launch {
+                                    val res = MusicImportEngine.importPlaylistFromUrl(importUrlInput) { prog ->
+                                        importProgress = prog
+                                    }
+                                    isImporting = false
+                                    res.onSuccess { pl ->
+                                        importedPlaylistResult = pl
+                                    }
+                                }
+                            }
+                        },
+                        enabled = importUrlInput.isNotBlank() && !isImporting,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954))
+                    ) {
+                        Text(if (isImporting) "Importing..." else "Start Import", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showImportDialog = false
+                        importProgress = null
+                        importedPlaylistResult = null
+                    },
+                    enabled = !isImporting
+                ) {
+                    Text("Close", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF1E1F2A)
+        )
     }
 }

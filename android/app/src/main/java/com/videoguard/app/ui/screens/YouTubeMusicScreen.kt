@@ -127,6 +127,24 @@ fun YouTubeMusicScreen(
         }
     }
 
+    // 5. Similar Songs & Radio Picks (Dynamic recommendations from user history)
+    var similarPicks by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    var similarSeedTitle by remember { mutableStateOf("") }
+
+    val lastPlayed = remember(accountHistoryMusic, userHistory) {
+        accountHistoryMusic.firstOrNull() ?: userHistory.firstOrNull()
+    }
+
+    LaunchedEffect(lastPlayed?.id) {
+        if (lastPlayed != null) {
+            similarSeedTitle = (lastPlayed.artist.ifBlank { lastPlayed.title }).take(25)
+            val related = com.videoguard.app.data.YouTubeSearchEngine.getRelatedVideos(lastPlayed, isMusicOnly = true)
+            if (related.isNotEmpty()) {
+                similarPicks = related
+            }
+        }
+    }
+
     // All music tracks for sequential playback
     val allMusicTracks = remember(quickPicks, listenAgain, trendingCharts) {
         (quickPicks + listenAgain + trendingCharts).distinctBy { it.id }
@@ -250,6 +268,40 @@ fun YouTubeMusicScreen(
                         track = track,
                         onClick = { onTrackSelected(track, listenAgain) }
                     )
+                }
+            }
+        }
+
+        // Section: "Similar Songs & Smart Recommendations"
+        if (similarPicks.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(24.dp))
+                Column(modifier = Modifier.padding(horizontal = 14.dp)) {
+                    Text(
+                        text = "SIMILAR SONGS & RADIO",
+                        color = Color(0xFF909090),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp
+                    )
+                    Text(
+                        text = if (similarSeedTitle.isNotBlank()) "Similar to $similarSeedTitle" else "Recommended for you",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    items(similarPicks, key = { "similar_${it.id}" }) { track ->
+                        AlbumCard(
+                            track = track,
+                            onClick = { onTrackSelected(track, similarPicks) }
+                        )
+                    }
                 }
             }
         }

@@ -386,6 +386,18 @@ object UserDataRepository {
         savePlaylists()
     }
 
+    fun savePlaylist(playlist: UserPlaylist) {
+        val current = _playlists.value.toMutableList()
+        val index = current.indexOfFirst { it.id == playlist.id }
+        if (index != -1) {
+            current[index] = playlist
+        } else {
+            current.add(playlist)
+        }
+        _playlists.value = current
+        savePlaylists()
+    }
+
     private fun savePlaylists() {
         val sp = prefs ?: return
         try {

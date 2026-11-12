@@ -28,8 +28,11 @@ struct YouTubeMusicHomeView: View {
         syncEngine.musicFeed.trendingCharts.isEmpty ? quickPicks : syncEngine.musicFeed.trendingCharts
     }
 
+    @State private var similarPicks: [VideoItem] = []
+    @State private var similarSeedTitle: String = ""
+
     private var allMusicTracks: [VideoItem] {
-        YouTubeSyncEngine.distinctVideos(quickPicks + listenAgain + trendingCharts)
+        YouTubeSyncEngine.distinctVideos(quickPicks + listenAgain + trendingCharts + similarPicks)
     }
 
     var body: some View {
@@ -105,6 +108,54 @@ struct YouTubeMusicHomeView: View {
                                 }
                             }
                             .padding(.horizontal, 14)
+                        }
+                    }
+
+                    // Similar Songs & Smart Recommendations
+                    if !similarPicks.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("SIMILAR SONGS & RADIO")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .tracking(0.8)
+                                    .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                Text(similarSeedTitle.isEmpty ? "Recommended for you" : "Similar to \(similarSeedTitle)")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 14)
+
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(similarPicks) { track in
+                                        Button(action: { onTrackSelected(track, allMusicTracks) }) {
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                AsyncImage(url: URL(string: track.thumbnailUrl)) { image in
+                                                    image.resizable().aspectRatio(contentMode: .fill)
+                                                } placeholder: {
+                                                    Rectangle().fill(AppTheme.ytMusicCardBg)
+                                                }
+                                                .frame(width: 130, height: 130)
+                                                .cornerRadius(10)
+                                                .clipped()
+
+                                                Text(track.title)
+                                                    .font(.system(size: 13, weight: .medium))
+                                                    .foregroundColor(.white)
+                                                    .lineLimit(1)
+                                                    .frame(width: 130, alignment: .leading)
+
+                                                Text(track.artist.isEmpty ? track.channelName : track.artist)
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                                    .lineLimit(1)
+                                                    .frame(width: 130, alignment: .leading)
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 14)
+                            }
                         }
                     }
 
@@ -278,6 +329,15 @@ struct YouTubeMusicHomeView: View {
             isRefreshing = true
             _ = await syncEngine.fetchMusicHomeFeed(mood: selectedMood.isEmpty ? nil : selectedMood)
             isRefreshing = false
+        }
+        .task(id: userData.history.first?.id) {
+            if let last = userData.history.first {
+                similarSeedTitle = (last.artist.isEmpty ? last.title : last.artist)
+                let related = await YouTubeSearchEngine.getRelatedVideos(video: last, isMusicOnly: true)
+                if !related.isEmpty {
+                    similarPicks = related
+                }
+            }
         }
     }
 }
