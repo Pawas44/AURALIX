@@ -330,8 +330,8 @@ struct YouTubeMusicHomeView: View {
             _ = await syncEngine.fetchMusicHomeFeed(mood: selectedMood.isEmpty ? nil : selectedMood)
             isRefreshing = false
         }
-        .task(id: userData.history.first?.id) {
-            if let last = userData.history.first {
+        .task(id: userData.watchHistory.first?.id) {
+            if let last = userData.watchHistory.first {
                 similarSeedTitle = (last.artist.isEmpty ? last.title : last.artist)
                 let related = await YouTubeSearchEngine.getRelatedVideos(video: last, isMusicOnly: true)
                 if !related.isEmpty {

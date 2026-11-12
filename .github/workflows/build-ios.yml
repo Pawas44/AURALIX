@@ -128,5 +128,5 @@ jobs:
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "AURALIX $TAG" \
-            --notes "Direct download builds for Android (\`AURALIX.apk\`) and iOS (\`AURALIX.ipa\`)." \
+            --notes $'### 🚀 What\'s New in AURALIX '"$TAG"'\n- **🎵 Spotify & Amazon Music Playlist Import**: Paste any Spotify/Amazon Music playlist link to sync tracks into your Library for free.\n- **📻 Smart Recommendations & Similar Songs**: Dynamic recommendation carousel on Home Feed + infinite auto-queue radio playback.\n- **🍏 iOS Music Player Overhaul**: Safe-area notch padding, visible top collapse chevron, dynamic scaling album art, liquid red scrubber, and swipe-down-to-dismiss.\n\n### 📥 Direct Downloads\n- [AURALIX.apk (Android)](https://github.com/'"${{ github.repository }}"'/releases/download/'"$TAG"'/AURALIX.apk)\n- [AURALIX.ipa (iOS)](https://github.com/'"${{ github.repository }}"'/releases/download/'"$TAG"'/AURALIX.ipa)' \
             --latest
