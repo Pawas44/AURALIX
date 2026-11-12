@@ -36,6 +36,7 @@ struct AppTheme {
     static let ytMusicBlack = Color(hex: 0x030303)
     static let ytMusicSurface = Color(hex: 0x121212)
     static let ytMusicCardBg = Color(hex: 0x1D1D1D)
+    static let ytMusicRed = Color(hex: 0xFF0033)
     static let ytMusicRedAccent = Color(hex: 0xFF0033)
     static let ytMusicChipBg = Color(hex: 0x212121)
     static let ytMusicChipActiveBg = Color(hex: 0xFFFFFF)

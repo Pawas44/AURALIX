@@ -152,7 +152,7 @@ struct MusicLibraryView: View {
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 8)
-                                .background(AppTheme.ytMusicRed)
+                                .background(AppTheme.ytMusicRedAccent)
                                 .cornerRadius(20)
                             }
                         }
