@@ -102,7 +102,7 @@ object MusicImportEngine {
                 videos = matchedVideos,
                 isSystem = false,
                 iconType = "playlist",
-                coverThumbnailUrl = matchedVideos.firstOrNull()?.thumbnailUrl
+                customCoverUrl = matchedVideos.firstOrNull()?.thumbnailUrl
             )
 
             // Auto-save into UserDataRepository

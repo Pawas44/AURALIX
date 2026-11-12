@@ -1520,7 +1520,7 @@ final class SpotifyImportEngine {
             videos: matchedVideos,
             isSystem: false,
             iconType: "playlist",
-            coverThumbnailUrl: matchedVideos.first?.thumbnailUrl
+            customCoverUrl: matchedVideos.first?.thumbnailUrl
         )
 
         // Save into UserDataRepository
