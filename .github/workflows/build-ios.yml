@@ -122,19 +122,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v1.0.${{ github.run_number }}"
-          cat << 'EOF' > release_notes.md
-### 🚀 What's New in AURALIX __TAG__
-- **➕ Library Screen & New Playlist Option**: Added '+' New Playlist button and creation modal in Library on Android & iOS for quick playlist management.
-- **⚡ Amazon Music & Spotify 115+ Tracks Import**: Full-fidelity playlist sync supporting 115+ tracks with high-speed concurrent batch matching, multi-region Amazon Music links (.com, .in, amzn.to), JSON-LD schema parsing, and clipboard text import.
-- **📻 Smart Recommendations & Infinite Queue**: Dynamic recommendation carousel on Home Feed with auto-queue radio playback.
-- **🍏 iOS Music Player Overhaul**: Safe-area notch padding, visible top collapse chevron, dynamic scaling album art, liquid red scrubber, and swipe-down-to-dismiss.
-
-### 📥 Direct Downloads
-- [AURALIX.apk (Android)](https://github.com/__REPO__/releases/download/__TAG__/AURALIX.apk)
-- [AURALIX.ipa (iOS)](https://github.com/__REPO__/releases/download/__TAG__/AURALIX.ipa)
-EOF
-          sed -i "s|__TAG__|$TAG|g" release_notes.md
-          sed -i "s|__REPO__|${{ github.repository }}|g" release_notes.md
+          {
+            echo "### 🚀 What's New in AURALIX $TAG"
+            echo "- **➕ Library Screen & New Playlist Option**: Added '+' New Playlist button and creation modal in Library on Android & iOS for quick playlist management."
+            echo "- **⚡ Amazon Music & Spotify 115+ Tracks Import**: Full-fidelity playlist sync supporting 115+ tracks with high-speed concurrent batch matching, multi-region Amazon Music links (.com, .in, amzn.to), JSON-LD schema parsing, and clipboard text import."
+            echo "- **📻 Smart Recommendations & Infinite Queue**: Dynamic recommendation carousel on Home Feed with auto-queue radio playback."
+            echo "- **🍏 iOS Music Player Overhaul**: Safe-area notch padding, visible top collapse chevron, dynamic scaling album art, liquid red scrubber, and swipe-down-to-dismiss."
+            echo ""
+            echo "### 📥 Direct Downloads"
+            echo "- [AURALIX.apk (Android)](https://github.com/${{ github.repository }}/releases/download/$TAG/AURALIX.apk)"
+            echo "- [AURALIX.ipa (iOS)](https://github.com/${{ github.repository }}/releases/download/$TAG/AURALIX.ipa)"
+          } > release_notes.md
 
           gh release create "$TAG" \
             release-assets/AURALIX.apk \
