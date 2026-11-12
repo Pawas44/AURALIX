@@ -175,6 +175,7 @@ struct MainView: View {
                         let isAccountSelected = !isSearchActive && !isSupportActive && activeChannelVideo == nil && activePlaylist == nil && (appMode == .youtube ? selectedYTTab == .you : selectedMusicTab == .library)
 
                         LiquidBottomNavBar(
+                            isMusic: appMode == .youtubeMusic,
                             isHomeSelected: isHomeSelected,
                             isSearchSelected: isSearchActive,
                             isAccountSelected: isAccountSelected,

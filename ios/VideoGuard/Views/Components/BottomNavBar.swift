@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct LiquidBottomNavBar: View {
+    var isMusic: Bool = false
     let isHomeSelected: Bool
     let isSearchSelected: Bool
     let isAccountSelected: Bool
@@ -42,13 +43,20 @@ struct LiquidBottomNavBar: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18))
             }
 
-            // 3. Account
+            // 3. Library (in Music mode) / You (in Video mode)
             Button(action: onAccountClick) {
                 VStack(spacing: 2) {
-                    accountAvatarView
-                        .frame(width: 22, height: 22)
-                    Text("Account")
-                        .font(.system(size: 10, weight: isAccountSelected ? .bold : .medium))
+                    if isMusic {
+                        Image(systemName: isAccountSelected ? "play.square.stack.fill" : "play.square.stack")
+                            .font(.system(size: 19))
+                        Text("Library")
+                            .font(.system(size: 10, weight: isAccountSelected ? .bold : .medium))
+                    } else {
+                        accountAvatarView
+                            .frame(width: 22, height: 22)
+                        Text("You")
+                            .font(.system(size: 10, weight: isAccountSelected ? .bold : .medium))
+                    }
                 }
                 .foregroundColor(isAccountSelected ? .white : Color(hex: 0x9E9EAF))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -132,16 +132,27 @@ fun BottomNavBar(
                     onClick = onSearchClick
                 )
 
-                // 3. Account
-                BottomAccountNavItem(
-                    title = "Account",
-                    isSelected = isAccountSelected,
-                    onClick = {
-                        onAccountClick()
-                        onYTTabSelected(YouTubeTab.YOU)
-                        onMusicTabSelected(YouTubeMusicTab.LIBRARY)
-                    }
-                )
+                // 3. Library (in Music mode) / You (in Video mode)
+                if (isMusic) {
+                    BottomNavItem(
+                        title = "Library",
+                        icon = if (isAccountSelected) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic,
+                        isSelected = isAccountSelected,
+                        onClick = {
+                            onAccountClick()
+                            onMusicTabSelected(YouTubeMusicTab.LIBRARY)
+                        }
+                    )
+                } else {
+                    BottomAccountNavItem(
+                        title = "You",
+                        isSelected = isAccountSelected,
+                        onClick = {
+                            onAccountClick()
+                            onYTTabSelected(YouTubeTab.YOU)
+                        }
+                    )
+                }
 
                 // 4. Support
                 BottomNavItem(
