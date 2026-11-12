@@ -1446,12 +1446,12 @@ class YouTubeSyncEngine: ObservableObject {
 
 // MARK: - Spotify & Amazon Music Import Engine
 
-struct ImportTrackMeta {
+struct ImportTrackMeta: Sendable {
     let title: String
     let artist: String
 }
 
-struct ImportProgress {
+struct ImportProgress: Sendable {
     let stage: String
     let current: Int
     let total: Int
@@ -1492,40 +1492,24 @@ final class SpotifyImportEngine {
         onProgress(ImportProgress(stage: "Matching tracks with YouTube Music...", current: 0, total: total))
 
         var matchedVideos: [VideoItem] = []
-        let chunkSize = 4
 
-        for chunkStart in stride(from: 0, to: total, by: chunkSize) {
-            let chunkEnd = min(chunkStart + chunkSize, total)
-            let chunk = Array(parsed.tracks[chunkStart..<chunkEnd])
-
-            await withTaskGroup(of: (Int, VideoItem?).self) { group in
-                for (offset, meta) in chunk.enumerated() {
-                    let globalIdx = chunkStart + offset
-                    group.addTask {
-                        let query = meta.artist.isEmpty ? meta.title : "\(meta.title) \(meta.artist)"
-                        var results = await YouTubeSearchEngine.searchVideos(query: query, isMusicOnly: true)
-                        if results.isEmpty && !meta.artist.isEmpty {
-                            results = await YouTubeSearchEngine.searchVideos(query: meta.title, isMusicOnly: true)
-                        }
-                        return (globalIdx, results.first)
-                    }
-                }
-
-                for await (idx, item) in group {
-                    if let item = item {
-                        matchedVideos.append(item)
-                    }
-                    let meta = parsed.tracks[idx]
-                    onProgress(
-                        ImportProgress(
-                            stage: "Matching tracks...",
-                            current: min(idx + 1, total),
-                            total: total,
-                            currentTrackName: "\(meta.title) • \(meta.artist)"
-                        )
-                    )
-                }
+        for (idx, meta) in parsed.tracks.enumerated() {
+            let query = meta.artist.isEmpty ? meta.title : "\(meta.title) \(meta.artist)"
+            var results = await YouTubeSearchEngine.searchVideos(query: query, isMusicOnly: true)
+            if results.isEmpty && !meta.artist.isEmpty {
+                results = await YouTubeSearchEngine.searchVideos(query: meta.title, isMusicOnly: true)
             }
+            if let first = results.first {
+                matchedVideos.append(first)
+            }
+            onProgress(
+                ImportProgress(
+                    stage: "Matching tracks...",
+                    current: idx + 1,
+                    total: total,
+                    currentTrackName: "\(meta.title) • \(meta.artist)"
+                )
+            )
         }
 
         guard !matchedVideos.isEmpty else {

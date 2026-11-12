@@ -7,6 +7,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -258,7 +259,7 @@ object MusicImportEngine {
                         }
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {}
         }
 
         // 2. Parse Amazon Web Client embedded track JSON blobs:
