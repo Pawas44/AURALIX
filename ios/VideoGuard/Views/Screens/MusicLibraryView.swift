@@ -131,41 +131,70 @@ struct MusicLibraryView: View {
                     }
                     .padding(.horizontal, 16)
 
-                    LazyVStack(spacing: 12) {
-                        ForEach(userData.playlists) { playlist in
-                            Button(action: { onPlaylistClick(playlist) }) {
-                                HStack(spacing: 14) {
-                                    if !playlist.thumbnailUrl.isEmpty {
-                                        AsyncImage(url: URL(string: playlist.thumbnailUrl)) { img in
-                                            img.resizable().aspectRatio(contentMode: .fill)
-                                        } placeholder: {
-                                            Rectangle().fill(AppTheme.ytMusicCardBg)
-                                        }
-                                        .frame(width: 60, height: 60)
-                                        .cornerRadius(8)
-                                        .clipped()
-                                    } else {
-                                        ZStack {
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .fill(Color.white.opacity(0.08))
-                                            Image(systemName: playlist.iconType == "like" ? "hand.thumbsup.fill" : "music.note.list")
-                                                .font(.system(size: 22))
-                                                .foregroundColor(.white)
-                                        }
-                                        .frame(width: 60, height: 60)
-                                    }
-
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(playlist.title)
-                                            .font(.system(size: 15, weight: .semibold))
-                                            .foregroundColor(.white)
-                                        Text("\(playlist.videoCount) tracks")
-                                            .font(.system(size: 12))
-                                            .foregroundColor(AppTheme.ytMusicTextSecondary)
-                                    }
-                                    Spacer()
+                    if userData.playlists.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "music.note.list")
+                                .font(.system(size: 40))
+                                .foregroundColor(.gray)
+                            Text("No playlists yet")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.white)
+                            Text("Create a new playlist or import from Spotify / Amazon Music")
+                                .font(.system(size: 12))
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                            Button(action: { showNewPlaylistAlert = true }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus")
+                                    Text("Create Playlist")
                                 }
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.white)
                                 .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(AppTheme.ytMusicRed)
+                                .cornerRadius(20)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                    } else {
+                        LazyVStack(spacing: 12) {
+                            ForEach(userData.playlists) { playlist in
+                                Button(action: { onPlaylistClick(playlist) }) {
+                                    HStack(spacing: 14) {
+                                        if !playlist.thumbnailUrl.isEmpty {
+                                            AsyncImage(url: URL(string: playlist.thumbnailUrl)) { img in
+                                                img.resizable().aspectRatio(contentMode: .fill)
+                                            } placeholder: {
+                                                Rectangle().fill(AppTheme.ytMusicCardBg)
+                                            }
+                                            .frame(width: 60, height: 60)
+                                            .cornerRadius(8)
+                                            .clipped()
+                                        } else {
+                                            ZStack {
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .fill(Color.white.opacity(0.08))
+                                                Image(systemName: playlist.iconType == "like" ? "hand.thumbsup.fill" : "music.note.list")
+                                                    .font(.system(size: 22))
+                                                    .foregroundColor(.white)
+                                            }
+                                            .frame(width: 60, height: 60)
+                                        }
+
+                                        VStack(alignment: .leading, spacing: 3) {
+                                            Text(playlist.title)
+                                                .font(.system(size: 15, weight: .semibold))
+                                                .foregroundColor(.white)
+                                            Text("\(playlist.videoCount) tracks")
+                                                .font(.system(size: 12))
+                                                .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                        }
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 16)
+                                }
                             }
                         }
                     }

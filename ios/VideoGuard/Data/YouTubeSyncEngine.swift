@@ -1478,7 +1478,7 @@ final class SpotifyImportEngine {
         let parsed: (title: String, tracks: [ImportTrackMeta])
         if trimmed.contains("spotify.com") {
             parsed = await parseSpotify(url: trimmed)
-        } else if trimmed.contains("music.amazon.com") {
+        } else if trimmed.contains("music.amazon.") || (trimmed.contains("amazon.") && trimmed.contains("music")) || trimmed.contains("amzn.to") {
             parsed = await parseAmazonMusic(url: trimmed)
         } else {
             parsed = parsePlainText(trimmed)
@@ -1492,21 +1492,40 @@ final class SpotifyImportEngine {
         onProgress(ImportProgress(stage: "Matching tracks with YouTube Music...", current: 0, total: total))
 
         var matchedVideos: [VideoItem] = []
+        let chunkSize = 4
 
-        for (idx, meta) in parsed.tracks.enumerated() {
-            let query = meta.artist.isEmpty ? meta.title : "\(meta.title) \(meta.artist)"
-            let results = await YouTubeSearchEngine.searchVideos(query: query, isMusicOnly: true)
-            if let first = results.first {
-                matchedVideos.append(first)
+        for chunkStart in stride(from: 0, to: total, by: chunkSize) {
+            let chunkEnd = min(chunkStart + chunkSize, total)
+            let chunk = Array(parsed.tracks[chunkStart..<chunkEnd])
+
+            await withTaskGroup(of: (Int, VideoItem?).self) { group in
+                for (offset, meta) in chunk.enumerated() {
+                    let globalIdx = chunkStart + offset
+                    group.addTask {
+                        let query = meta.artist.isEmpty ? meta.title : "\(meta.title) \(meta.artist)"
+                        var results = await YouTubeSearchEngine.searchVideos(query: query, isMusicOnly: true)
+                        if results.isEmpty && !meta.artist.isEmpty {
+                            results = await YouTubeSearchEngine.searchVideos(query: meta.title, isMusicOnly: true)
+                        }
+                        return (globalIdx, results.first)
+                    }
+                }
+
+                for await (idx, item) in group {
+                    if let item = item {
+                        matchedVideos.append(item)
+                    }
+                    let meta = parsed.tracks[idx]
+                    onProgress(
+                        ImportProgress(
+                            stage: "Matching tracks...",
+                            current: min(idx + 1, total),
+                            total: total,
+                            currentTrackName: "\(meta.title) • \(meta.artist)"
+                        )
+                    )
+                }
             }
-            onProgress(
-                ImportProgress(
-                    stage: "Matching tracks...",
-                    current: idx + 1,
-                    total: total,
-                    currentTrackName: "\(meta.title) • \(meta.artist)"
-                )
-            )
         }
 
         guard !matchedVideos.isEmpty else {
@@ -1604,40 +1623,145 @@ final class SpotifyImportEngine {
     }
 
     private func parseAmazonMusic(url: String) async -> (title: String, tracks: [ImportTrackMeta]) {
-        guard let u = URL(string: url),
-              let (data, _) = try? await URLSession.shared.data(from: u),
+        guard let u = URL(string: url) else { return ("Amazon Music Playlist", []) }
+        var req = URLRequest(url: u)
+        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        req.setValue("text/html,application/json,*/*", forHTTPHeaderField: "Accept")
+        req.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
               let html = String(data: data, encoding: .utf8) else {
             return ("Amazon Music Playlist", [])
         }
 
         var title = "Amazon Music Playlist"
-        if let tStart = html.range(of: "<title>"),
-           let tEnd = html[tStart.upperBound...].range(of: "</title>") {
+        if let tStart = html.range(of: "<title>", options: .caseInsensitive),
+           let tEnd = html[tStart.upperBound...].range(of: "</title>", options: .caseInsensitive) {
             let rawTitle = String(html[tStart.upperBound..<tEnd.lowerBound])
-            title = rawTitle.replacingOccurrences(of: "on Amazon Music", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+            title = rawTitle
+                .replacingOccurrences(of: "on Amazon Music", with: "", options: .caseInsensitive)
+                .replacingOccurrences(of: "Amazon.com: ", with: "", options: .caseInsensitive)
+                .replacingOccurrences(of: "Amazon Music: ", with: "", options: .caseInsensitive)
+                .replacingOccurrences(of: "Amazon Music", with: "", options: .caseInsensitive)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
         var tracks: [ImportTrackMeta] = []
-        let pattern = "meta property=\"music:song\" content=\"([^\"]+)\""
-        if let regex = try? NSRegularExpression(pattern: pattern) {
-            let nsString = html as NSString
-            let results = regex.matches(in: html, range: NSRange(location: 0, length: nsString.length))
-            for match in results {
-                if match.numberOfRanges > 1 {
-                    let songUrl = nsString.substring(with: match.range(at: 1))
-                    let songName = (songUrl.components(separatedBy: "/").last ?? "").replacingOccurrences(of: "-", with: " ")
-                    if !songName.isEmpty {
-                        tracks.append(ImportTrackMeta(title: songName, artist: ""))
+
+        // 1. Check for JSON-LD schema scripts
+        let jsonLdPattern = "<script[^>]*type=[\"']application/ld\\+json[\"'][^>]*>(.*?)</script>"
+        if let jsonLdRegex = try? NSRegularExpression(pattern: jsonLdPattern, options: [.dotMatchesLineSeparators, .caseInsensitive]) {
+            let nsHtml = html as NSString
+            let matches = jsonLdRegex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
+            for m in matches {
+                guard m.numberOfRanges > 1 else { continue }
+                let jsonStr = nsHtml.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if let jData = jsonStr.data(using: .utf8),
+                   let root = try? JSONSerialization.jsonObject(with: jData) as? [String: Any] {
+                    if let pName = root["name"] as? String, !pName.isEmpty, (title == "Amazon Music Playlist" || title.isEmpty) {
+                        title = pName
+                    }
+                    if let trackArr = root["track"] as? [[String: Any]] {
+                        for item in trackArr {
+                            let tName = (item["name"] as? String) ?? ""
+                            var aName = ""
+                            if let byArtist = item["byArtist"] as? [String: Any] {
+                                aName = (byArtist["name"] as? String) ?? ""
+                            } else if let aStr = item["artist"] as? String {
+                                aName = aStr
+                            }
+                            if !tName.isEmpty {
+                                tracks.append(ImportTrackMeta(title: tName, artist: aName))
+                            }
+                        }
+                    }
+                    if let itemArr = root["itemListElement"] as? [[String: Any]] {
+                        for elem in itemArr {
+                            let item = (elem["item"] as? [String: Any]) ?? elem
+                            let tName = (item["name"] as? String) ?? ""
+                            var aName = ""
+                            if let byArtist = item["byArtist"] as? [String: Any] {
+                                aName = (byArtist["name"] as? String) ?? ""
+                            }
+                            if !tName.isEmpty {
+                                tracks.append(ImportTrackMeta(title: tName, artist: aName))
+                            }
+                        }
                     }
                 }
             }
         }
 
+        // 2. Parse Amazon Web Client embedded track JSON blobs (primaryText & secondaryText)
         if tracks.isEmpty {
-            tracks.append(ImportTrackMeta(title: title, artist: ""))
+            let ptPattern = "\"primaryText\"\\s*:\\s*\"([^\"]+)\"[^}]*?\"secondaryText(?:1)?\"\\s*:\\s*\"([^\"]+)\""
+            if let ptRegex = try? NSRegularExpression(pattern: ptPattern, options: []) {
+                let nsHtml = html as NSString
+                let matches = ptRegex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
+                for m in matches {
+                    if m.numberOfRanges > 2 {
+                        let t = nsHtml.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                        let a = nsHtml.substring(with: m.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !t.isEmpty && !t.lowercased().contains("amazon music") && !t.lowercased().contains("library") {
+                            tracks.append(ImportTrackMeta(title: t, artist: a))
+                        }
+                    }
+                }
+            }
         }
 
-        return (title, tracks)
+        // 3. Alternative Amazon Music track/artist JSON fields ("title" & "artistName")
+        if tracks.isEmpty {
+            let taPattern = "\"title\"\\s*:\\s*\"([^\"]+)\"[^}]*?\"artistName\"\\s*:\\s*\"([^\"]+)\""
+            if let taRegex = try? NSRegularExpression(pattern: taPattern, options: []) {
+                let nsHtml = html as NSString
+                let matches = taRegex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
+                for m in matches {
+                    if m.numberOfRanges > 2 {
+                        let t = nsHtml.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                        let a = nsHtml.substring(with: m.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !t.isEmpty && !t.contains("Amazon") {
+                            tracks.append(ImportTrackMeta(title: t, artist: a))
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. OpenGraph meta property="music:song" fallback
+        if tracks.isEmpty {
+            let pattern = "meta property=\"music:song\" content=\"([^\"]+)\""
+            if let regex = try? NSRegularExpression(pattern: pattern) {
+                let nsString = html as NSString
+                let results = regex.matches(in: html, range: NSRange(location: 0, length: nsString.length))
+                for match in results {
+                    if match.numberOfRanges > 1 {
+                        let songUrl = nsString.substring(with: match.range(at: 1))
+                        let songName = (songUrl.components(separatedBy: "/").last ?? "").replacingOccurrences(of: "-", with: " ")
+                        if !songName.isEmpty {
+                            tracks.append(ImportTrackMeta(title: songName, artist: ""))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Deduplicate tracks while preserving order
+        var uniqueTracks: [ImportTrackMeta] = []
+        var seen = Set<String>()
+        for tr in tracks {
+            let key = "\(tr.title.lowercased().trimmingCharacters(in: .whitespaces))_\(tr.artist.lowercased().trimmingCharacters(in: .whitespaces))"
+            if !seen.contains(key) {
+                seen.insert(key)
+                uniqueTracks.append(tr)
+            }
+        }
+
+        if uniqueTracks.isEmpty {
+            uniqueTracks.append(ImportTrackMeta(title: title, artist: ""))
+        }
+
+        return (title, uniqueTracks)
     }
 
     private func parsePlainText(_ text: String) -> (title: String, tracks: [ImportTrackMeta]) {
@@ -1645,18 +1769,45 @@ final class SpotifyImportEngine {
         var tracks: [ImportTrackMeta] = []
 
         for line in lines {
-            let clean = line.replacingOccurrences(of: "^\\d+[\\.\\)\\-]\\s*", with: "", options: .regularExpression)
-            if clean.contains(" - ") {
-                let parts = clean.components(separatedBy: " - ")
-                tracks.append(ImportTrackMeta(title: parts[0].trimmingCharacters(in: .whitespaces), artist: parts[1].trimmingCharacters(in: .whitespaces)))
-            } else if clean.contains(" by ") {
-                let parts = clean.components(separatedBy: " by ")
-                tracks.append(ImportTrackMeta(title: parts[0].trimmingCharacters(in: .whitespaces), artist: parts[1].trimmingCharacters(in: .whitespaces)))
+            // Remove leading track numbers e.g. "1.", "01 -", "(1)"
+            var cleaned = line.replacingOccurrences(of: "^\\s*\\(?\\d+[\\.\\)\\-]\\s*", with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+            // Remove trailing timestamp/duration like "(03:45)" or "3:45"
+            cleaned = cleaned.replacingOccurrences(of: "\\s*\\(?\\d{1,2}:\\d{2}\\)?$", with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+
+            // Skip table header lines
+            let lower = cleaned.lowercased()
+            if lower == "title" || lower == "track" || lower == "song" || lower.hasPrefix("track title") {
+                continue
+            }
+
+            let parts: [String]
+            if cleaned.contains("\t") {
+                parts = cleaned.components(separatedBy: "\t")
+            } else if cleaned.contains(" - ") {
+                parts = cleaned.components(separatedBy: " - ")
+            } else if cleaned.contains(" – ") {
+                parts = cleaned.components(separatedBy: " – ")
+            } else if cleaned.contains(" — ") {
+                parts = cleaned.components(separatedBy: " — ")
+            } else if cleaned.contains(" by ") {
+                parts = cleaned.components(separatedBy: " by ")
+            } else if cleaned.contains(" | ") {
+                parts = cleaned.components(separatedBy: " | ")
             } else {
-                tracks.append(ImportTrackMeta(title: clean, artist: ""))
+                parts = [cleaned]
+            }
+
+            if parts.count >= 2 {
+                let t = parts[0].trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                let a = parts[1].trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                if !t.isEmpty {
+                    tracks.append(ImportTrackMeta(title: t, artist: a))
+                }
+            } else if !cleaned.isEmpty {
+                tracks.append(ImportTrackMeta(title: cleaned.trimmingCharacters(in: CharacterSet(charactersIn: "\"")), artist: ""))
             }
         }
 
-        return ("My Custom Playlist", tracks)
+        return ("Imported Custom Playlist", tracks)
     }
 }

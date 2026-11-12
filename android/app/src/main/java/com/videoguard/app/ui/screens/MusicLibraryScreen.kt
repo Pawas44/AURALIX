@@ -50,6 +50,9 @@ fun MusicLibraryScreen(
     val scope = rememberCoroutineScope()
     var isSyncing by remember { mutableStateOf(false) }
 
+    var showNewPlaylistDialog by remember { mutableStateOf(false) }
+    var newPlaylistTitle by remember { mutableStateOf("") }
+
     var showImportDialog by remember { mutableStateOf(false) }
     var importUrlInput by remember { mutableStateOf("") }
     var importProgress by remember { mutableStateOf<ImportProgress?>(null) }
@@ -264,15 +267,89 @@ fun MusicLibraryScreen(
                 }
             }
 
-            // Playlists List
+            // Playlists Header with '+' New Playlist Button
             item {
-                Text(
-                    text = "Recent Playlists",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Playlists",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Surface(
+                        onClick = { showNewPlaylistDialog = true },
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.White.copy(alpha = 0.08f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "New Playlist",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "New",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (playlists.isEmpty()) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LibraryMusic,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(44.dp)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = "No playlists yet",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Create a new playlist or import from Spotify / Amazon Music",
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Button(
+                            onClick = { showNewPlaylistDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = YTMusicRedAccent),
+                            shape = RoundedCornerShape(20.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Create Playlist", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
 
             items(playlists, key = { it.id }) { playlist ->
@@ -342,6 +419,66 @@ fun MusicLibraryScreen(
                 Spacer(modifier = Modifier.height(90.dp))
             }
         }
+    }
+
+    if (showNewPlaylistDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showNewPlaylistDialog = false
+                newPlaylistTitle = ""
+            },
+            title = {
+                Text(
+                    text = "New Playlist",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = newPlaylistTitle,
+                    onValueChange = { newPlaylistTitle = it },
+                    placeholder = { Text("Playlist Title", color = Color.Gray, fontSize = 14.sp) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = YTMusicRedAccent,
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                        cursorColor = YTMusicRedAccent
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val trimmed = newPlaylistTitle.trim()
+                        if (trimmed.isNotEmpty()) {
+                            val created = UserDataRepository.createPlaylist(trimmed)
+                            newPlaylistTitle = ""
+                            showNewPlaylistDialog = false
+                            onPlaylistClick(created)
+                        }
+                    }
+                ) {
+                    Text("Create", color = YTMusicRedAccent, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        newPlaylistTitle = ""
+                        showNewPlaylistDialog = false
+                    }
+                ) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            },
+            containerColor = Color(0xFF1E1E1E),
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 
     if (showImportDialog) {
