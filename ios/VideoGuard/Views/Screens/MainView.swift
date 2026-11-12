@@ -260,6 +260,7 @@ struct MainView: View {
                         )
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(10)
             }

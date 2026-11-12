@@ -49,16 +49,30 @@ struct VideoDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Title & Stats
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(video.title)
-                            .font(.system(size: 17, weight: .bold))
-                            .foregroundColor(.white)
-                            .lineLimit(3)
+                    // Title & Stats + Collapse
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(video.title)
+                                .font(.system(size: 17, weight: .bold))
+                                .foregroundColor(.white)
+                                .lineLimit(3)
 
-                        Text("\(video.views) • \(video.uploadTime)")
-                            .font(.system(size: 12))
-                            .foregroundColor(AppTheme.youTubeTextSecondary)
+                            Text("\(video.views) • \(video.uploadTime)")
+                                .font(.system(size: 12))
+                                .foregroundColor(AppTheme.youTubeTextSecondary)
+                        }
+
+                        Spacer()
+
+                        Button(action: onCollapse) {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 34, height: 34)
+                                .background(Color.white.opacity(0.12))
+                                .clipShape(Circle())
+                                .overlay(Circle().strokeBorder(LiquidGlassDefaults.borderSpecular, lineWidth: 1))
+                        }
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, 10)
