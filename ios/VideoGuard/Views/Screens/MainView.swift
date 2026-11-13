@@ -116,14 +116,6 @@ struct MainView: View {
                             onOpenSearch: { isSearchActive = true },
                             onOpenAccountSheet: { showAccountSheet = true }
                         )
-                            onVideoSelected: { video, queue in
-                                playbackService.playTrack(video, queue: queue)
-                                isPlayerExpanded = true
-                            },
-                            onPlaylistClick: { pl in
-                                activePlaylist = pl
-                            }
-                        )
                     } else {
                         if appMode == .youtube {
                             if selectedYTTab == .you {
