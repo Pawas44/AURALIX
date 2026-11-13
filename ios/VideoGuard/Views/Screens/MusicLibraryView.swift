@@ -99,57 +99,13 @@ struct MusicLibraryView: View {
 
                             Divider().background(Color.white.opacity(0.08))
 
-                            // 2. Apple Music
+                            // 2. Amazon Music
                             importServiceRow(
-                                title: "Apple Music",
-                                brandColor: Color(hex: 0xFA243C),
-                                iconName: "music.note.list"
+                                title: "Amazon Music",
+                                brandColor: Color(hex: 0x00A8E1),
+                                iconName: "music.note"
                             ) {
-                                openServiceImport(service: "Apple Music")
-                            }
-
-                            Divider().background(Color.white.opacity(0.08))
-
-                            // 3. YouTube
-                            importServiceRow(
-                                title: "YouTube",
-                                brandColor: Color(hex: 0xFF0000),
-                                iconName: "play.rectangle.fill"
-                            ) {
-                                openServiceImport(service: "YouTube")
-                            }
-
-                            Divider().background(Color.white.opacity(0.08))
-
-                            // 4. Tidal
-                            importServiceRow(
-                                title: "Tidal",
-                                brandColor: Color(hex: 0x16181F),
-                                iconName: "square.fill"
-                            ) {
-                                openServiceImport(service: "Tidal")
-                            }
-
-                            Divider().background(Color.white.opacity(0.08))
-
-                            // 5. SoundCloud
-                            importServiceRow(
-                                title: "SoundCloud",
-                                brandColor: Color(hex: 0xFF5500),
-                                iconName: "cloud.fill"
-                            ) {
-                                openServiceImport(service: "SoundCloud")
-                            }
-
-                            Divider().background(Color.white.opacity(0.08))
-
-                            // 6. More Services
-                            importServiceRow(
-                                title: "More Services",
-                                brandColor: Color(hex: 0x2C3140),
-                                iconName: "ellipsis"
-                            ) {
-                                openServiceImport(service: "More Services")
+                                openServiceImport(service: "Amazon Music")
                             }
                         }
                         .background(Color(hex: 0x141622))

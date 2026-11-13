@@ -229,85 +229,13 @@ fun MusicLibraryScreen(
                                 modifier = Modifier.padding(vertical = 2.dp)
                             )
 
-                            // 2. Apple Music
+                            // 2. Amazon Music
                             ServiceRow(
-                                title = "Apple Music",
-                                brandColor = Color(0xFFFA243C),
+                                title = "Amazon Music",
+                                brandColor = Color(0xFF00A8E1),
                                 icon = Icons.Default.MusicNote,
                                 onClick = {
-                                    selectedImportService = "Apple Music"
-                                    importUrlInput = ""
-                                    importProgress = null
-                                    importedPlaylistResult = null
-                                }
-                            )
-
-                            HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.07f),
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
-
-                            // 3. YouTube
-                            ServiceRow(
-                                title = "YouTube",
-                                brandColor = Color(0xFFFF0000),
-                                icon = Icons.Default.PlayArrow,
-                                onClick = {
-                                    selectedImportService = "YouTube"
-                                    importUrlInput = ""
-                                    importProgress = null
-                                    importedPlaylistResult = null
-                                }
-                            )
-
-                            HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.07f),
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
-
-                            // 4. Tidal
-                            ServiceRow(
-                                title = "Tidal",
-                                brandColor = Color(0xFF16181F),
-                                icon = Icons.Default.Album,
-                                onClick = {
-                                    selectedImportService = "Tidal"
-                                    importUrlInput = ""
-                                    importProgress = null
-                                    importedPlaylistResult = null
-                                }
-                            )
-
-                            HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.07f),
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
-
-                            // 5. SoundCloud
-                            ServiceRow(
-                                title = "SoundCloud",
-                                brandColor = Color(0xFFFF5500),
-                                icon = Icons.Default.Cloud,
-                                onClick = {
-                                    selectedImportService = "SoundCloud"
-                                    importUrlInput = ""
-                                    importProgress = null
-                                    importedPlaylistResult = null
-                                }
-                            )
-
-                            HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.07f),
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
-
-                            // 6. More Services
-                            ServiceRow(
-                                title = "More Services",
-                                brandColor = Color(0xFF2C3140),
-                                icon = Icons.Default.MoreHoriz,
-                                onClick = {
-                                    selectedImportService = "More Services"
+                                    selectedImportService = "Amazon Music"
                                     importUrlInput = ""
                                     importProgress = null
                                     importedPlaylistResult = null

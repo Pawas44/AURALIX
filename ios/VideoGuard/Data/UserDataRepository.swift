@@ -109,35 +109,134 @@ class UserDataRepository: ObservableObject {
         }
 
         Task { @MainActor in
-            let totalBytes = 6_800_000.0
-            for p in stride(from: 15, through: 100, by: 15) {
-                let written = totalBytes * (Double(p) / 100.0)
-                let mbNow = String(format: "%.1f", written / (1024.0 * 1024.0))
-                let mbTotal = String(format: "%.1f", totalBytes / (1024.0 * 1024.0))
-                self.currentDownload = DownloadTask(
-                    videoId: video.id,
-                    title: video.title,
-                    progress: p,
-                    bytesText: "\(mbNow) MB / \(mbTotal) MB",
-                    isComplete: p >= 100
-                )
-                try? await Task.sleep(nanoseconds: 180_000_000)
+            self.currentDownload = DownloadTask(
+                videoId: video.id,
+                title: video.title,
+                progress: 5,
+                bytesText: "Connecting...",
+                isComplete: false
+            )
+
+            guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+            let dir = docs.appendingPathComponent("downloads")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let fileUrl = dir.appendingPathComponent("\(video.id).m4a")
+
+            var isRealStreamDownloaded = false
+            if let streamUrl = await self.fetchRealYouTubeAudioUrl(videoId: video.id) {
+                var request = URLRequest(url: streamUrl)
+                request.timeoutInterval = 25
+                request.setValue("Mozilla/5.0 (Linux; Android 10; Quest 2) AppleWebKit/537.36", forHTTPHeaderField: "User-Agent")
+
+                do {
+                    let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
+                    let totalLen = (response as? HTTPURLResponse)?.expectedContentLength ?? 4_500_000
+                    let expectedTotal = totalLen > 0 ? totalLen : 4_500_000
+                    var downloaded: Int64 = 0
+                    var fileData = Data()
+                    var lastUpdate = Date()
+
+                    for try await byte in asyncBytes {
+                        fileData.append(byte)
+                        downloaded += 1
+
+                        if Date().timeIntervalSince(lastUpdate) > 0.15 || downloaded == expectedTotal {
+                            lastUpdate = Date()
+                            let percent = min(100, max(0, Int((downloaded * 100) / expectedTotal)))
+                            let mbNow = String(format: "%.1f", Double(downloaded) / (1024.0 * 1024.0))
+                            let mbTotal = String(format: "%.1f", Double(expectedTotal) / (1024.0 * 1024.0))
+                            self.currentDownload = DownloadTask(
+                                videoId: video.id,
+                                title: video.title,
+                                progress: percent,
+                                bytesText: "\(mbNow) MB / \(mbTotal) MB",
+                                isComplete: percent >= 100
+                            )
+                        }
+                    }
+                    try fileData.write(to: fileUrl)
+                    isRealStreamDownloaded = true
+                } catch {
+                    print("Stream download failed: \(error)")
+                }
             }
 
-            if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
-                let dir = docs.appendingPathComponent("downloads")
-                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                let fileUrl = dir.appendingPathComponent("\(video.id).m4a")
-                self.writeValidWavAudio(to: fileUrl, durationSec: 180)
-            }
+            self.currentDownload = DownloadTask(
+                videoId: video.id,
+                title: video.title,
+                progress: 100,
+                bytesText: "Complete",
+                isComplete: true
+            )
 
             self.offlineTracks.removeAll { $0.id == video.id }
             self.offlineTracks.insert(video, at: 0)
             self.saveOfflineTracks()
 
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
             self.currentDownload = nil
         }
+    }
+
+    private func fetchRealYouTubeAudioUrl(videoId: String) async -> URL? {
+        guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false") else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Mozilla/5.0 (Linux; Android 10; Quest 2) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/15.0.0.4.78.287474720 SamsungBrowser/4.0 Chrome/89.0.4389.105 Mobile VR Safari/537.36", forHTTPHeaderField: "User-Agent")
+
+        let body: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "ANDROID_VR",
+                    "clientVersion": "1.61.48",
+                    "deviceMake": "Oculus",
+                    "deviceModel": "Quest 2",
+                    "glCheckSupport": false,
+                    "osName": "Android",
+                    "osVersion": "10",
+                    "hl": "en",
+                    "gl": "US"
+                ]
+            ],
+            "videoId": videoId,
+            "contentCheckOk": true,
+            "racyCheckOk": true
+        ]
+
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+        request.httpBody = httpBody
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+                return nil
+            }
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let streamingData = json["streamingData"] as? [String: Any],
+               let adaptiveFormats = streamingData["adaptiveFormats"] as? [[String: Any]] {
+                var bestAudioUrl: String? = nil
+                var bestBitrate: Int = 0
+                for fmt in adaptiveFormats {
+                    let mime = fmt["mimeType"] as? String ?? ""
+                    let audioUrl = fmt["url"] as? String ?? ""
+                    let bitrate = fmt["bitrate"] as? Int ?? 0
+                    if mime.hasPrefix("audio/") && !audioUrl.isEmpty {
+                        if mime.contains("mp4") || bitrate > bestBitrate {
+                            bestAudioUrl = audioUrl
+                            bestBitrate = bitrate
+                        }
+                    }
+                }
+                if let best = bestAudioUrl, let resultUrl = URL(string: best) {
+                    return resultUrl
+                }
+            }
+        } catch {
+            print("Error fetching real audio URL: \(error)")
+        }
+        return nil
     }
 
     @discardableResult
@@ -157,59 +256,6 @@ class UserDataRepository: ObservableObject {
         if let data = try? JSONEncoder().encode(offlineTracks) {
             UserDefaults.standard.set(data, forKey: keyOfflineTracks)
         }
-    }
-
-    private func writeValidWavAudio(to url: URL, durationSec: Int = 180) {
-        let sampleRate: UInt32 = 44100
-        let channels: UInt16 = 2
-        let bitsPerSample: UInt16 = 16
-        let byteRate = sampleRate * UInt32(channels) * UInt32(bitsPerSample) / 8
-        let blockAlign = channels * bitsPerSample / 8
-        let numSamples = sampleRate * UInt32(max(30, durationSec))
-        let dataSize = numSamples * UInt32(channels) * UInt32(bitsPerSample / 8)
-        let chunkSize = 36 + dataSize
-
-        var wav = Data()
-        func appendLE<T>(_ value: T) {
-            var v = value
-            withUnsafeBytes(of: &v) { wav.append(contentsOf: $0) }
-        }
-
-        wav.append(contentsOf: "RIFF".utf8)
-        appendLE(chunkSize)
-        wav.append(contentsOf: "WAVE".utf8)
-        wav.append(contentsOf: "fmt ".utf8)
-        appendLE(UInt32(16))
-        appendLE(UInt16(1)) // PCM
-        appendLE(channels)
-        appendLE(sampleRate)
-        appendLE(byteRate)
-        appendLE(blockAlign)
-        appendLE(bitsPerSample)
-        wav.append(contentsOf: "data".utf8)
-        appendLE(dataSize)
-
-        let bufferSize = 4096
-        var buffer = [UInt8](repeating: 0, count: bufferSize)
-        var written: UInt32 = 0
-        let baseFreq = 440.0
-        while written < dataSize {
-            let toWrite = min(UInt32(bufferSize), dataSize - written)
-            for i in stride(from: 0, to: Int(toWrite), by: 4) {
-                let sampleIdx = (written + UInt32(i)) / 4
-                let time = Double(sampleIdx) / Double(sampleRate)
-                let sampleVal = Int16(((sin(2.0 * .pi * baseFreq * time) + 0.5 * sin(2.0 * .pi * (baseFreq * 1.5) * time)) * 3200.0))
-                let uVal = UInt16(bitPattern: sampleVal)
-                buffer[i] = UInt8(uVal & 0xFF)
-                buffer[i + 1] = UInt8((uVal >> 8) & 0xFF)
-                buffer[i + 2] = UInt8(uVal & 0xFF)
-                buffer[i + 3] = UInt8((uVal >> 8) & 0xFF)
-            }
-            wav.append(buffer, count: Int(toWrite))
-            written += toWrite
-        }
-
-        try? wav.write(to: url)
     }
 
     // MARK: - Search History

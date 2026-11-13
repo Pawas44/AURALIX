@@ -205,41 +205,85 @@ object UserDataRepository {
             }
             val notifId = video.id.hashCode()
 
-            val totalBytes = 6_800_000L
-            for (p in 5..100 step 5) {
-                val writtenBytes = (totalBytes * (p / 100f)).toLong()
-                val mbNow = String.format(java.util.Locale.US, "%.1f", writtenBytes / (1024f * 1024f))
-                val mbTotal = String.format(java.util.Locale.US, "%.1f", totalBytes / (1024f * 1024f))
+            _currentDownload.value = DownloadTask(
+                videoId = video.id,
+                title = video.title,
+                progress = 5,
+                bytesText = "Connecting...",
+                isComplete = false
+            )
+
+            var isRealStreamDownloaded = false
+            val streamUrl = fetchRealYouTubeAudioUrl(video.id)
+
+            if (!streamUrl.isNullOrBlank()) {
+                try {
+                    val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 15000
+                        readTimeout = 20000
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; Quest 2) AppleWebKit/537.36")
+                    }
+                    val totalLen = conn.contentLengthLong.let { if (it > 0) it else 4_500_000L }
+                    var downloaded = 0L
+
+                    conn.inputStream.use { input ->
+                        java.io.FileOutputStream(targetFile).use { output ->
+                            val buffer = ByteArray(16384)
+                            var read: Int
+                            var lastUpdate = 0L
+                            while (input.read(buffer).also { read = it } != -1) {
+                                output.write(buffer, 0, read)
+                                downloaded += read
+
+                                val now = System.currentTimeMillis()
+                                if (now - lastUpdate > 150 || downloaded == totalLen) {
+                                    lastUpdate = now
+                                    val percent = ((downloaded * 100) / totalLen).toInt().coerceIn(0, 100)
+                                    val mbNow = String.format(java.util.Locale.US, "%.1f", downloaded / (1024f * 1024f))
+                                    val mbTotal = String.format(java.util.Locale.US, "%.1f", totalLen / (1024f * 1024f))
+
+                                    _currentDownload.value = DownloadTask(
+                                        videoId = video.id,
+                                        title = video.title,
+                                        progress = percent,
+                                        bytesText = "$mbNow MB / $mbTotal MB",
+                                        isComplete = percent >= 100
+                                    )
+
+                                    try {
+                                        val notif = androidx.core.app.NotificationCompat.Builder(context, channelId)
+                                            .setContentTitle("Downloading: ${video.title}")
+                                            .setContentText("$percent% ($mbNow MB / $mbTotal MB)")
+                                            .setSmallIcon(android.R.drawable.stat_sys_download)
+                                            .setProgress(100, percent, false)
+                                            .setOngoing(percent < 100)
+                                            .setOnlyAlertOnce(true)
+                                            .build()
+                                        notifManager?.notify(notifId, notif)
+                                    } catch (e: Exception) {}
+                                }
+                            }
+                        }
+                    }
+                    if (targetFile.exists() && targetFile.length() > 50000) {
+                        isRealStreamDownloaded = true
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            if (!isRealStreamDownloaded) {
                 _currentDownload.value = DownloadTask(
                     videoId = video.id,
                     title = video.title,
-                    progress = p,
-                    bytesText = "$mbNow MB / $mbTotal MB",
-                    isComplete = p >= 100
+                    progress = 0,
+                    bytesText = "Download failed (network error)",
+                    isComplete = true
                 )
-
-                try {
-                    val notif = androidx.core.app.NotificationCompat.Builder(context, channelId)
-                        .setContentTitle("Downloading: ${video.title}")
-                        .setContentText("$p% ($mbNow MB / $mbTotal MB)")
-                        .setSmallIcon(android.R.drawable.stat_sys_download)
-                        .setProgress(100, p, false)
-                        .setOngoing(p < 100)
-                        .setOnlyAlertOnce(true)
-                        .build()
-                    notifManager?.notify(notifId, notif)
-                } catch (e: Exception) {}
-
-                kotlinx.coroutines.delay(120)
-            }
-
-            try {
-                // Generate a valid WAV audio file so Android MediaPlayer & AudioTrack can play offline natively
-                writeOfflineWavAudio(targetFile, durationSec = 180)
-            } catch (e: Exception) {
-                try {
-                    targetFile.writeBytes(video.id.toByteArray())
-                } catch (e2: Exception) {}
+                kotlinx.coroutines.delay(2000)
+                _currentDownload.value = null
+                return@launch
             }
 
             try {
@@ -259,9 +303,65 @@ object UserDataRepository {
             _offlineTracks.value = current
             saveOfflineTracks()
 
-            kotlinx.coroutines.delay(2000)
+            kotlinx.coroutines.delay(1500)
             _currentDownload.value = null
         }
+    }
+
+    private suspend fun fetchRealYouTubeAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().apply {
+                put("videoId", videoId)
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "ANDROID_VR")
+                        put("clientVersion", "1.61.48")
+                        put("hl", "en")
+                        put("gl", "US")
+                    })
+                })
+            }
+            val url = URL("https://www.youtube.com/youtubei/v1/player")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 12000
+                readTimeout = 12000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; Quest 2) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/15.0.0.4.78.287474720 SamsungBrowser/4.0 Chrome/89.0.4389.105 Mobile VR Safari/537.36")
+            }
+            conn.outputStream.use { os ->
+                os.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+            if (conn.responseCode in 200..299) {
+                val respText = conn.inputStream.bufferedReader().use { it.readText() }
+                val root = JSONObject(respText)
+                val streamingData = root.optJSONObject("streamingData")
+                val adaptiveFormats = streamingData?.optJSONArray("adaptiveFormats")
+                if (adaptiveFormats != null) {
+                    var bestAudioUrl: String? = null
+                    var bestBitrate = 0
+                    for (i in 0 until adaptiveFormats.length()) {
+                        val fmt = adaptiveFormats.optJSONObject(i) ?: continue
+                        val mime = fmt.optString("mimeType", "")
+                        val audioUrl = fmt.optString("url", "")
+                        val bitrate = fmt.optInt("bitrate", 0)
+                        if (mime.startsWith("audio/") && audioUrl.isNotBlank()) {
+                            if (mime.contains("mp4") || bitrate > bestBitrate) {
+                                bestAudioUrl = audioUrl
+                                bestBitrate = bitrate
+                            }
+                        }
+                    }
+                    if (!bestAudioUrl.isNullOrBlank()) {
+                        return@withContext bestAudioUrl
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        null
     }
 
     fun toggleDownload(video: VideoItem): Boolean {
@@ -286,55 +386,6 @@ object UserDataRepository {
             arr.put(videoToJson(v))
         }
         prefs?.edit()?.putString(KEY_OFFLINE, arr.toString())?.apply()
-    }
-
-    private fun writeOfflineWavAudio(file: File, durationSec: Int = 180) {
-        val sampleRate = 44100
-        val channels = 2
-        val bitsPerSample = 16
-        val byteRate = sampleRate * channels * bitsPerSample / 8
-        val blockAlign = channels * bitsPerSample / 8
-        val numSamples = sampleRate * durationSec.coerceAtLeast(30)
-        val dataSize = numSamples * channels * (bitsPerSample / 8)
-        val totalSize = 36 + dataSize
-
-        java.io.FileOutputStream(file).use { fos ->
-            val header = java.nio.ByteBuffer.allocate(44).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-            header.put("RIFF".toByteArray())
-            header.putInt(totalSize)
-            header.put("WAVE".toByteArray())
-            header.put("fmt ".toByteArray())
-            header.putInt(16) // Subchunk1Size
-            header.putShort(1.toShort()) // PCM format
-            header.putShort(channels.toShort())
-            header.putInt(sampleRate)
-            header.putInt(byteRate)
-            header.putShort(blockAlign.toShort())
-            header.putShort(bitsPerSample.toShort())
-            header.put("data".toByteArray())
-            header.putInt(dataSize)
-            fos.write(header.array())
-
-            // Write harmonic musical tone samples so phone audio output actually plays music offline
-            val buffer = ByteArray(4096)
-            var written = 0
-            val baseFreq = 440.0
-            while (written < dataSize) {
-                val toWrite = minOf(buffer.size, dataSize - written)
-                for (i in 0 until toWrite step 4) {
-                    val sampleIdx = (written + i) / 4
-                    val time = sampleIdx.toDouble() / sampleRate
-                    // Harmonic chord (A4 + E5) with gentle modulation
-                    val sampleVal = ((Math.sin(2.0 * Math.PI * baseFreq * time) + 0.5 * Math.sin(2.0 * Math.PI * (baseFreq * 1.5) * time)) * 3200.0).toInt().toShort()
-                    buffer[i] = (sampleVal.toInt() and 0xFF).toByte()
-                    buffer[i + 1] = ((sampleVal.toInt() shr 8) and 0xFF).toByte()
-                    buffer[i + 2] = (sampleVal.toInt() and 0xFF).toByte()
-                    buffer[i + 3] = ((sampleVal.toInt() shr 8) and 0xFF).toByte()
-                }
-                fos.write(buffer, 0, toWrite)
-                written += toWrite
-            }
-        }
     }
 
     // --- Search History Management ---
