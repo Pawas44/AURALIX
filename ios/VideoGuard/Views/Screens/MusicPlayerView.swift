@@ -562,19 +562,15 @@ struct MusicPlayerView: View {
                                 ScrollView {
                                     LazyVStack(alignment: .leading, spacing: 14) {
                                         ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { idx, line in
-                                            let isActive = idx == activeIdx && lyrics.isSynced
-                                            Text(line.text)
-                                                .font(.system(size: isActive ? 18 : 15, weight: isActive ? .heavy : .regular))
-                                                .foregroundColor(isActive ? .white : Color(hex: 0x777777))
-                                                .lineSpacing(4)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .contentShape(Rectangle())
-                                                .onTapGesture {
-                                                    if lyrics.isSynced {
-                                                        playbackService.seek(to: line.timestampMs / 1000.0)
-                                                    }
+                                            LyricsLineRow(
+                                                line: line,
+                                                isActive: idx == activeIdx && lyrics.isSynced,
+                                                isSynced: lyrics.isSynced,
+                                                onTap: {
+                                                    playbackService.seek(to: line.timestampMs / 1000.0)
                                                 }
-                                                .id(idx)
+                                            )
+                                            .id(idx)
                                         }
                                     }
                                     .padding(16)
@@ -655,5 +651,26 @@ private struct RoundedCornerShape: Shape {
             cornerRadii: CGSize(width: radius, height: radius)
         )
         return Path(path.cgPath)
+    }
+}
+
+private struct LyricsLineRow: View {
+    let line: LyricLine
+    let isActive: Bool
+    let isSynced: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Text(line.text)
+            .font(.system(size: isActive ? 18 : 15, weight: isActive ? .heavy : .regular))
+            .foregroundColor(isActive ? .white : Color(hex: 0x777777))
+            .lineSpacing(4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if isSynced {
+                    onTap()
+                }
+            }
     }
 }
