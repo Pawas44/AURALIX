@@ -12,11 +12,13 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Coffee
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -135,7 +137,7 @@ fun BottomNavBar(
                 // 3. Library (Dedicated Tab)
                 BottomNavItem(
                     title = "Library",
-                    icon = if (isLibrarySelected) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic,
+                    icon = if (isLibrarySelected) Icons.Filled.VideoLibrary else Icons.Outlined.VideoLibrary,
                     isSelected = isLibrarySelected,
                     onClick = {
                         onLibraryClick()

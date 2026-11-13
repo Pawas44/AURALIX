@@ -514,7 +514,7 @@ fun MusicLibraryScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(
-                                imageVector = Icons.Default.LibraryMusic,
+                                imageVector = Icons.Default.VideoLibrary,
                                 contentDescription = null,
                                 tint = Color.Gray,
                                 modifier = Modifier.size(44.dp)
@@ -570,7 +570,7 @@ fun MusicLibraryScreen(
                                 )
                             } else {
                                 Icon(
-                                    imageVector = Icons.Default.LibraryMusic,
+                                    imageVector = Icons.Default.VideoLibrary,
                                     contentDescription = null,
                                     tint = Color.White,
                                     modifier = Modifier.size(24.dp)
