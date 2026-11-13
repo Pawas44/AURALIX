@@ -15,6 +15,8 @@ import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -74,7 +76,7 @@ fun MusicPlayerScreen(
     var sliderPosition by remember { mutableFloatStateOf(0.35f) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showAddToPlaylistSheet by remember { mutableStateOf(false) }
-    var isDownloaded by remember { mutableStateOf(false) }
+    var isDownloaded by remember(track.id) { mutableStateOf(com.videoguard.app.data.UserDataRepository.isDownloaded(track.id)) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -144,6 +146,19 @@ fun MusicPlayerScreen(
     val currentSeconds = if (isUserScrubbing) scrubPosition else currentTime
     val maxSeconds = if (duration > 0f) duration else 100f
     val sliderProgress = (currentSeconds / maxSeconds).coerceIn(0f, 1f)
+
+    var lyricsResult by remember(track.id) { mutableStateOf<com.videoguard.app.data.LyricsResult?>(null) }
+    var isLoadingLyrics by remember(track.id) { mutableStateOf(false) }
+
+    LaunchedEffect(track.id) {
+        isLoadingLyrics = true
+        lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
+            trackTitle = track.title,
+            artistName = track.artist.ifBlank { track.channelName },
+            durationSeconds = duration.toInt()
+        )
+        isLoadingLyrics = false
+    }
 
     Column(
         modifier = modifier
@@ -342,10 +357,11 @@ fun MusicPlayerScreen(
                 }
                 IconButton(
                     onClick = {
-                        isDownloaded = true
+                        val added = com.videoguard.app.data.UserDataRepository.toggleDownload(track)
+                        isDownloaded = added
                         android.widget.Toast.makeText(
                             context,
-                            "Downloading \"${track.title}\" for offline playback...",
+                            if (added) "Saved \"${track.title}\" for offline playback" else "Removed \"${track.title}\" from offline downloads",
                             android.widget.Toast.LENGTH_SHORT
                         ).show()
                     }
@@ -621,21 +637,75 @@ fun MusicPlayerScreen(
                             }
                         }
                         MusicSheetTab.LYRICS -> {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(rememberScrollState())
-                                    .padding(top = 6.dp, bottom = navBarBottom + 8.dp)
-                            ) {
-                                Text(
-                                    text = track.lyrics.ifEmpty {
-                                        "Lyrics are not currently available for this track."
-                                    },
-                                    color = Color(0xFFEEEEEE),
-                                    fontSize = 15.sp,
-                                    lineHeight = 24.sp,
-                                    fontWeight = FontWeight.Normal
-                                )
+                            val lyrics = lyricsResult
+                            val currentMs = (currentSeconds * 1000).toLong()
+                            val activeIndex = remember(lyrics, currentMs) {
+                                if (lyrics != null && lyrics.isSynced && lyrics.lines.isNotEmpty()) {
+                                    lyrics.lines.indexOfLast { it.timestampMs <= currentMs }.coerceAtLeast(0)
+                                } else -1
+                            }
+                            val lyricListState = rememberLazyListState()
+
+                            LaunchedEffect(activeIndex) {
+                                if (activeIndex >= 0 && lyrics?.isSynced == true) {
+                                    val target = (activeIndex - 1).coerceAtLeast(0)
+                                    lyricListState.animateScrollToItem(target)
+                                }
+                            }
+
+                            if (isLoadingLyrics) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        color = YTMusicRedAccent,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            } else if (lyrics != null && lyrics.lines.isNotEmpty()) {
+                                LazyColumn(
+                                    state = lyricListState,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(top = 6.dp, bottom = navBarBottom + 8.dp)
+                                ) {
+                                    itemsIndexed(lyrics.lines) { index, line ->
+                                        val isActive = index == activeIndex && lyrics.isSynced
+                                        Text(
+                                            text = line.text,
+                                            color = if (isActive) Color.White else Color(0xFF777777),
+                                            fontSize = if (isActive) 18.sp else 15.sp,
+                                            lineHeight = if (isActive) 26.sp else 22.sp,
+                                            fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    if (lyrics.isSynced) {
+                                                        com.videoguard.app.service.PlaybackController.seekTo(line.timestampMs / 1000f)
+                                                    }
+                                                }
+                                                .padding(vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(rememberScrollState())
+                                        .padding(top = 6.dp, bottom = navBarBottom + 8.dp)
+                                ) {
+                                    Text(
+                                        text = track.lyrics.ifEmpty {
+                                            "Lyrics are not currently available for this track."
+                                        },
+                                        color = Color(0xFFEEEEEE),
+                                        fontSize = 15.sp,
+                                        lineHeight = 24.sp,
+                                        fontWeight = FontWeight.Normal
+                                    )
+                                }
                             }
                         }
                         MusicSheetTab.RELATED -> {

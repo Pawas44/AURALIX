@@ -60,6 +60,7 @@ fun MusicLibraryScreen(
     val currentAccount by AccountRepository.currentAccount.collectAsState()
     val playlists by UserDataRepository.playlists.collectAsState()
     val history by UserDataRepository.history.collectAsState()
+    val offlineTracks by UserDataRepository.offlineTracks.collectAsState()
 
     var selectedFilter by remember { mutableStateOf("All") }
     val scope = rememberCoroutineScope()
@@ -153,7 +154,7 @@ fun MusicLibraryScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("All", "Playlists", "Liked Songs", "Recently Played", "Made For You").forEach { chip ->
+                    listOf("All", "Playlists", "Liked Songs", "Recently Played", "Downloads").forEach { chip ->
                         val isSelected = selectedFilter == chip
                         FilterChip(
                             selected = isSelected,
@@ -221,7 +222,25 @@ fun MusicLibraryScreen(
                                 modifier = Modifier.padding(vertical = 4.dp)
                             )
 
-                            // 2. Amazon Music
+                            // 2. Apple Music
+                            ServiceRow(
+                                title = "Apple Music",
+                                brandColor = Color(0xFFFA243C),
+                                icon = Icons.Default.MusicNote,
+                                onClick = {
+                                    selectedImportService = "Apple Music"
+                                    importUrlInput = ""
+                                    importProgress = null
+                                    importedPlaylistResult = null
+                                }
+                            )
+
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+
+                            // 3. Amazon Music
                             ServiceRow(
                                 title = "Amazon Music",
                                 brandColor = Color(0xFF00A8E1),
@@ -452,6 +471,121 @@ fun MusicLibraryScreen(
                 }
             }
 
+            // 4. Downloads / Offline Songs Section
+            if (selectedFilter == "All" || selectedFilter == "Downloads") {
+                if (offlineTracks.isNotEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Downloads (${offlineTracks.size})",
+                                    color = Color.White,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "Offline Available",
+                                    color = YTMusicRedAccent,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                offlineTracks.forEach { track ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(Color(0xFF141620))
+                                            .clickable { onTrackSelected(track, offlineTracks) }
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        AsyncImage(
+                                            model = track.thumbnailUrl,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                        )
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = track.title,
+                                                color = Color.White,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "${track.artist.ifBlank { track.channelName }} • Offline",
+                                                color = Color.Gray,
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Filled.CheckCircle,
+                                            contentDescription = "Downloaded",
+                                            tint = YTMusicRedAccent,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if (selectedFilter == "Downloads") {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = null,
+                                tint = Color.Gray,
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "No downloaded tracks",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Tap the download icon on any song to listen offline anytime.",
+                                color = Color.Gray,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+            }
+
             // 5. Playlists Header with '+' New Playlist Button
             if (selectedFilter == "All" || selectedFilter == "Playlists") {
                 item {
@@ -674,12 +808,14 @@ fun MusicLibraryScreen(
     if (currentService != null) {
         val brandColor = when (currentService) {
             "Spotify" -> Color(0xFF1DB954)
+            "Apple Music" -> Color(0xFFFA243C)
             "Amazon Music" -> Color(0xFF00A8E1)
             else -> YTMusicRedAccent
         }
 
         val authUrl = when (currentService) {
             "Spotify" -> "https://open.spotify.com"
+            "Apple Music" -> "https://music.apple.com"
             "Amazon Music" -> "https://music.amazon.com"
             else -> "https://www.tunemymusic.com"
         }
@@ -1048,6 +1184,14 @@ fun MusicLibraryScreen(
                                                     var primary = row.querySelector('.primary-text, [primary-text], [slot="primaryText"]')?.innerText || '';
                                                     var secondary = row.querySelector('.secondary-text, [secondary-text], [slot="secondaryText"]')?.innerText || '';
                                                     if (primary && primary !== 'Library') tracks.push(primary + ' - ' + secondary);
+                                                });
+                                            }
+                                            if (tracks.length === 0) {
+                                                var appleItems = document.querySelectorAll('.songs-list-row, [data-testid="track-cell"], .tracklist-item');
+                                                appleItems.forEach(function(row) {
+                                                    var t = row.querySelector('.songs-list-row__song-name, [data-testid="track-title"], .track-lockup__title')?.innerText || '';
+                                                    var a = row.querySelector('.songs-list-row__by-line, [data-testid="track-artist"], .track-lockup__sub-title, a[href*="/artist/"]')?.innerText || '';
+                                                    if (t) tracks.push(t + ' - ' + a);
                                                 });
                                             }
                                             return JSON.stringify({ title: title, tracks: tracks });

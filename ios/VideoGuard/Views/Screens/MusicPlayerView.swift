@@ -31,6 +31,8 @@ struct MusicPlayerView: View {
     @State private var downloadToastText: String? = nil
     @State private var dynamicRelated: [VideoItem] = []
     @State private var isLoadingRelated = false
+    @State private var lyricsResult: LyricsResult? = nil
+    @State private var isLoadingLyrics = false
     @State private var wavePhase = false
     @State private var dragOffset: CGFloat = 0
 
@@ -145,12 +147,13 @@ struct MusicPlayerView: View {
                         }
 
                         Button(action: {
-                            isDownloaded = true
-                            downloadToastText = "Downloading \"\(track.title)\" for offline playback..."
+                            let added = userData.toggleDownload(video: track)
+                            isDownloaded = added
+                            downloadToastText = added ? "Saved \"\(track.title)\" for offline playback" : "Removed from offline downloads"
                         }) {
-                            Image(systemName: isDownloaded ? "checkmark.circle.fill" : "arrow.down.circle")
+                            Image(systemName: userData.isDownloaded(id: track.id) ? "checkmark.circle.fill" : "arrow.down.circle")
                                 .font(.system(size: 20))
-                                .foregroundColor(isDownloaded ? AppTheme.ytMusicRedAccent : .white)
+                                .foregroundColor(userData.isDownloaded(id: track.id) ? AppTheme.ytMusicRedAccent : .white)
                                 .frame(width: 34, height: 34)
                         }
 
@@ -220,6 +223,15 @@ struct MusicPlayerView: View {
         }
         .ignoresSafeArea()
         .onAppear { wavePhase = true }
+        .task(id: track.id) {
+            isLoadingLyrics = true
+            lyricsResult = await LyricsEngine.shared.getLyrics(
+                trackTitle: track.title,
+                artistName: track.artist.isEmpty ? track.channelName : track.artist,
+                durationSeconds: Int(playbackService.duration)
+            )
+            isLoadingLyrics = false
+        }
         .sheet(isPresented: $showSettingsSheet) {
             PlayerBottomSheet(appMode: .youtubeMusic, onDismiss: { showSettingsSheet = false })
                 .presentationDetents([.medium, .large])
@@ -535,12 +547,54 @@ struct MusicPlayerView: View {
                         .padding(.vertical, 6)
 
                     case .lyrics:
-                        Text(track.lyrics.isEmpty ? "Lyrics are not currently available for this track." : track.lyrics)
-                            .font(.system(size: 15))
-                            .foregroundColor(Color(hex: 0xEEEEEE))
-                            .lineSpacing(6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16)
+                        if isLoadingLyrics {
+                            HStack {
+                                Spacer()
+                                ProgressView()
+                                    .tint(AppTheme.ytMusicRedAccent)
+                                Spacer()
+                            }
+                            .padding(.top, 40)
+                        } else if let lyrics = lyricsResult, !lyrics.lines.isEmpty {
+                            let currentMs = (isUserScrubbing ? scrubPosition : playbackService.currentTime) * 1000.0
+                            let activeIdx = lyrics.isSynced ? (lyrics.lines.lastIndex(where: { $0.timestampMs <= currentMs }) ?? 0) : -1
+                            ScrollViewReader { proxy in
+                                ScrollView {
+                                    LazyVStack(alignment: .leading, spacing: 14) {
+                                        ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { idx, line in
+                                            let isActive = idx == activeIdx && lyrics.isSynced
+                                            Text(line.text)
+                                                .font(.system(size: isActive ? 18 : 15, weight: isActive ? .heavy : .regular))
+                                                .foregroundColor(isActive ? .white : Color(hex: 0x777777))
+                                                .lineSpacing(4)
+                                                .frame(maxWidth: .infinity, alignment: .leading)
+                                                .contentShape(Rectangle())
+                                                .onTapGesture {
+                                                    if lyrics.isSynced {
+                                                        playbackService.seek(to: line.timestampMs / 1000.0)
+                                                    }
+                                                }
+                                                .id(idx)
+                                        }
+                                    }
+                                    .padding(16)
+                                }
+                                .onChange(of: activeIdx) { newIdx in
+                                    if newIdx >= 0 && lyrics.isSynced {
+                                        withAnimation {
+                                            proxy.scrollTo(max(0, newIdx - 1), anchor: .top)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Text(track.lyrics.isEmpty ? "Lyrics are not currently available for this track." : track.lyrics)
+                                .font(.system(size: 15))
+                                .foregroundColor(Color(hex: 0xEEEEEE))
+                                .lineSpacing(6)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(16)
+                        }
 
                     case .related:
                         VStack(alignment: .leading, spacing: 6) {

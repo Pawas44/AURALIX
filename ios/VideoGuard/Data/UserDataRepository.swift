@@ -8,12 +8,14 @@ class UserDataRepository: ObservableObject {
     private let keyPlaylists = "vg_playlists_json"
     private let keySubscriptions = "vg_subscriptions_json"
     private let keySearchHistory = "vg_search_history_json"
+    private let keyOfflineTracks = "vg_offline_tracks_json"
 
     @Published var watchHistory: [VideoItem] = []
     @Published var playlists: [UserPlaylist] = []
     @Published var subscribedChannels: Set<String> = []
     @Published var searchHistory: [String] = []
     @Published var dislikedVideos: Set<String> = []
+    @Published var offlineTracks: [VideoItem] = []
 
     private init() {
         loadAll()
@@ -70,6 +72,35 @@ class UserDataRepository: ObservableObject {
 
         if let sh = defaults.stringArray(forKey: keySearchHistory) {
             self.searchHistory = sh
+        }
+
+        if let data = defaults.data(forKey: keyOfflineTracks),
+           let decoded = try? JSONDecoder().decode([VideoItem].self, from: data) {
+            self.offlineTracks = decoded
+        }
+    }
+
+    // MARK: - Offline Tracks
+    func isDownloaded(id: String) -> Bool {
+        offlineTracks.contains { $0.id == id }
+    }
+
+    @discardableResult
+    func toggleDownload(video: VideoItem) -> Bool {
+        if let idx = offlineTracks.firstIndex(where: { $0.id == video.id }) {
+            offlineTracks.remove(at: idx)
+            saveOfflineTracks()
+            return false
+        } else {
+            offlineTracks.insert(video, at: 0)
+            saveOfflineTracks()
+            return true
+        }
+    }
+
+    private func saveOfflineTracks() {
+        if let data = try? JSONEncoder().encode(offlineTracks) {
+            UserDefaults.standard.set(data, forKey: keyOfflineTracks)
         }
     }
 

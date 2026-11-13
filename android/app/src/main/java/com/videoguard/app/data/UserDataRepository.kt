@@ -18,6 +18,7 @@ object UserDataRepository {
     private const val KEY_PLAYLISTS = "playlists_json"
     private const val KEY_SUBSCRIPTIONS = "subscriptions_json"
     private const val KEY_SEARCH_HISTORY = "search_history_json"
+    private const val KEY_OFFLINE = "offline_tracks_json"
 
     private var prefs: SharedPreferences? = null
 
@@ -32,6 +33,9 @@ object UserDataRepository {
 
     private val _searchHistory = MutableStateFlow<List<String>>(emptyList())
     val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
+
+    private val _offlineTracks = MutableStateFlow<List<VideoItem>>(emptyList())
+    val offlineTracks: StateFlow<List<VideoItem>> = _offlineTracks.asStateFlow()
 
     fun init(context: Context) {
         if (prefs != null) return
@@ -134,6 +138,48 @@ object UserDataRepository {
                 e.printStackTrace()
             }
         }
+
+        // Load Offline Tracks
+        val offlineStr = sp.getString(KEY_OFFLINE, null)
+        if (!offlineStr.isNullOrBlank()) {
+            try {
+                val arr = JSONArray(offlineStr)
+                val list = mutableListOf<VideoItem>()
+                for (i in 0 until arr.length()) {
+                    arr.optJSONObject(i)?.let { list.add(jsonToVideo(it)) }
+                }
+                _offlineTracks.value = list
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // --- Offline Tracks Management ---
+    fun isDownloaded(id: String): Boolean = _offlineTracks.value.any { it.id == id }
+
+    fun toggleDownload(video: VideoItem): Boolean {
+        val current = _offlineTracks.value.toMutableList()
+        val exists = current.any { it.id == video.id }
+        return if (exists) {
+            current.removeAll { it.id == video.id }
+            _offlineTracks.value = current
+            saveOfflineTracks()
+            false
+        } else {
+            current.add(0, video)
+            _offlineTracks.value = current
+            saveOfflineTracks()
+            true
+        }
+    }
+
+    private fun saveOfflineTracks() {
+        val arr = JSONArray()
+        for (v in _offlineTracks.value) {
+            arr.put(videoToJson(v))
+        }
+        prefs?.edit()?.putString(KEY_OFFLINE, arr.toString())?.apply()
     }
 
     // --- Search History Management ---

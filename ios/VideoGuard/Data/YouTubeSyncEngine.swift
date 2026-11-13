@@ -1482,6 +1482,8 @@ final class SpotifyImportEngine {
             parsed = await parseSpotify(url: trimmed)
         } else if trimmed.contains("music.amazon.") || (trimmed.contains("amazon.") && trimmed.contains("music")) || trimmed.contains("amzn.to") {
             parsed = await parseAmazonMusic(url: trimmed)
+        } else if trimmed.contains("music.apple.com") || trimmed.contains("apple.com") {
+            parsed = await parseAppleMusic(url: trimmed)
         } else {
             parsed = parsePlainText(trimmed)
         }

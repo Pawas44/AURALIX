@@ -54,7 +54,7 @@ struct MusicLibraryView: View {
                 // Category Chips
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(["All", "Playlists", "Liked Songs", "Recently Played", "Made For You"], id: \.self) { chip in
+                        ForEach(["All", "Playlists", "Liked Songs", "Recently Played", "Downloads"], id: \.self) { chip in
                             let isSelected = selectedFilter == chip
                             Button(action: { selectedFilter = chip }) {
                                 Text(chip)
@@ -91,6 +91,17 @@ struct MusicLibraryView: View {
                                 iconName: "music.note"
                             ) {
                                 openServiceImport(service: "Spotify")
+                            }
+
+                            Divider().background(Color.white.opacity(0.08))
+
+                            // Apple Music
+                            importServiceRow(
+                                title: "Apple Music",
+                                brandColor: Color(hex: 0xFA243C),
+                                iconName: "music.note"
+                            ) {
+                                openServiceImport(service: "Apple Music")
                             }
 
                             Divider().background(Color.white.opacity(0.08))
@@ -268,6 +279,79 @@ struct MusicLibraryView: View {
                             }
                             .padding(.horizontal, 16)
                         }
+                    }
+                }
+
+                // 4. Downloads / Offline Section
+                if selectedFilter == "All" || selectedFilter == "Downloads" {
+                    if !userData.offlineTracks.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("Downloads (\(userData.offlineTracks.count))")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Text("Offline Available")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(AppTheme.ytMusicRedAccent)
+                            }
+                            .padding(.horizontal, 16)
+
+                            VStack(spacing: 8) {
+                                ForEach(userData.offlineTracks) { track in
+                                    Button(action: {
+                                        onTrackSelected(track, userData.offlineTracks)
+                                    }) {
+                                        HStack(spacing: 12) {
+                                            AsyncImage(url: URL(string: track.thumbnailUrl)) { img in
+                                                img.resizable().aspectRatio(contentMode: .fill)
+                                            } placeholder: {
+                                                Color(hex: 0x222222)
+                                            }
+                                            .frame(width: 44, height: 44)
+                                            .cornerRadius(6)
+
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(track.title)
+                                                    .font(.system(size: 13, weight: .semibold))
+                                                    .foregroundColor(.white)
+                                                    .lineLimit(1)
+                                                Text("\(track.artist.isEmpty ? track.channelName : track.artist) • Offline")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(Color.gray)
+                                                    .lineLimit(1)
+                                            }
+
+                                            Spacer()
+
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.system(size: 17))
+                                                .foregroundColor(AppTheme.ytMusicRedAccent)
+                                        }
+                                        .padding(10)
+                                        .background(Color(hex: 0x141620))
+                                        .cornerRadius(10)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                        }
+                    } else if selectedFilter == "Downloads" {
+                        VStack(spacing: 10) {
+                            Image(systemName: "arrow.down.circle")
+                                .font(.system(size: 44))
+                                .foregroundColor(.gray)
+                            Text("No downloaded tracks")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                            Text("Tap the download icon on any song to listen offline anytime.")
+                                .font(.system(size: 12))
+                                .foregroundColor(.gray)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 40)
+                        .padding(.horizontal, 24)
                     }
                 }
 
@@ -458,6 +542,7 @@ struct MusicLibraryView: View {
         let brandColor: Color = {
             switch service {
             case "Spotify": return Color(hex: 0x1DB954)
+            case "Apple Music": return Color(hex: 0xFA243C)
             case "Amazon Music": return Color(hex: 0x00A8E1)
             default: return AppTheme.ytMusicRedAccent
             }
@@ -466,6 +551,7 @@ struct MusicLibraryView: View {
         let authUrlStr: String = {
             switch service {
             case "Spotify": return "https://open.spotify.com"
+            case "Apple Music": return "https://music.apple.com"
             case "Amazon Music": return "https://music.amazon.com"
             default: return "https://www.tunemymusic.com"
             }
@@ -707,6 +793,14 @@ struct InAppWebTransferSheet: View {
                                         var primary = row.querySelector('.primary-text, [primary-text], [slot="primaryText"]')?.innerText || '';
                                         var secondary = row.querySelector('.secondary-text, [secondary-text], [slot="secondaryText"]')?.innerText || '';
                                         if (primary && primary !== 'Library') tracks.push(primary + ' - ' + secondary);
+                                    });
+                                }
+                                if (tracks.length === 0) {
+                                    var appleItems = document.querySelectorAll('.songs-list-row, [data-testid="track-cell"], .tracklist-item');
+                                    appleItems.forEach(function(row) {
+                                        var t = row.querySelector('.songs-list-row__song-name, [data-testid="track-title"], .track-lockup__title')?.innerText || '';
+                                        var a = row.querySelector('.songs-list-row__by-line, [data-testid="track-artist"], .track-lockup__sub-title, a[href*="/artist/"]')?.innerText || '';
+                                        if (t) tracks.push(t + ' - ' + a);
                                     });
                                 }
                                 return JSON.stringify({ title: title, tracks: tracks });
