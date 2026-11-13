@@ -47,8 +47,10 @@ fun BottomNavBar(
     selectedMusicTab: YouTubeMusicTab = YouTubeMusicTab.HOME,
     isSearchActive: Boolean = false,
     isSupportActive: Boolean = false,
+    isLibraryActive: Boolean = false,
     onHomeClick: () -> Unit = {},
     onSearchClick: () -> Unit = {},
+    onLibraryClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportClick: () -> Unit = {},
     onYTTabSelected: (YouTubeTab) -> Unit = {},
@@ -57,7 +59,7 @@ fun BottomNavBar(
 ) {
     val isMusic = currentMode == AppMode.YOUTUBE_MUSIC
 
-    val isHomeSelected = !isSearchActive && !isSupportActive && if (!isMusic) {
+    val isHomeSelected = !isSearchActive && !isSupportActive && !isLibraryActive && if (!isMusic) {
         selectedYTTab == YouTubeTab.HOME
     } else {
         selectedMusicTab == YouTubeMusicTab.HOME
@@ -65,11 +67,9 @@ fun BottomNavBar(
 
     val isSearchSelected = isSearchActive
 
-    val isAccountSelected = !isSearchActive && !isSupportActive && if (!isMusic) {
-        selectedYTTab == YouTubeTab.YOU
-    } else {
-        selectedMusicTab == YouTubeMusicTab.LIBRARY
-    }
+    val isLibrarySelected = !isSearchActive && !isSupportActive && (isLibraryActive || (isMusic && selectedMusicTab == YouTubeMusicTab.LIBRARY))
+
+    val isAccountSelected = !isSearchActive && !isSupportActive && !isLibraryActive && (selectedYTTab == YouTubeTab.YOU && !isMusic)
 
     val isSupportSelected = !isSearchActive && isSupportActive
 
@@ -108,7 +108,7 @@ fun BottomNavBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(58.dp)
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.SpaceAround,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -132,29 +132,28 @@ fun BottomNavBar(
                     onClick = onSearchClick
                 )
 
-                // 3. Library (in Music mode) / You (in Video mode)
-                if (isMusic) {
-                    BottomNavItem(
-                        title = "Library",
-                        icon = if (isAccountSelected) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic,
-                        isSelected = isAccountSelected,
-                        onClick = {
-                            onAccountClick()
-                            onMusicTabSelected(YouTubeMusicTab.LIBRARY)
-                        }
-                    )
-                } else {
-                    BottomAccountNavItem(
-                        title = "You",
-                        isSelected = isAccountSelected,
-                        onClick = {
-                            onAccountClick()
-                            onYTTabSelected(YouTubeTab.YOU)
-                        }
-                    )
-                }
+                // 3. Library (Dedicated Tab)
+                BottomNavItem(
+                    title = "Library",
+                    icon = if (isLibrarySelected) Icons.Filled.LibraryMusic else Icons.Outlined.LibraryMusic,
+                    isSelected = isLibrarySelected,
+                    onClick = {
+                        onLibraryClick()
+                        onMusicTabSelected(YouTubeMusicTab.LIBRARY)
+                    }
+                )
 
-                // 4. Support
+                // 4. Account (Dedicated Tab)
+                BottomAccountNavItem(
+                    title = "Account",
+                    isSelected = isAccountSelected,
+                    onClick = {
+                        onAccountClick()
+                        onYTTabSelected(YouTubeTab.YOU)
+                    }
+                )
+
+                // 5. Support
                 BottomNavItem(
                     title = "Support",
                     icon = if (isSupportSelected) Icons.Filled.Coffee else Icons.Outlined.Coffee,

@@ -45,6 +45,7 @@ object MusicImportEngine {
             val (playlistName, trackMetas) = when {
                 trimmed.contains("spotify.com") -> parseSpotify(trimmed, onProgress)
                 trimmed.contains("music.amazon.") || (trimmed.contains("amazon.") && trimmed.contains("music")) || trimmed.contains("amzn.to") -> parseAmazonMusic(trimmed, onProgress)
+                trimmed.contains("music.apple.com") || (trimmed.contains("apple.com") && trimmed.contains("music")) -> parseAppleMusic(trimmed, onProgress)
                 else -> parsePlainTextList(trimmed)
             }
 
@@ -315,6 +316,89 @@ object MusicImportEngine {
 
         if (uniqueTracks.isEmpty()) {
             uniqueTracks.add(ImportTrackMeta(title, ""))
+        }
+
+        return Pair(title, uniqueTracks)
+    }
+
+    private fun parseAppleMusic(url: String, onProgress: (ImportProgress) -> Unit): Pair<String, List<ImportTrackMeta>> {
+        val html = try { httpGet(url) } catch (e: Exception) { "" }
+        var title = "Apple Music Playlist"
+
+        val titleMatcher = Pattern.compile("<title>([^<]+)</title>", Pattern.CASE_INSENSITIVE).matcher(html)
+        if (titleMatcher.find()) {
+            title = titleMatcher.group(1)
+                ?.replace("on Apple Music", "", ignoreCase = true)
+                ?.replace("Apple Music", "", ignoreCase = true)
+                ?.replace(" - Playlist - ", " - ")
+                ?.trim() ?: title
+        }
+
+        val tracks = mutableListOf<ImportTrackMeta>()
+
+        // 1. JSON-LD schema
+        val jsonLdRegex = Pattern.compile("<script[^>]*type=[\"']application/ld\\+json[\"'][^>]*>(.*?)</script>", Pattern.DOTALL or Pattern.CASE_INSENSITIVE)
+        val jsonLdMatcher = jsonLdRegex.matcher(html)
+        while (jsonLdMatcher.find()) {
+            val jsonContent = jsonLdMatcher.group(1)?.trim() ?: continue
+            try {
+                if (jsonContent.startsWith("{")) {
+                    val root = JSONObject(jsonContent)
+                    val pName = root.optString("name", "")
+                    if (pName.isNotBlank() && (title == "Apple Music Playlist" || title.isBlank())) {
+                        title = pName
+                    }
+                    val trackArr = root.optJSONArray("track") ?: root.optJSONArray("tracks")
+                    if (trackArr != null) {
+                        for (i in 0 until trackArr.length()) {
+                            val item = trackArr.optJSONObject(i) ?: continue
+                            val tName = item.optString("name", "")
+                            val artistObj = item.optJSONObject("byArtist")
+                            val aName = artistObj?.optString("name", "") ?: item.optString("artist", "")
+                            if (tName.isNotBlank()) {
+                                tracks.add(ImportTrackMeta(tName, aName))
+                            }
+                        }
+                    }
+                    val itemArr = root.optJSONArray("itemListElement")
+                    if (itemArr != null) {
+                        for (i in 0 until itemArr.length()) {
+                            val item = itemArr.optJSONObject(i) ?: continue
+                            val itemObj = item.optJSONObject("item") ?: item
+                            val tName = itemObj.optString("name", "")
+                            val artistObj = itemObj.optJSONObject("byArtist")
+                            val aName = artistObj?.optString("name", "") ?: itemObj.optString("artist", "")
+                            if (tName.isNotBlank()) {
+                                tracks.add(ImportTrackMeta(tName, aName))
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {}
+        }
+
+        // 2. Fallback regex for meta / JSON tags
+        if (tracks.isEmpty()) {
+            val trackRegex = Pattern.compile("\"name\":\"([^\"]+)\"[^}]*?\"byArtist\":\\{\"@type\":\"MusicGroup\",\"name\":\"([^\"]+)\"\\}")
+            val trMatcher = trackRegex.matcher(html)
+            while (trMatcher.find()) {
+                val t = trMatcher.group(1)?.trim() ?: ""
+                val a = trMatcher.group(2)?.trim() ?: ""
+                if (t.isNotBlank() && !t.contains("Apple Music")) {
+                    tracks.add(ImportTrackMeta(t, a))
+                }
+            }
+        }
+
+        // Deduplicate tracks
+        val uniqueTracks = mutableListOf<ImportTrackMeta>()
+        val seen = mutableSetOf<String>()
+        for (tr in tracks) {
+            val key = "${tr.title.lowercase().trim()}_${tr.artist.lowercase().trim()}"
+            if (!seen.contains(key)) {
+                seen.add(key)
+                uniqueTracks.add(tr)
+            }
         }
 
         return Pair(title, uniqueTracks)

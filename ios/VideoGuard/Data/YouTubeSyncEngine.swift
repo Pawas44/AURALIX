@@ -1480,6 +1480,8 @@ final class SpotifyImportEngine {
             parsed = await parseSpotify(url: trimmed)
         } else if trimmed.contains("music.amazon.") || (trimmed.contains("amazon.") && trimmed.contains("music")) || trimmed.contains("amzn.to") {
             parsed = await parseAmazonMusic(url: trimmed)
+        } else if trimmed.contains("music.apple.com") || (trimmed.contains("apple.com") && trimmed.contains("music")) {
+            parsed = await parseAppleMusic(url: trimmed)
         } else {
             parsed = parsePlainText(trimmed)
         }
@@ -1743,6 +1745,105 @@ final class SpotifyImportEngine {
 
         if uniqueTracks.isEmpty {
             uniqueTracks.append(ImportTrackMeta(title: title, artist: ""))
+        }
+
+        return (title, uniqueTracks)
+    }
+
+    private func parseAppleMusic(url: String) async -> (title: String, tracks: [ImportTrackMeta]) {
+        guard let requestUrl = URL(string: url) else { return ("Apple Music Playlist", []) }
+        var req = URLRequest(url: requestUrl)
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+        req.setValue("text/html,application/xhtml+xml,application/json", forHTTPHeaderField: "Accept")
+
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let html = String(data: data, encoding: .utf8) else {
+            return ("Apple Music Playlist", [])
+        }
+
+        var title = "Apple Music Playlist"
+        if let titleRegex = try? NSRegularExpression(pattern: "<title>([^<]+)</title>", options: .caseInsensitive),
+           let match = titleRegex.firstMatch(in: html, range: NSRange(location: 0, length: (html as NSString).length)),
+           match.numberOfRanges > 1 {
+            let fullTitle = (html as NSString).substring(with: match.range(at: 1))
+            title = fullTitle
+                .replacingOccurrences(of: "on Apple Music", with: "")
+                .replacingOccurrences(of: "Apple Music", with: "")
+                .replacingOccurrences(of: " - Playlist - ", with: " - ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        var tracks: [ImportTrackMeta] = []
+
+        // 1. JSON-LD scripts
+        let jsonLdPattern = "<script[^>]*type=[\"']application/ld\\+json[\"'][^>]*>(.*?)</script>"
+        if let jsonLdRegex = try? NSRegularExpression(pattern: jsonLdPattern, options: [.dotMatchesLineSeparators, .caseInsensitive]) {
+            let nsHtml = html as NSString
+            let matches = jsonLdRegex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
+            for m in matches {
+                guard m.numberOfRanges > 1 else { continue }
+                let jsonStr = nsHtml.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let jsonData = jsonStr.data(using: .utf8),
+                      let jsonObj = (try? JSONSerialization.jsonObject(with: jsonData)) as? [String: Any] else {
+                    continue
+                }
+
+                if let pName = jsonObj["name"] as? String, !pName.isEmpty, (title == "Apple Music Playlist" || title.isEmpty) {
+                    title = pName
+                }
+
+                if let trackArr = (jsonObj["track"] as? [[String: Any]]) ?? (jsonObj["tracks"] as? [[String: Any]]) {
+                    for item in trackArr {
+                        let tName = (item["name"] as? String) ?? ""
+                        let artistObj = item["byArtist"] as? [String: Any]
+                        let aName = (artistObj?["name"] as? String) ?? (item["artist"] as? String) ?? ""
+                        if !tName.isEmpty {
+                            tracks.append(ImportTrackMeta(title: tName, artist: aName))
+                        }
+                    }
+                }
+
+                if let itemArr = jsonObj["itemListElement"] as? [[String: Any]] {
+                    for item in itemArr {
+                        let inner = (item["item"] as? [String: Any]) ?? item
+                        let tName = (inner["name"] as? String) ?? ""
+                        let artistObj = inner["byArtist"] as? [String: Any]
+                        let aName = (artistObj?["name"] as? String) ?? (inner["artist"] as? String) ?? ""
+                        if !tName.isEmpty {
+                            tracks.append(ImportTrackMeta(title: tName, artist: aName))
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback regex
+        if tracks.isEmpty {
+            let pattern = "\"name\":\"([^\"]+)\"[^}]*?\"byArtist\":\\{\"@type\":\"MusicGroup\",\"name\":\"([^\"]+)\"\\}"
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []) {
+                let nsHtml = html as NSString
+                let matches = regex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
+                for m in matches {
+                    if m.numberOfRanges > 2 {
+                        let t = nsHtml.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+                        let a = nsHtml.substring(with: m.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !t.isEmpty && !t.contains("Apple Music") {
+                            tracks.append(ImportTrackMeta(title: t, artist: a))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Deduplicate tracks
+        var uniqueTracks: [ImportTrackMeta] = []
+        var seen = Set<String>()
+        for tr in tracks {
+            let key = "\(tr.title.lowercased().trimmingCharacters(in: .whitespaces))_\(tr.artist.lowercased().trimmingCharacters(in: .whitespaces))"
+            if !seen.contains(key) {
+                seen.insert(key)
+                uniqueTracks.append(tr)
+            }
         }
 
         return (title, uniqueTracks)

@@ -1,25 +1,26 @@
 import SwiftUI
 
 struct LiquidBottomNavBar: View {
-    var isMusic: Bool = false
     let isHomeSelected: Bool
     let isSearchSelected: Bool
+    let isLibrarySelected: Bool
     let isAccountSelected: Bool
     let isSupportSelected: Bool
     let onHomeClick: () -> Void
     let onSearchClick: () -> Void
+    let onLibraryClick: () -> Void
     let onAccountClick: () -> Void
     let onSupportClick: () -> Void
 
     @ObservedObject var accountRepo = AccountRepository.shared
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             // 1. Home
             Button(action: onHomeClick) {
                 VStack(spacing: 2) {
                     Image(systemName: isHomeSelected ? "house.fill" : "house")
-                        .font(.system(size: 20))
+                        .font(.system(size: 19))
                     Text("Home")
                         .font(.system(size: 10, weight: isHomeSelected ? .bold : .medium))
                 }
@@ -33,7 +34,7 @@ struct LiquidBottomNavBar: View {
             Button(action: onSearchClick) {
                 VStack(spacing: 2) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 20, weight: isSearchSelected ? .bold : .regular))
+                        .font(.system(size: 19, weight: isSearchSelected ? .bold : .regular))
                     Text("Search")
                         .font(.system(size: 10, weight: isSearchSelected ? .bold : .medium))
                 }
@@ -43,20 +44,27 @@ struct LiquidBottomNavBar: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18))
             }
 
-            // 3. Library (in Music mode) / You (in Video mode)
+            // 3. Library (Dedicated Tab)
+            Button(action: onLibraryClick) {
+                VStack(spacing: 2) {
+                    Image(systemName: isLibrarySelected ? "play.square.stack.fill" : "play.square.stack")
+                        .font(.system(size: 19))
+                    Text("Library")
+                        .font(.system(size: 10, weight: isLibrarySelected ? .bold : .medium))
+                }
+                .foregroundColor(isLibrarySelected ? .white : Color(hex: 0x9E9EAF))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(isLibrarySelected ? Color.white.opacity(0.12) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+            }
+
+            // 4. Account (Dedicated Tab)
             Button(action: onAccountClick) {
                 VStack(spacing: 2) {
-                    if isMusic {
-                        Image(systemName: isAccountSelected ? "play.square.stack.fill" : "play.square.stack")
-                            .font(.system(size: 19))
-                        Text("Library")
-                            .font(.system(size: 10, weight: isAccountSelected ? .bold : .medium))
-                    } else {
-                        accountAvatarView
-                            .frame(width: 22, height: 22)
-                        Text("You")
-                            .font(.system(size: 10, weight: isAccountSelected ? .bold : .medium))
-                    }
+                    accountAvatarView
+                        .frame(width: 22, height: 22)
+                    Text("Account")
+                        .font(.system(size: 10, weight: isAccountSelected ? .bold : .medium))
                 }
                 .foregroundColor(isAccountSelected ? .white : Color(hex: 0x9E9EAF))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -64,11 +72,11 @@ struct LiquidBottomNavBar: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18))
             }
 
-            // 4. Support
+            // 5. Support
             Button(action: onSupportClick) {
                 VStack(spacing: 2) {
                     Image(systemName: isSupportSelected ? "cup.and.saucer.fill" : "cup.and.saucer")
-                        .font(.system(size: 19))
+                        .font(.system(size: 18))
                     Text("Support")
                         .font(.system(size: 10, weight: isSupportSelected ? .bold : .medium))
                 }

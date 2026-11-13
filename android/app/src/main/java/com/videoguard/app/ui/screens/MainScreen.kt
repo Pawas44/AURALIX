@@ -62,6 +62,7 @@ fun MainScreen() {
     var isPlayerExpanded by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
     var isSupportActive by remember { mutableStateOf(false) }
+    var isLibraryActive by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
     var showGoogleAuthDialog by remember { mutableStateOf(false) }
 
@@ -104,7 +105,7 @@ fun MainScreen() {
 
     // Mode-aware back button handling
     BackHandler(
-        enabled = isFullscreen || isPlayerExpanded || isSearchActive || isSupportActive || showAccountSheet ||
+        enabled = isFullscreen || isPlayerExpanded || isSearchActive || isSupportActive || isLibraryActive || showAccountSheet ||
                 showGoogleAuthDialog || activeChannelVideo != null || activePlaylist != null ||
                 (appMode == AppMode.YOUTUBE && selectedYTTab != YouTubeTab.HOME) ||
                 (appMode == AppMode.YOUTUBE_MUSIC && selectedMusicTab != YouTubeMusicTab.HOME)
@@ -125,6 +126,8 @@ fun MainScreen() {
             isSearchActive = false
         } else if (isSupportActive) {
             isSupportActive = false
+        } else if (isLibraryActive) {
+            isLibraryActive = false
         } else if (appMode == AppMode.YOUTUBE && selectedYTTab != YouTubeTab.HOME) {
             selectedYTTab = YouTubeTab.HOME
         } else if (appMode == AppMode.YOUTUBE_MUSIC && selectedMusicTab != YouTubeMusicTab.HOME) {
@@ -195,7 +198,7 @@ fun MainScreen() {
             modifier = Modifier.fillMaxSize()
         ) {
             // Mode-Aware Top Bar (shown on Feed / Home tabs when no child overlay is active)
-            if (!isSearchActive && !isSupportActive && activeChannelVideo == null && activePlaylist == null) {
+            if (!isSearchActive && !isSupportActive && !isLibraryActive && activeChannelVideo == null && activePlaylist == null) {
                 if ((appMode == AppMode.YOUTUBE && selectedYTTab != YouTubeTab.YOU) ||
                     (appMode == AppMode.YOUTUBE_MUSIC && selectedMusicTab != YouTubeMusicTab.LIBRARY)
                 ) {
@@ -262,6 +265,19 @@ fun MainScreen() {
                     }
                     isSupportActive -> {
                         SupportScreen()
+                    }
+                    isLibraryActive -> {
+                        MusicLibraryScreen(
+                            onTrackSelected = { track, queue ->
+                                PlaybackController.playTrack(track, queue)
+                                isPlayerExpanded = true
+                            },
+                            onPlaylistClick = { playlist ->
+                                activePlaylist = playlist
+                            },
+                            onOpenSearch = { isSearchActive = true },
+                            onOpenAccountSheet = { showAccountSheet = true }
+                        )
                     }
                     activePlaylist != null -> {
                         PlaylistDetailScreen(
@@ -375,16 +391,18 @@ fun MainScreen() {
                     selectedMusicTab = selectedMusicTab,
                     isSearchActive = isSearchActive,
                     isSupportActive = isSupportActive,
+                    isLibraryActive = isLibraryActive,
                     onHomeClick = {
                         val wasAlreadyOnHome = if (appMode == AppMode.YOUTUBE) {
-                            !isSearchActive && !isSupportActive && activeChannelVideo == null && activePlaylist == null && selectedYTTab == YouTubeTab.HOME
+                            !isSearchActive && !isSupportActive && !isLibraryActive && activeChannelVideo == null && activePlaylist == null && selectedYTTab == YouTubeTab.HOME
                         } else {
-                            !isSearchActive && !isSupportActive && activeChannelVideo == null && activePlaylist == null && selectedMusicTab == YouTubeMusicTab.HOME
+                            !isSearchActive && !isSupportActive && !isLibraryActive && activeChannelVideo == null && activePlaylist == null && selectedMusicTab == YouTubeMusicTab.HOME
                         }
                         activeChannelVideo = null
                         activePlaylist = null
                         isSearchActive = false
                         isSupportActive = false
+                        isLibraryActive = false
                         if (wasAlreadyOnHome) {
                             homeScrollToTopTrigger++
                         }
@@ -398,13 +416,22 @@ fun MainScreen() {
                         activeChannelVideo = null
                         activePlaylist = null
                         isSupportActive = false
+                        isLibraryActive = false
                         isSearchActive = true
+                    },
+                    onLibraryClick = {
+                        activeChannelVideo = null
+                        activePlaylist = null
+                        isSearchActive = false
+                        isSupportActive = false
+                        isLibraryActive = true
                     },
                     onAccountClick = {
                         activeChannelVideo = null
                         activePlaylist = null
                         isSearchActive = false
                         isSupportActive = false
+                        isLibraryActive = false
                         if (appMode == AppMode.YOUTUBE) {
                             if (selectedYTTab == YouTubeTab.YOU) {
                                 showAccountSheet = true
@@ -412,17 +439,14 @@ fun MainScreen() {
                                 selectedYTTab = YouTubeTab.YOU
                             }
                         } else {
-                            if (selectedMusicTab == YouTubeMusicTab.LIBRARY) {
-                                showAccountSheet = true
-                            } else {
-                                selectedMusicTab = YouTubeMusicTab.LIBRARY
-                            }
+                            showAccountSheet = true
                         }
                     },
                     onSupportClick = {
                         activeChannelVideo = null
                         activePlaylist = null
                         isSearchActive = false
+                        isLibraryActive = false
                         isSupportActive = true
                     },
                     onYTTabSelected = { tab ->
@@ -430,6 +454,7 @@ fun MainScreen() {
                         activePlaylist = null
                         isSearchActive = false
                         isSupportActive = false
+                        isLibraryActive = false
                         selectedYTTab = tab
                     },
                     onMusicTabSelected = { tab ->
@@ -437,6 +462,11 @@ fun MainScreen() {
                         activePlaylist = null
                         isSearchActive = false
                         isSupportActive = false
+                        if (tab == YouTubeMusicTab.LIBRARY) {
+                            isLibraryActive = true
+                        } else {
+                            isLibraryActive = false
+                        }
                         selectedMusicTab = tab
                     }
                 )
