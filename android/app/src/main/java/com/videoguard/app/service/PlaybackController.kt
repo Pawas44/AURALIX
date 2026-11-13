@@ -13,6 +13,7 @@ import com.videoguard.app.model.VideoItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 object PlaybackController {
@@ -249,7 +250,7 @@ object PlaybackController {
     private fun resumeOfflineTicker() {
         offlineTickerJob?.cancel()
         offlineTickerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-            while (kotlinx.coroutines.isActive && _isPlaying.value) {
+            while (isActive && _isPlaying.value) {
                 kotlinx.coroutines.delay(500)
                 val mp = offlineMediaPlayer
                 if (mp != null && try { mp.isPlaying } catch (e: Exception) { false }) {
