@@ -11,6 +11,7 @@ struct MusicLibraryView: View {
     @State private var selectedFilter: String = "All"
     @State private var showNewPlaylistAlert = false
     @State private var newPlaylistTitle = ""
+    @State private var selectedPlaylistForOptions: UserPlaylist? = nil
 
     @State private var selectedService: String? = nil
     @State private var showInAppBrowser = false
@@ -90,17 +91,6 @@ struct MusicLibraryView: View {
                                 iconName: "music.note"
                             ) {
                                 openServiceImport(service: "Spotify")
-                            }
-
-                            Divider().background(Color.white.opacity(0.08))
-
-                            // Apple Music
-                            importServiceRow(
-                                title: "Apple Music",
-                                brandColor: Color(hex: 0xFA243C),
-                                iconName: "music.quarternote.3"
-                            ) {
-                                openServiceImport(service: "Apple Music")
                             }
 
                             Divider().background(Color.white.opacity(0.08))
@@ -308,7 +298,7 @@ struct MusicLibraryView: View {
                                 Text("No playlists yet")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundColor(.white)
-                                Text("Create a new playlist or import from Spotify / Apple Music / Amazon Music")
+                                Text("Create a new playlist or import from Spotify / Amazon Music")
                                     .font(.system(size: 12))
                                     .foregroundColor(.gray)
                                     .multilineTextAlignment(.center)
@@ -362,6 +352,14 @@ struct MusicLibraryView: View {
                                                     .foregroundColor(AppTheme.ytMusicTextSecondary)
                                             }
                                             Spacer()
+
+                                            Button(action: { selectedPlaylistForOptions = playlist }) {
+                                                Image(systemName: "ellipsis")
+                                                    .rotationEffect(.degrees(90))
+                                                    .font(.system(size: 16))
+                                                    .foregroundColor(Color(hex: 0xAAAAAA))
+                                                    .frame(width: 34, height: 34)
+                                            }
                                         }
                                         .padding(.horizontal, 16)
                                     }
@@ -372,6 +370,28 @@ struct MusicLibraryView: View {
                 }
             }
             .padding(.bottom, 90)
+        }
+        .confirmationDialog(
+            selectedPlaylistForOptions?.title ?? "Playlist Options",
+            isPresented: Binding(
+                get: { selectedPlaylistForOptions != nil },
+                set: { if !$0 { selectedPlaylistForOptions = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let pl = selectedPlaylistForOptions {
+                Button("Clear All Songs", role: .destructive) {
+                    userData.clearPlaylist(playlistId: pl.id)
+                    selectedPlaylistForOptions = nil
+                }
+                Button("Delete Playlist", role: .destructive) {
+                    userData.deletePlaylist(playlistId: pl.id)
+                    selectedPlaylistForOptions = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    selectedPlaylistForOptions = nil
+                }
+            }
         }
         .alert("New Playlist", isPresented: $showNewPlaylistAlert) {
             TextField("Playlist Title", text: $newPlaylistTitle)
@@ -438,7 +458,6 @@ struct MusicLibraryView: View {
         let brandColor: Color = {
             switch service {
             case "Spotify": return Color(hex: 0x1DB954)
-            case "Apple Music": return Color(hex: 0xFA243C)
             case "Amazon Music": return Color(hex: 0x00A8E1)
             default: return AppTheme.ytMusicRedAccent
             }
@@ -446,8 +465,7 @@ struct MusicLibraryView: View {
 
         let authUrlStr: String = {
             switch service {
-            case "Spotify": return "https://accounts.spotify.com/login"
-            case "Apple Music": return "https://music.apple.com/login"
+            case "Spotify": return "https://open.spotify.com"
             case "Amazon Music": return "https://music.amazon.com"
             default: return "https://www.tunemymusic.com"
             }
@@ -488,7 +506,6 @@ struct MusicLibraryView: View {
                 VStack(alignment: .trailing, spacing: 8) {
                     TextField(
                         service == "Spotify" ? "https://open.spotify.com/playlist/..." :
-                        service == "Apple Music" ? "https://music.apple.com/.../playlist/..." :
                         "https://music.amazon.com/playlists/...",
                         text: $importUrlInput
                     )
@@ -647,13 +664,18 @@ struct InAppWebTransferSheet: View {
 
     @Environment(\.dismiss) var dismiss
     @State private var currentUrl: String = ""
+    @State private var webViewInstance: WKWebView? = nil
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                InAppWKWebView(urlString: initialUrl, onUrlChange: { url in
-                    currentUrl = url
-                })
+                InAppWKWebView(
+                    urlString: initialUrl,
+                    onUrlChange: { url in
+                        currentUrl = url
+                    },
+                    webViewRef: $webViewInstance
+                )
 
                 VStack(spacing: 8) {
                     HStack {
@@ -668,8 +690,37 @@ struct InAppWebTransferSheet: View {
                         }
                         Spacer()
                         Button(action: {
-                            let urlToSync = currentUrl.isEmpty ? initialUrl : currentUrl
-                            onSyncUrl(urlToSync)
+                            let jsCode = """
+                            (function() {
+                                var title = document.querySelector('h1')?.innerText || document.title || '';
+                                title = title.replace(/\\s*\\|\\s*Spotify.*$/i, '').replace(/on Amazon Music.*$/i, '').trim();
+                                var tracks = [];
+                                var spItems = document.querySelectorAll('[data-testid="tracklist-row"]');
+                                spItems.forEach(function(row) {
+                                    var t = row.querySelector('[data-testid="internal-track-link"]')?.innerText || '';
+                                    var a = row.querySelector('a[href*="/artist/"]')?.innerText || '';
+                                    if (t) tracks.push(t + ' - ' + a);
+                                });
+                                if (tracks.length === 0) {
+                                    var amItems = document.querySelectorAll('music-vertical-item, music-horizontal-item, [role="row"]');
+                                    amItems.forEach(function(row) {
+                                        var primary = row.querySelector('.primary-text, [primary-text], [slot="primaryText"]')?.innerText || '';
+                                        var secondary = row.querySelector('.secondary-text, [secondary-text], [slot="secondaryText"]')?.innerText || '';
+                                        if (primary && primary !== 'Library') tracks.push(primary + ' - ' + secondary);
+                                    });
+                                }
+                                return JSON.stringify({ title: title, tracks: tracks });
+                            })();
+                            """
+                            webViewInstance?.evaluateJavaScript(jsCode) { result, _ in
+                                if let jsonStr = result as? String,
+                                   jsonStr.contains("\"tracks\":[") && !jsonStr.contains("\"tracks\":[]") {
+                                    onSyncUrl(jsonStr)
+                                } else {
+                                    let urlToSync = currentUrl.isEmpty ? initialUrl : currentUrl
+                                    onSyncUrl(urlToSync)
+                                }
+                            }
                         }) {
                             HStack(spacing: 6) {
                                 Image(systemName: "bolt.fill")
@@ -705,6 +756,7 @@ struct InAppWebTransferSheet: View {
 struct InAppWKWebView: UIViewRepresentable {
     let urlString: String
     let onUrlChange: (String) -> Void
+    @Binding var webViewRef: WKWebView?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onUrlChange: onUrlChange)
@@ -712,8 +764,14 @@ struct InAppWKWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
         let webView = WKWebView(frame: .zero, configuration: config)
+        webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
         webView.navigationDelegate = context.coordinator
+        webView.allowsBackForwardNavigationGestures = true
+        DispatchQueue.main.async {
+            self.webViewRef = webView
+        }
         if let url = URL(string: urlString) {
             webView.load(URLRequest(url: url))
         }

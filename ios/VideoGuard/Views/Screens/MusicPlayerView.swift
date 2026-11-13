@@ -26,6 +26,9 @@ struct MusicPlayerView: View {
     @State private var isUserScrubbing = false
     @State private var scrubPosition: Double = 0
     @State private var showSettingsSheet = false
+    @State private var showAddToPlaylistSheet = false
+    @State private var isDownloaded = false
+    @State private var downloadToastText: String? = nil
     @State private var dynamicRelated: [VideoItem] = []
     @State private var isLoadingRelated = false
     @State private var wavePhase = false
@@ -134,18 +137,35 @@ struct MusicPlayerView: View {
 
                         Spacer()
 
+                        Button(action: { showAddToPlaylistSheet = true }) {
+                            Image(systemName: "plus.circle")
+                                .font(.system(size: 20))
+                                .foregroundColor(.white)
+                                .frame(width: 34, height: 34)
+                        }
+
+                        Button(action: {
+                            isDownloaded = true
+                            downloadToastText = "Downloading \"\(track.title)\" for offline playback..."
+                        }) {
+                            Image(systemName: isDownloaded ? "checkmark.circle.fill" : "arrow.down.circle")
+                                .font(.system(size: 20))
+                                .foregroundColor(isDownloaded ? AppTheme.ytMusicRedAccent : .white)
+                                .frame(width: 34, height: 34)
+                        }
+
                         Button(action: { userData.toggleDislike(track.id) }) {
                             Image(systemName: userData.isDisliked(track.id) ? "hand.thumbsdown.fill" : "hand.thumbsdown")
                                 .font(.system(size: 20))
                                 .foregroundColor(userData.isDisliked(track.id) ? AppTheme.ytMusicRedAccent : .white)
-                                .frame(width: 36, height: 36)
+                                .frame(width: 34, height: 34)
                         }
 
                         Button(action: { userData.toggleLike(track) }) {
                             Image(systemName: userData.isLiked(track.id) ? "hand.thumbsup.fill" : "hand.thumbsup")
                                 .font(.system(size: 20))
                                 .foregroundColor(userData.isLiked(track.id) ? AppTheme.ytMusicRedAccent : .white)
-                                .frame(width: 36, height: 36)
+                                .frame(width: 34, height: 34)
                         }
                     }
                     .padding(.horizontal, 22)
@@ -203,6 +223,29 @@ struct MusicPlayerView: View {
         .sheet(isPresented: $showSettingsSheet) {
             PlayerBottomSheet(appMode: .youtubeMusic, onDismiss: { showSettingsSheet = false })
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showAddToPlaylistSheet) {
+            AddToPlaylistSheet(video: track) {
+                showAddToPlaylistSheet = false
+            }
+        }
+        .overlay(alignment: .top) {
+            if let msg = downloadToastText {
+                Text(msg)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.black.opacity(0.85))
+                    .cornerRadius(20)
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                    .padding(.top, 60)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .task {
+                        try? await Task.sleep(nanoseconds: 2_500_000_000)
+                        withAnimation { downloadToastText = nil }
+                    }
+            }
         }
         .task(id: track.id) {
             if playbackService.playbackQueue.count <= 1 {

@@ -1476,12 +1476,12 @@ final class SpotifyImportEngine {
         onProgress(ImportProgress(stage: "Analyzing link...", current: 0, total: 0))
 
         let parsed: (title: String, tracks: [ImportTrackMeta])
-        if trimmed.contains("spotify.com") {
+        if trimmed.hasPrefix("{") && trimmed.contains("\"tracks\"") {
+            parsed = parseDomTracksJson(jsonStr: trimmed)
+        } else if trimmed.contains("spotify.com") {
             parsed = await parseSpotify(url: trimmed)
         } else if trimmed.contains("music.amazon.") || (trimmed.contains("amazon.") && trimmed.contains("music")) || trimmed.contains("amzn.to") {
             parsed = await parseAmazonMusic(url: trimmed)
-        } else if trimmed.contains("music.apple.com") || (trimmed.contains("apple.com") && trimmed.contains("music")) {
-            parsed = await parseAppleMusic(url: trimmed)
         } else {
             parsed = parsePlainText(trimmed)
         }
@@ -1743,11 +1743,41 @@ final class SpotifyImportEngine {
             }
         }
 
-        if uniqueTracks.isEmpty {
-            uniqueTracks.append(ImportTrackMeta(title: title, artist: ""))
+        let filteredTracks = uniqueTracks.filter { tr in
+            let lower = tr.title.lowercased()
+            return !lower.contains("how to make") &&
+                   !lower.contains("amazon music help") &&
+                   !lower.contains("customer service") &&
+                   !lower.contains("sign in") &&
+                   !lower.contains("log in") &&
+                   lower != "library" &&
+                   lower != "browse" &&
+                   lower != "home"
         }
 
-        return (title, uniqueTracks)
+        return (title, filteredTracks)
+    }
+
+    private func parseDomTracksJson(jsonStr: String) -> (title: String, tracks: [ImportTrackMeta]) {
+        guard let data = jsonStr.data(using: .utf8),
+              let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return ("Imported Playlist", [])
+        }
+        let title = (dict["title"] as? String) ?? "Imported Playlist"
+        let tracksArr = (dict["tracks"] as? [String]) ?? []
+        var list: [ImportTrackMeta] = []
+        for line in tracksArr {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let parts = trimmed.components(separatedBy: " - ")
+            let t = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let a = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+            let lower = t.lowercased()
+            if !lower.contains("how to make") && !lower.contains("amazon music help") && lower != "library" && lower != "browse" {
+                list.append(ImportTrackMeta(title: t, artist: a))
+            }
+        }
+        return (title, list)
     }
 
     private func parseAppleMusic(url: String) async -> (title: String, tracks: [ImportTrackMeta]) {

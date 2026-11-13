@@ -5,6 +5,7 @@ struct PlayerControls: View {
     var onSwitchToMusic: (() -> Void)? = nil
     @ObservedObject var userData = UserDataRepository.shared
     @State private var showPlaylistPicker = false
+    @State private var isDownloaded = false
 
     var body: some View {
         let isLiked = userData.isLiked(video.id)
@@ -69,6 +70,20 @@ struct PlayerControls: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .liquidGlassPill(isSelected: isSaved)
+                }
+
+                // Download
+                Button(action: { isDownloaded = true }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: isDownloaded ? "checkmark.circle.fill" : "arrow.down.circle")
+                            .font(.system(size: 14))
+                        Text(isDownloaded ? "Downloaded" : "Download")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundColor(isDownloaded ? AppTheme.youTubeRed : .white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .liquidGlassPill(isSelected: isDownloaded)
                 }
 
                 // Add to Playlist

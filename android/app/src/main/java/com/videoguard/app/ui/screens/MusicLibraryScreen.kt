@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.videoguard.app.ui.screens
 
 import android.content.Intent
@@ -64,6 +66,7 @@ fun MusicLibraryScreen(
 
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistTitle by remember { mutableStateOf("") }
+    var selectedPlaylistForOptions by remember { mutableStateOf<UserPlaylist?>(null) }
 
     // Service Import State
     var selectedImportService by remember { mutableStateOf<String?>(null) }
@@ -218,25 +221,7 @@ fun MusicLibraryScreen(
                                 modifier = Modifier.padding(vertical = 4.dp)
                             )
 
-                            // 2. Apple Music
-                            ServiceRow(
-                                title = "Apple Music",
-                                brandColor = Color(0xFFFA243C),
-                                icon = Icons.Default.QueueMusic,
-                                onClick = {
-                                    selectedImportService = "Apple Music"
-                                    importUrlInput = ""
-                                    importProgress = null
-                                    importedPlaylistResult = null
-                                }
-                            )
-
-                            HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.07f),
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
-
-                            // 3. Amazon Music
+                            // 2. Amazon Music
                             ServiceRow(
                                 title = "Amazon Music",
                                 brandColor = Color(0xFF00A8E1),
@@ -535,7 +520,7 @@ fun MusicLibraryScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Create a new playlist or import from Spotify / Apple Music / Amazon Music",
+                                text = "Create a new playlist or import from Spotify / Amazon Music",
                                 color = Color.Gray,
                                 fontSize = 12.sp
                             )
@@ -604,7 +589,7 @@ fun MusicLibraryScreen(
                             )
                         }
 
-                        IconButton(onClick = { /* Options */ }) {
+                        IconButton(onClick = { selectedPlaylistForOptions = playlist }) {
                             Icon(
                                 imageVector = Icons.Default.MoreVert,
                                 contentDescription = "Options",
@@ -689,14 +674,12 @@ fun MusicLibraryScreen(
     if (currentService != null) {
         val brandColor = when (currentService) {
             "Spotify" -> Color(0xFF1DB954)
-            "Apple Music" -> Color(0xFFFA243C)
             "Amazon Music" -> Color(0xFF00A8E1)
             else -> YTMusicRedAccent
         }
 
         val authUrl = when (currentService) {
-            "Spotify" -> "https://accounts.spotify.com/login"
-            "Apple Music" -> "https://music.apple.com/login"
+            "Spotify" -> "https://open.spotify.com"
             "Amazon Music" -> "https://music.amazon.com"
             else -> "https://www.tunemymusic.com"
         }
@@ -721,7 +704,6 @@ fun MusicLibraryScreen(
                         Icon(
                             imageVector = when (currentService) {
                                 "Spotify" -> Icons.Default.MusicNote
-                                "Apple Music" -> Icons.Default.QueueMusic
                                 else -> Icons.Default.Headphones
                             },
                             contentDescription = null,
@@ -936,14 +918,12 @@ fun MusicLibraryScreen(
     // In-App Web Browser Sheet for Sign-In & Sync
     if (showInAppWebSheet && currentService != null) {
         val authUrl = when (currentService) {
-            "Spotify" -> "https://accounts.spotify.com/login"
-            "Apple Music" -> "https://music.apple.com/login"
+            "Spotify" -> "https://open.spotify.com"
             "Amazon Music" -> "https://music.amazon.com"
             else -> "https://www.tunemymusic.com"
         }
         val brandColor = when (currentService) {
             "Spotify" -> Color(0xFF1DB954)
-            "Apple Music" -> Color(0xFFFA243C)
             "Amazon Music" -> Color(0xFF00A8E1)
             else -> YTMusicRedAccent
         }
@@ -1007,7 +987,14 @@ fun MusicLibraryScreen(
                                 webViewInstance = this
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
-                                settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                                settings.databaseEnabled = true
+                                settings.javaScriptCanOpenWindowsAutomatically = true
+                                settings.setSupportMultipleWindows(true)
+                                settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+                                android.webkit.CookieManager.getInstance().apply {
+                                    setAcceptCookie(true)
+                                    setAcceptThirdPartyCookies(this@apply, true)
+                                }
                                 webViewClient = object : WebViewClient() {
                                     override fun onPageFinished(view: WebView?, url: String?) {
                                         super.onPageFinished(view, url)
@@ -1045,18 +1032,55 @@ fun MusicLibraryScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Button(
                                 onClick = {
-                                    importUrlInput = currentWebUrl
-                                    showInAppWebSheet = false
-                                    isImporting = true
-                                    importProgress = null
-                                    importedPlaylistResult = null
-                                    scope.launch {
-                                        val res = MusicImportEngine.importPlaylistFromUrl(currentWebUrl) { prog ->
-                                            importProgress = prog
+                                    webViewInstance?.evaluateJavascript(
+                                        """
+                                        (function() {
+                                            var title = document.querySelector('h1')?.innerText || document.title || '';
+                                            title = title.replace(/\s*\|\s*Spotify.*$/i, '').replace(/on Amazon Music.*$/i, '').trim();
+                                            var tracks = [];
+                                            var spItems = document.querySelectorAll('[data-testid="tracklist-row"]');
+                                            spItems.forEach(function(row) {
+                                                var t = row.querySelector('[data-testid="internal-track-link"]')?.innerText || '';
+                                                var a = row.querySelector('a[href*="/artist/"]')?.innerText || '';
+                                                if (t) tracks.push(t + ' - ' + a);
+                                            });
+                                            if (tracks.length === 0) {
+                                                var amItems = document.querySelectorAll('music-vertical-item, music-horizontal-item, [role="row"]');
+                                                amItems.forEach(function(row) {
+                                                    var primary = row.querySelector('.primary-text, [primary-text], [slot="primaryText"]')?.innerText || '';
+                                                    var secondary = row.querySelector('.secondary-text, [secondary-text], [slot="secondaryText"]')?.innerText || '';
+                                                    if (primary && primary !== 'Library') tracks.push(primary + ' - ' + secondary);
+                                                });
+                                            }
+                                            return JSON.stringify({ title: title, tracks: tracks });
+                                        })();
+                                        """.trimIndent()
+                                    ) { jsResult ->
+                                        var cleanPayload = jsResult ?: ""
+                                        if (cleanPayload.startsWith("\"") && cleanPayload.endsWith("\"")) {
+                                            try {
+                                                cleanPayload = org.json.JSONTokener(cleanPayload).nextValue().toString()
+                                            } catch (e: Exception) {}
                                         }
-                                        isImporting = false
-                                        res.onSuccess { pl ->
-                                            importedPlaylistResult = pl
+                                        val payloadToUse = if (cleanPayload.contains("\"tracks\":[") && !cleanPayload.contains("\"tracks\":[]")) {
+                                            cleanPayload
+                                        } else {
+                                            currentWebUrl
+                                        }
+                                        importUrlInput = payloadToUse
+                                        showInAppWebSheet = false
+                                        isImporting = true
+                                        importProgress = null
+                                        importedPlaylistResult = null
+                                        scope.launch {
+                                            val res = MusicImportEngine.importPlaylistFromUrl(payloadToUse) { prog ->
+                                                importProgress = prog
+                                            }
+                                            isImporting = false
+                                            res.onSuccess { pl ->
+                                                importedPlaylistResult = pl
+                                                selectedImportService = currentService
+                                            }
                                         }
                                     }
                                 },
@@ -1069,6 +1093,89 @@ fun MusicLibraryScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    // Playlist 3-Dots Options BottomSheet (Delete & Clear All Songs)
+    if (selectedPlaylistForOptions != null) {
+        val targetPlaylist = selectedPlaylistForOptions!!
+        ModalBottomSheet(
+            onDismissRequest = { selectedPlaylistForOptions = null },
+            containerColor = Color(0xFF1B1D28)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = targetPlaylist.title,
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${targetPlaylist.videoCount} songs",
+                    color = Color.Gray,
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Clear all songs
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            UserDataRepository.clearPlaylist(targetPlaylist.id)
+                            selectedPlaylistForOptions = null
+                        }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CleaningServices,
+                        contentDescription = "Clear All Songs",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Clear all songs",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                // Delete Playlist
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            UserDataRepository.deletePlaylist(targetPlaylist.id)
+                            selectedPlaylistForOptions = null
+                        }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete Playlist",
+                        tint = Color(0xFFFF4D4D),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Delete playlist",
+                        color = Color(0xFFFF4D4D),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }

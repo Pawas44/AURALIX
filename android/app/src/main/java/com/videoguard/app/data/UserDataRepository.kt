@@ -386,6 +386,16 @@ object UserDataRepository {
         savePlaylists()
     }
 
+    fun clearPlaylist(playlistId: String) {
+        val current = _playlists.value.toMutableList()
+        val index = current.indexOfFirst { it.id == playlistId }
+        if (index != -1) {
+            current[index] = current[index].copy(videos = emptyList())
+            _playlists.value = current
+            savePlaylists()
+        }
+    }
+
     fun savePlaylist(playlist: UserPlaylist) {
         val current = _playlists.value.toMutableList()
         val index = current.indexOfFirst { it.id == playlist.id }

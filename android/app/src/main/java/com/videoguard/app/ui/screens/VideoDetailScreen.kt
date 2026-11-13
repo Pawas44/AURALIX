@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.videoguard.app.ui.screens
 
 import androidx.compose.foundation.background
@@ -29,6 +31,7 @@ import androidx.compose.ui.zIndex
 import coil.compose.AsyncImage
 import com.videoguard.app.data.VideoRepository
 import com.videoguard.app.model.VideoItem
+import com.videoguard.app.ui.components.AddToPlaylistSheet
 import com.videoguard.app.ui.components.YouTubeVideoPlayer
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.shadow
@@ -94,6 +97,12 @@ fun VideoDetailScreen(
             VideoRepository.sampleVideos.filter { it.id != video.id }
         }
     }
+
+    var showAddToPlaylistSheet by remember { mutableStateOf(false) }
+    var isDownloaded by remember { mutableStateOf(false) }
+    var isLiked by remember(video.id) { mutableStateOf(false) }
+    var isDisliked by remember(video.id) { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Column(
         modifier = modifier
@@ -235,6 +244,86 @@ fun VideoDetailScreen(
                 Spacer(modifier = Modifier.height(10.dp))
             }
 
+            // Quick Actions: Like | Download | Save to Playlist
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        onClick = {
+                            isLiked = !isLiked
+                            if (isLiked) isDisliked = false
+                        },
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color.White.copy(alpha = 0.08f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (isLiked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                                contentDescription = "Like",
+                                tint = if (isLiked) Color(0xFFFF1744) else Color.White,
+                                modifier = Modifier.size(17.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Like", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Surface(
+                        onClick = {
+                            isDownloaded = true
+                            android.widget.Toast.makeText(
+                                context,
+                                "Downloading \"${video.title}\" for offline playback...",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color.White.copy(alpha = 0.08f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = if (isDownloaded) Icons.Filled.CheckCircle else Icons.Default.Download,
+                                contentDescription = "Download",
+                                tint = if (isDownloaded) Color(0xFFFF1744) else Color.White,
+                                modifier = Modifier.size(17.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(if (isDownloaded) "Downloaded" else "Download", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Surface(
+                        onClick = { showAddToPlaylistSheet = true },
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color.White.copy(alpha = 0.08f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlaylistAdd,
+                                contentDescription = "Save to playlist",
+                                tint = Color.White,
+                                modifier = Modifier.size(17.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Save", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+
             // Up Next / Queue Header
             item {
                 val currentIdx = liveQueue.indexOfFirst { it.id == video.id }
@@ -361,6 +450,13 @@ fun VideoDetailScreen(
                 Spacer(modifier = Modifier.height(40.dp))
             }
         }
+    }
+
+    if (showAddToPlaylistSheet) {
+        AddToPlaylistSheet(
+            video = video,
+            onDismiss = { showAddToPlaylistSheet = false }
+        )
     }
 }
 

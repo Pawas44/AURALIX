@@ -330,6 +330,22 @@ class UserDataRepository: ObservableObject {
         }
     }
 
+    func deletePlaylist(playlistId: String) {
+        DispatchQueue.main.async {
+            self.playlists.removeAll { $0.id == playlistId && !$0.isSystem }
+            self.savePlaylists()
+        }
+    }
+
+    func clearPlaylist(playlistId: String) {
+        DispatchQueue.main.async {
+            if let idx = self.playlists.firstIndex(where: { $0.id == playlistId }) {
+                self.playlists[idx].videos = []
+                self.savePlaylists()
+            }
+        }
+    }
+
     // MARK: - Subscriptions
     func setSubscribedChannels(_ channels: Set<String>) {
         guard !channels.isEmpty else { return }

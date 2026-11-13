@@ -43,9 +43,9 @@ object MusicImportEngine {
             onProgress(ImportProgress("Analyzing link...", 0, 0))
 
             val (playlistName, trackMetas) = when {
+                trimmed.startsWith("{") && trimmed.contains("\"tracks\"") -> parseDomTracksJson(trimmed)
                 trimmed.contains("spotify.com") -> parseSpotify(trimmed, onProgress)
                 trimmed.contains("music.amazon.") || (trimmed.contains("amazon.") && trimmed.contains("music")) || trimmed.contains("amzn.to") -> parseAmazonMusic(trimmed, onProgress)
-                trimmed.contains("music.apple.com") || (trimmed.contains("apple.com") && trimmed.contains("music")) -> parseAppleMusic(trimmed, onProgress)
                 else -> parsePlainTextList(trimmed)
             }
 
@@ -314,11 +314,46 @@ object MusicImportEngine {
             }
         }
 
-        if (uniqueTracks.isEmpty()) {
-            uniqueTracks.add(ImportTrackMeta(title, ""))
+        val filteredTracks = uniqueTracks.filter { tr ->
+            val lower = tr.title.lowercase()
+            !lower.contains("how to make") &&
+            !lower.contains("amazon music help") &&
+            !lower.contains("customer service") &&
+            !lower.contains("sign in") &&
+            !lower.contains("log in") &&
+            lower != "library" &&
+            lower != "browse" &&
+            lower != "home"
         }
 
-        return Pair(title, uniqueTracks)
+        if (filteredTracks.isEmpty()) {
+            throw IllegalStateException("No tracks detected on this page. Please open a playlist or album and tap Sync.")
+        }
+
+        return Pair(title, filteredTracks)
+    }
+
+    private fun parseDomTracksJson(jsonStr: String): Pair<String, List<ImportTrackMeta>> {
+        val obj = JSONObject(jsonStr)
+        val title = obj.optString("title").ifBlank { "Imported Playlist" }
+        val tracksArr = obj.optJSONArray("tracks") ?: JSONArray()
+        val list = mutableListOf<ImportTrackMeta>()
+        for (i in 0 until tracksArr.length()) {
+            val line = tracksArr.optString(i, "").trim()
+            if (line.isNotBlank()) {
+                val parts = line.split(" - ", " – ", " by ", limit = 2)
+                val t = parts[0].trim()
+                val a = if (parts.size > 1) parts[1].trim() else ""
+                val lower = t.lowercase()
+                if (!lower.contains("how to make") && !lower.contains("amazon music help") && lower != "library" && lower != "browse") {
+                    list.add(ImportTrackMeta(t, a))
+                }
+            }
+        }
+        if (list.isEmpty()) {
+            throw IllegalStateException("No tracks detected on this page. Please open a playlist and tap Sync.")
+        }
+        return Pair(title, list)
     }
 
     private fun parseAppleMusic(url: String, onProgress: (ImportProgress) -> Unit): Pair<String, List<ImportTrackMeta>> {

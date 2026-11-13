@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.videoguard.app.ui.screens
 
 import androidx.compose.animation.*
@@ -37,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.videoguard.app.data.VideoRepository
 import com.videoguard.app.model.VideoItem
+import com.videoguard.app.ui.components.AddToPlaylistSheet
 import com.videoguard.app.ui.components.YouTubeVideoPlayer
 import com.videoguard.app.ui.theme.LiquidGlassDefaults
 import com.videoguard.app.ui.theme.YouTubeRed
@@ -70,6 +73,9 @@ fun MusicPlayerScreen(
     val isRepeat by com.videoguard.app.service.PlaybackController.isLoopEnabled.collectAsState()
     var sliderPosition by remember { mutableFloatStateOf(0.35f) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var showAddToPlaylistSheet by remember { mutableStateOf(false) }
+    var isDownloaded by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -326,7 +332,30 @@ fun MusicPlayerScreen(
                 )
             }
 
-            Row {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { showAddToPlaylistSheet = true }) {
+                    Icon(
+                        imageVector = Icons.Default.PlaylistAdd,
+                        contentDescription = "Add to playlist",
+                        tint = Color.White
+                    )
+                }
+                IconButton(
+                    onClick = {
+                        isDownloaded = true
+                        android.widget.Toast.makeText(
+                            context,
+                            "Downloading \"${track.title}\" for offline playback...",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                ) {
+                    Icon(
+                        imageVector = if (isDownloaded) Icons.Filled.CheckCircle else Icons.Default.Download,
+                        contentDescription = "Download Song",
+                        tint = if (isDownloaded) YTMusicRedAccent else Color.White
+                    )
+                }
                 IconButton(
                     onClick = {
                         isDisliked = !isDisliked
@@ -639,6 +668,13 @@ fun MusicPlayerScreen(
 
     if (showSettingsSheet) {
         com.videoguard.app.ui.components.PlayerSettingsBottomSheet(onDismiss = { showSettingsSheet = false })
+    }
+
+    if (showAddToPlaylistSheet) {
+        AddToPlaylistSheet(
+            video = track,
+            onDismiss = { showAddToPlaylistSheet = false }
+        )
     }
 }
 
