@@ -562,7 +562,7 @@ struct MusicPlayerView: View {
                                 isUserScrubbing: isUserScrubbing,
                                 scrubPosition: scrubPosition,
                                 onSeek: { targetSec in
-                                    playbackService.seek(to: targetSec)
+                                    playbackService.seekTo(seconds: targetSec)
                                 }
                             )
                         } else {
