@@ -217,29 +217,36 @@ object UserDataRepository {
             )
 
             var isRealStreamDownloaded = false
-            val streamUrl = fetchRealYouTubeAudioUrl(video.id)
+            val audioFormat = fetchRealYouTubeAudioFormat(video.id)
 
-            if (!streamUrl.isNullOrBlank()) {
+            if (audioFormat != null && audioFormat.url.isNotBlank()) {
                 try {
-                    val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
-                        connectTimeout = 15000
-                        readTimeout = 20000
-                        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; Quest 2) AppleWebKit/537.36")
-                    }
-                    val totalLen = conn.contentLengthLong.let { if (it > 0) it else 4_500_000L }
+                    val streamUrl = audioFormat.url
+                    val totalLen = if (audioFormat.contentLength > 0) audioFormat.contentLength else 4_500_000L
                     var downloaded = 0L
+                    val chunkSize = 256 * 1024L
+                    val userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 
-                    conn.inputStream.use { input ->
-                        java.io.FileOutputStream(targetFile).use { output ->
-                            val buffer = ByteArray(16384)
-                            var read: Int
-                            var lastUpdate = 0L
-                            while (input.read(buffer).also { read = it } != -1) {
-                                output.write(buffer, 0, read)
-                                downloaded += read
+                    java.io.FileOutputStream(targetFile).use { output ->
+                        var lastUpdate = 0L
+                        if (audioFormat.contentLength > 0) {
+                            // High-speed chunked range download (immune to GVS throttling & 403 blocks)
+                            while (downloaded < totalLen) {
+                                val end = minOf(downloaded + chunkSize - 1, totalLen - 1)
+                                val chunkConn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
+                                    connectTimeout = 15000
+                                    readTimeout = 20000
+                                    setRequestProperty("User-Agent", userAgent)
+                                    setRequestProperty("Range", "bytes=$downloaded-$end")
+                                    setRequestProperty("Accept", "*/*")
+                                }
+                                val chunk = chunkConn.inputStream.use { it.readBytes() }
+                                if (chunk.isEmpty()) break
+                                output.write(chunk)
+                                downloaded += chunk.size
 
                                 val now = System.currentTimeMillis()
-                                if (now - lastUpdate > 150 || downloaded == totalLen) {
+                                if (now - lastUpdate > 150 || downloaded >= totalLen) {
                                     lastUpdate = now
                                     val percent = ((downloaded * 100) / totalLen).toInt().coerceIn(0, 100)
                                     val mbNow = String.format(java.util.Locale.US, "%.1f", downloaded / (1024f * 1024f))
@@ -266,10 +273,58 @@ object UserDataRepository {
                                     } catch (e: Exception) {}
                                 }
                             }
+                        } else {
+                            // Direct stream fallback
+                            val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
+                                connectTimeout = 15000
+                                readTimeout = 20000
+                                setRequestProperty("User-Agent", userAgent)
+                            }
+                            conn.inputStream.use { input ->
+                                val buffer = ByteArray(16384)
+                                var read: Int
+                                while (input.read(buffer).also { read = it } != -1) {
+                                    output.write(buffer, 0, read)
+                                    downloaded += read
+                                    val percent = ((downloaded * 100) / totalLen).toInt().coerceIn(0, 99)
+                                    val mbNow = String.format(java.util.Locale.US, "%.1f", downloaded / (1024f * 1024f))
+                                    _currentDownload.value = DownloadTask(
+                                        videoId = video.id,
+                                        title = video.title,
+                                        progress = percent,
+                                        bytesText = "$mbNow MB",
+                                        isComplete = false
+                                    )
+                                }
+                            }
                         }
                     }
-                    if (targetFile.exists() && targetFile.length() > 50000) {
+                    if (targetFile.exists() && targetFile.length() > 30000) {
                         isRealStreamDownloaded = true
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            if (!isRealStreamDownloaded) {
+                // Secondary fallback: attempt direct playback stream
+                try {
+                    val fallbackUrl = fetchFallbackYouTubeAudioUrl(video.id)
+                    if (!fallbackUrl.isNullOrBlank()) {
+                        val conn = (URL(fallbackUrl).openConnection() as HttpURLConnection).apply {
+                            connectTimeout = 15000
+                            readTimeout = 20000
+                            setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12L; Quest 3) AppleWebKit/537.36")
+                        }
+                        conn.inputStream.use { input ->
+                            java.io.FileOutputStream(targetFile).use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                        if (targetFile.exists() && targetFile.length() > 30000) {
+                            isRealStreamDownloaded = true
+                        }
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -311,27 +366,45 @@ object UserDataRepository {
         }
     }
 
-    private suspend fun fetchRealYouTubeAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+    data class AudioStreamFormat(
+        val url: String,
+        val contentLength: Long,
+        val mimeType: String,
+        val bitrate: Int
+    )
+
+    private suspend fun fetchRealYouTubeAudioFormat(videoId: String): AudioStreamFormat? = withContext(Dispatchers.IO) {
+        // 1. Primary Client: VISIONOS (Fastest guest stream, full range downloads without 403)
         try {
             val payload = JSONObject().apply {
                 put("videoId", videoId)
                 put("context", JSONObject().apply {
                     put("client", JSONObject().apply {
-                        put("clientName", "ANDROID_VR")
-                        put("clientVersion", "1.61.48")
+                        put("clientName", "VISIONOS")
+                        put("clientVersion", "0.1")
+                        put("clientId", "101")
+                        put("osName", "visionOS")
+                        put("osVersion", "1.3.21O771")
+                        put("deviceMake", "Apple")
+                        put("deviceModel", "RealityDevice14,1")
                         put("hl", "en")
                         put("gl", "US")
                     })
                 })
+                put("playbackContext", JSONObject().apply {
+                    put("contentPlaybackContext", JSONObject().apply {
+                        put("html5Preference", "HTML5_PREF_WANTS")
+                        put("signatureTimestamp", 20000)
+                    })
+                })
             }
-            val url = URL("https://www.youtube.com/youtubei/v1/player")
-            val conn = (url.openConnection() as HttpURLConnection).apply {
+            val conn = (URL("https://www.youtube.com/youtubei/v1/player").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 12000
                 readTimeout = 12000
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; Quest 2) AppleWebKit/537.36 (KHTML, like Gecko) OculusBrowser/15.0.0.4.78.287474720 SamsungBrowser/4.0 Chrome/89.0.4389.105 Mobile VR Safari/537.36")
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15")
             }
             conn.outputStream.use { os ->
                 os.write(payload.toString().toByteArray(Charsets.UTF_8))
@@ -342,22 +415,121 @@ object UserDataRepository {
                 val streamingData = root.optJSONObject("streamingData")
                 val adaptiveFormats = streamingData?.optJSONArray("adaptiveFormats")
                 if (adaptiveFormats != null) {
-                    var bestAudioUrl: String? = null
-                    var bestBitrate = 0
+                    var bestFormat: AudioStreamFormat? = null
                     for (i in 0 until adaptiveFormats.length()) {
                         val fmt = adaptiveFormats.optJSONObject(i) ?: continue
                         val mime = fmt.optString("mimeType", "")
                         val audioUrl = fmt.optString("url", "")
                         val bitrate = fmt.optInt("bitrate", 0)
+                        val clen = fmt.optLong("contentLength", 0L)
                         if (mime.startsWith("audio/") && audioUrl.isNotBlank()) {
-                            if (mime.contains("mp4") || bitrate > bestBitrate) {
-                                bestAudioUrl = audioUrl
-                                bestBitrate = bitrate
+                            if (bestFormat == null || mime.contains("mp4") || bitrate > bestFormat.bitrate) {
+                                bestFormat = AudioStreamFormat(audioUrl, clen, mime, bitrate)
                             }
                         }
                     }
-                    if (!bestAudioUrl.isNullOrBlank()) {
-                        return@withContext bestAudioUrl
+                    if (bestFormat != null) return@withContext bestFormat
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. Fallback Client: ANDROID_VR 1.65.10
+        try {
+            val payload = JSONObject().apply {
+                put("videoId", videoId)
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "ANDROID_VR")
+                        put("clientVersion", "1.65.10")
+                        put("clientId", "28")
+                        put("osName", "Android")
+                        put("osVersion", "12L")
+                        put("deviceMake", "Oculus")
+                        put("deviceModel", "Quest 3")
+                        put("androidSdkVersion", "32")
+                        put("hl", "en")
+                        put("gl", "US")
+                    })
+                })
+            }
+            val conn = (URL("https://www.youtube.com/youtubei/v1/player").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 12000
+                readTimeout = 12000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("User-Agent", "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip")
+            }
+            conn.outputStream.use { os ->
+                os.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+            if (conn.responseCode in 200..299) {
+                val respText = conn.inputStream.bufferedReader().use { it.readText() }
+                val root = JSONObject(respText)
+                val streamingData = root.optJSONObject("streamingData")
+                val adaptiveFormats = streamingData?.optJSONArray("adaptiveFormats")
+                if (adaptiveFormats != null) {
+                    for (i in 0 until adaptiveFormats.length()) {
+                        val fmt = adaptiveFormats.optJSONObject(i) ?: continue
+                        val mime = fmt.optString("mimeType", "")
+                        val audioUrl = fmt.optString("url", "")
+                        val bitrate = fmt.optInt("bitrate", 0)
+                        val clen = fmt.optLong("contentLength", 0L)
+                        if (mime.startsWith("audio/") && audioUrl.isNotBlank()) {
+                            return@withContext AudioStreamFormat(audioUrl, clen, mime, bitrate)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        null
+    }
+
+    private suspend fun fetchFallbackYouTubeAudioUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().apply {
+                put("videoId", videoId)
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "IOS")
+                        put("clientVersion", "21.03.3")
+                        put("clientId", "5")
+                        put("osName", "iPadOS")
+                        put("osVersion", "17.7.10.21H450")
+                        put("hl", "en")
+                        put("gl", "US")
+                    })
+                })
+            }
+            val conn = (URL("https://www.youtube.com/youtubei/v1/player").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 12000
+                readTimeout = 12000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("User-Agent", "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)")
+            }
+            conn.outputStream.use { os ->
+                os.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+            if (conn.responseCode in 200..299) {
+                val respText = conn.inputStream.bufferedReader().use { it.readText() }
+                val root = JSONObject(respText)
+                val streamingData = root.optJSONObject("streamingData")
+                val adaptiveFormats = streamingData?.optJSONArray("adaptiveFormats")
+                if (adaptiveFormats != null) {
+                    for (i in 0 until adaptiveFormats.length()) {
+                        val fmt = adaptiveFormats.optJSONObject(i) ?: continue
+                        val mime = fmt.optString("mimeType", "")
+                        val audioUrl = fmt.optString("url", "")
+                        if (mime.startsWith("audio/") && audioUrl.isNotBlank()) {
+                            return@withContext audioUrl
+                        }
                     }
                 }
             }

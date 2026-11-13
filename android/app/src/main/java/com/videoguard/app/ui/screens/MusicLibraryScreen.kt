@@ -229,7 +229,25 @@ fun MusicLibraryScreen(
                                 modifier = Modifier.padding(vertical = 2.dp)
                             )
 
-                            // 2. Amazon Music
+                            // 2. Apple Music
+                            ServiceRow(
+                                title = "Apple Music",
+                                brandColor = Color(0xFFFA243C),
+                                icon = Icons.Default.Headphones,
+                                onClick = {
+                                    selectedImportService = "Apple Music"
+                                    importUrlInput = ""
+                                    importProgress = null
+                                    importedPlaylistResult = null
+                                }
+                            )
+
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+
+                            // 3. Amazon Music
                             ServiceRow(
                                 title = "Amazon Music",
                                 brandColor = Color(0xFF00A8E1),
@@ -242,10 +260,46 @@ fun MusicLibraryScreen(
                                 }
                             )
 
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+
+                            // 4. YouTube
+                            ServiceRow(
+                                title = "YouTube",
+                                brandColor = Color(0xFFFF0000),
+                                icon = Icons.Default.PlayArrow,
+                                onClick = {
+                                    selectedImportService = "YouTube"
+                                    importUrlInput = ""
+                                    importProgress = null
+                                    importedPlaylistResult = null
+                                }
+                            )
+
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+
+                            // 5. More Services
+                            ServiceRow(
+                                title = "More Services",
+                                brandColor = Color(0xFF9C27B0),
+                                icon = Icons.Default.ContentPaste,
+                                onClick = {
+                                    selectedImportService = "More Services"
+                                    importUrlInput = ""
+                                    importProgress = null
+                                    importedPlaylistResult = null
+                                }
+                            )
+
                             Spacer(modifier = Modifier.height(14.dp))
 
                             Text(
-                                text = "By selecting a service above, you are choosing to transfer your followed artists, liked tracks, albums and playlists to AURALIX via TuneMyMusic.",
+                                text = "By selecting a service above, you are choosing to transfer your followed artists, liked tracks, albums and playlists to AURALIX.",
                                 color = Color(0xFF888B9E),
                                 fontSize = 11.sp,
                                 lineHeight = 15.sp
@@ -1029,17 +1083,16 @@ fun MusicLibraryScreen(
                         }
 
                         Text(
-                            text = "Connect with TuneMyMusic to sync your playlists and library directly, or paste a link below:",
+                            text = "Import playlists directly from $currentService by browsing the web player or pasting a link:",
                             color = Color(0xFFCCCCCC),
                             fontSize = 12.sp
                         )
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                        // Connect & Sign In (TuneMyMusic) - Exactly 1 primary button
                         Button(
                             onClick = {
-                                webSheetCurrentUrl = tuneMyMusicUrl
+                                webSheetCurrentUrl = authUrl
                                 showInAppWebSheet = true
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = brandColor),
@@ -1048,7 +1101,7 @@ fun MusicLibraryScreen(
                         ) {
                             Icon(Icons.Default.Language, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Connect & Sign In (TuneMyMusic)", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Browse $currentService Web & Sync", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
 
@@ -1078,7 +1131,10 @@ fun MusicLibraryScreen(
                             Text(
                                 text = when (currentService) {
                                     "Spotify" -> "https://open.spotify.com/playlist/..."
-                                    else -> "https://music.amazon.com/playlists/..."
+                                    "Apple Music" -> "https://music.apple.com/playlist/..."
+                                    "YouTube" -> "https://www.youtube.com/playlist?list=..."
+                                    "Amazon Music" -> "https://music.amazon.com/playlists/..."
+                                    else -> "Paste playlist link or paste list of song titles..."
                                 },
                                 fontSize = 12.sp,
                                 color = Color(0xFF666666)
@@ -1179,7 +1235,7 @@ fun MusicLibraryScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = brandColor)
                     ) {
-                        Text("Play Playlist", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text("Open Playlist", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Button(
@@ -1310,7 +1366,7 @@ fun MusicLibraryScreen(
                                 settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
                                 settings.javaScriptCanOpenWindowsAutomatically = true
                                 settings.setSupportMultipleWindows(false)
-                                settings.userAgentString = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+                                settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36"
                                 webChromeClient = android.webkit.WebChromeClient()
                                 android.webkit.CookieManager.getInstance().setAcceptCookie(true)
                                 android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)

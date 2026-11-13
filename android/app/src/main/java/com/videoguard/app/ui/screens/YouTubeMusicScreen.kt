@@ -30,6 +30,7 @@ import com.videoguard.app.data.UserDataRepository
 import com.videoguard.app.data.VideoRepository
 import com.videoguard.app.data.YouTubeSyncEngine
 import com.videoguard.app.model.VideoItem
+import com.videoguard.app.ui.components.AddToPlaylistSheet
 import com.videoguard.app.ui.theme.LiquidGlassDefaults
 import com.videoguard.app.ui.theme.YTMusicBlack
 import com.videoguard.app.ui.theme.YTMusicRedAccent
@@ -47,6 +48,7 @@ fun YouTubeMusicScreen(
     val musicFeed by YouTubeSyncEngine.musicFeed.collectAsState()
     val userHistory by UserDataRepository.history.collectAsState()
     val userPlaylists by UserDataRepository.playlists.collectAsState()
+    var selectedVideoForPlaylist by remember { mutableStateOf<VideoItem?>(null) }
 
     var isRefreshing by remember { mutableStateOf(false) }
 
@@ -243,7 +245,8 @@ fun YouTubeMusicScreen(
         items(quickPicks.take(8), key = { "quick_${it.id}" }) { track ->
             QuickPickTrackRow(
                 track = track,
-                onClick = { onTrackSelected(track, quickPicks) }
+                onClick = { onTrackSelected(track, quickPicks) },
+                onMoreClick = { selectedVideoForPlaylist = track }
             )
         }
 
@@ -348,7 +351,8 @@ fun YouTubeMusicScreen(
         items(trendingCharts.take(10), key = { "chart_${it.id}" }) { track ->
             QuickPickTrackRow(
                 track = track,
-                onClick = { onTrackSelected(track, trendingCharts) }
+                onClick = { onTrackSelected(track, trendingCharts) },
+                onMoreClick = { selectedVideoForPlaylist = track }
             )
         }
 
@@ -356,12 +360,20 @@ fun YouTubeMusicScreen(
             Spacer(modifier = Modifier.height(90.dp))
         }
     }
+
+    selectedVideoForPlaylist?.let { video ->
+        AddToPlaylistSheet(
+            video = video,
+            onDismiss = { selectedVideoForPlaylist = null }
+        )
+    }
 }
 
 @Composable
 private fun QuickPickTrackRow(
     track: VideoItem,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onMoreClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
@@ -401,7 +413,7 @@ private fun QuickPickTrackRow(
         }
 
         IconButton(
-            onClick = { /* Menu */ },
+            onClick = onMoreClick,
             modifier = Modifier.size(32.dp)
         ) {
             Icon(

@@ -99,13 +99,46 @@ struct MusicLibraryView: View {
 
                             Divider().background(Color.white.opacity(0.08))
 
-                            // 2. Amazon Music
+                            // 2. Apple Music
+                            importServiceRow(
+                                title: "Apple Music",
+                                brandColor: Color(hex: 0xFA243C),
+                                iconName: "headphones"
+                            ) {
+                                openServiceImport(service: "Apple Music")
+                            }
+
+                            Divider().background(Color.white.opacity(0.08))
+
+                            // 3. Amazon Music
                             importServiceRow(
                                 title: "Amazon Music",
                                 brandColor: Color(hex: 0x00A8E1),
                                 iconName: "music.note"
                             ) {
                                 openServiceImport(service: "Amazon Music")
+                            }
+
+                            Divider().background(Color.white.opacity(0.08))
+
+                            // 4. YouTube
+                            importServiceRow(
+                                title: "YouTube",
+                                brandColor: Color(hex: 0xFF0000),
+                                iconName: "play.circle.fill"
+                            ) {
+                                openServiceImport(service: "YouTube")
+                            }
+
+                            Divider().background(Color.white.opacity(0.08))
+
+                            // 5. More Services
+                            importServiceRow(
+                                title: "More Services",
+                                brandColor: Color(hex: 0x9C27B0),
+                                iconName: "doc.on.clipboard"
+                            ) {
+                                openServiceImport(service: "More Services")
                             }
                         }
                         .background(Color(hex: 0x141622))
@@ -115,7 +148,7 @@ struct MusicLibraryView: View {
                                 .stroke(Color.white.opacity(0.07), lineWidth: 1)
                         )
 
-                        Text("By selecting a service above, you are choosing to transfer your followed artists, liked tracks, albums and playlists to AURALIX via TuneMyMusic.")
+                        Text("By selecting a service above, you are choosing to transfer your followed artists, liked tracks, albums and playlists to AURALIX.")
                             .font(.system(size: 11))
                             .foregroundColor(Color(hex: 0x888B9E))
                             .lineSpacing(4)
@@ -817,7 +850,7 @@ struct MusicLibraryView: View {
                             selectedService = nil
                             onPlaylistClick(res)
                         }) {
-                            Text("Play Playlist Now")
+                            Text("Open Playlist")
                                 .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(.black)
                                 .frame(maxWidth: .infinity)
