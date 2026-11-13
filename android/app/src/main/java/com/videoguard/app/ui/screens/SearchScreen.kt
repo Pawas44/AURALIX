@@ -760,12 +760,5 @@ fun SearchChannelCard(
             }
         }
     }
-
-    if (selectedVideoForPlaylist != null) {
-        AddToPlaylistSheet(
-            video = selectedVideoForPlaylist!!,
-            onDismiss = { selectedVideoForPlaylist = null }
-        )
-    }
 }
 
