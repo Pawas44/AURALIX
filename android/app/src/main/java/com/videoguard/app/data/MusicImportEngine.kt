@@ -46,6 +46,7 @@ object MusicImportEngine {
                 trimmed.startsWith("{") && trimmed.contains("\"tracks\"") -> parseDomTracksJson(trimmed)
                 trimmed.contains("spotify.com") -> parseSpotify(trimmed, onProgress)
                 trimmed.contains("music.amazon.") || (trimmed.contains("amazon.") && trimmed.contains("music")) || trimmed.contains("amzn.to") -> parseAmazonMusic(trimmed, onProgress)
+                trimmed.contains("music.apple.com") || trimmed.contains("apple.com") -> parseAppleMusic(trimmed, onProgress)
                 else -> parsePlainTextList(trimmed)
             }
 

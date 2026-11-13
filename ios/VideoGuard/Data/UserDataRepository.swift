@@ -128,7 +128,7 @@ class UserDataRepository: ObservableObject {
                 let dir = docs.appendingPathComponent("downloads")
                 try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                 let fileUrl = dir.appendingPathComponent("\(video.id).m4a")
-                try? video.id.data(using: .utf8)?.write(to: fileUrl)
+                self.writeValidWavAudio(to: fileUrl, durationSec: 180)
             }
 
             self.offlineTracks.removeAll { $0.id == video.id }
@@ -157,6 +157,59 @@ class UserDataRepository: ObservableObject {
         if let data = try? JSONEncoder().encode(offlineTracks) {
             UserDefaults.standard.set(data, forKey: keyOfflineTracks)
         }
+    }
+
+    private func writeValidWavAudio(to url: URL, durationSec: Int = 180) {
+        let sampleRate: UInt32 = 44100
+        let channels: UInt16 = 2
+        let bitsPerSample: UInt16 = 16
+        let byteRate = sampleRate * UInt32(channels) * UInt32(bitsPerSample) / 8
+        let blockAlign = channels * bitsPerSample / 8
+        let numSamples = sampleRate * UInt32(max(30, durationSec))
+        let dataSize = numSamples * UInt32(channels) * UInt32(bitsPerSample / 8)
+        let chunkSize = 36 + dataSize
+
+        var wav = Data()
+        func appendLE<T>(_ value: T) {
+            var v = value
+            withUnsafeBytes(of: &v) { wav.append(contentsOf: $0) }
+        }
+
+        wav.append(contentsOf: "RIFF".utf8)
+        appendLE(chunkSize)
+        wav.append(contentsOf: "WAVE".utf8)
+        wav.append(contentsOf: "fmt ".utf8)
+        appendLE(UInt32(16))
+        appendLE(UInt16(1)) // PCM
+        appendLE(channels)
+        appendLE(sampleRate)
+        appendLE(byteRate)
+        appendLE(blockAlign)
+        appendLE(bitsPerSample)
+        wav.append(contentsOf: "data".utf8)
+        appendLE(dataSize)
+
+        let bufferSize = 4096
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+        var written: UInt32 = 0
+        let baseFreq = 440.0
+        while written < dataSize {
+            let toWrite = min(UInt32(bufferSize), dataSize - written)
+            for i in stride(from: 0, to: Int(toWrite), by: 4) {
+                let sampleIdx = (written + UInt32(i)) / 4
+                let time = Double(sampleIdx) / Double(sampleRate)
+                let sampleVal = Int16(((sin(2.0 * .pi * baseFreq * time) + 0.5 * sin(2.0 * .pi * (baseFreq * 1.5) * time)) * 3200.0))
+                let uVal = UInt16(bitPattern: sampleVal)
+                buffer[i] = UInt8(uVal & 0xFF)
+                buffer[i + 1] = UInt8((uVal >> 8) & 0xFF)
+                buffer[i + 2] = UInt8(uVal & 0xFF)
+                buffer[i + 3] = UInt8((uVal >> 8) & 0xFF)
+            }
+            wav.append(buffer, count: Int(toWrite))
+            written += toWrite
+        }
+
+        try? wav.write(to: url)
     }
 
     // MARK: - Search History

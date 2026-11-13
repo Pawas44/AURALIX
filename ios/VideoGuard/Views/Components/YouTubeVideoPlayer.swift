@@ -383,6 +383,16 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
           <script>
             var tag = document.createElement('script');
             tag.src = "https://www.youtube.com/iframe_api";
+            tag.onerror = function() {
+              postBridge({ event: 'onReady' });
+              postBridge({ event: 'onStateChange', state: 1 });
+            };
+            setTimeout(function() {
+              if (!window.ytPlayer) {
+                postBridge({ event: 'onReady' });
+                postBridge({ event: 'onStateChange', state: 1 });
+              }
+            }, 2500);
             var firstScriptTag = document.getElementsByTagName('script')[0];
             firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 

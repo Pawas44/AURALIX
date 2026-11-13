@@ -82,9 +82,9 @@ struct MusicLibraryView: View {
                                 .foregroundColor(Color(hex: 0xAAAAAA))
                         }
 
-                        // Services list
+                        // Services list (matching reference screenshot)
                         VStack(spacing: 0) {
-                            // Spotify
+                            // 1. Spotify
                             importServiceRow(
                                 title: "Spotify",
                                 brandColor: Color(hex: 0x1DB954),
@@ -95,13 +95,57 @@ struct MusicLibraryView: View {
 
                             Divider().background(Color.white.opacity(0.08))
 
-                            // Amazon Music
+                            // 2. Apple Music
                             importServiceRow(
-                                title: "Amazon Music",
-                                brandColor: Color(hex: 0x00A8E1),
-                                iconName: "headphones"
+                                title: "Apple Music",
+                                brandColor: Color(hex: 0xFA243C),
+                                iconName: "music.note.list"
                             ) {
-                                openServiceImport(service: "Amazon Music")
+                                openServiceImport(service: "Apple Music")
+                            }
+
+                            Divider().background(Color.white.opacity(0.08))
+
+                            // 3. YouTube
+                            importServiceRow(
+                                title: "YouTube",
+                                brandColor: Color(hex: 0xFF0000),
+                                iconName: "play.rectangle.fill"
+                            ) {
+                                openServiceImport(service: "YouTube")
+                            }
+
+                            Divider().background(Color.white.opacity(0.08))
+
+                            // 4. Tidal
+                            importServiceRow(
+                                title: "Tidal",
+                                brandColor: Color(hex: 0x16181F),
+                                iconName: "square.fill"
+                            ) {
+                                openServiceImport(service: "Tidal")
+                            }
+
+                            Divider().background(Color.white.opacity(0.08))
+
+                            // 5. SoundCloud
+                            importServiceRow(
+                                title: "SoundCloud",
+                                brandColor: Color(hex: 0xFF5500),
+                                iconName: "cloud.fill"
+                            ) {
+                                openServiceImport(service: "SoundCloud")
+                            }
+
+                            Divider().background(Color.white.opacity(0.08))
+
+                            // 6. More Services
+                            importServiceRow(
+                                title: "More Services",
+                                brandColor: Color(hex: 0x2C3140),
+                                iconName: "ellipsis"
+                            ) {
+                                openServiceImport(service: "More Services")
                             }
                         }
                         .background(Color(hex: 0x141622))
@@ -111,10 +155,10 @@ struct MusicLibraryView: View {
                                 .stroke(Color.white.opacity(0.07), lineWidth: 1)
                         )
 
-                        Text("By selecting a service above, you are choosing to transfer your followed artists, liked tracks, albums and playlists to AURALIX via TuneMyMusic or Direct Sync.")
-                            .font(.system(size: 10))
-                            .foregroundColor(Color(hex: 0x6E7180))
-                            .lineSpacing(3)
+                        Text("By selecting a service above, you are choosing to transfer your followed artists, liked tracks, albums and playlists to AURALIX via TuneMyMusic.")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(hex: 0x888B9E))
+                            .lineSpacing(4)
                     }
                     .padding(16)
                     .background(Color(hex: 0x0E1019))
@@ -503,7 +547,7 @@ struct MusicLibraryView: View {
         Button(action: onClick) {
             HStack(spacing: 14) {
                 ZStack {
-                    Circle()
+                    RoundedRectangle(cornerRadius: 8)
                         .fill(brandColor)
                         .frame(width: 36, height: 36)
                     Image(systemName: iconName)
@@ -531,6 +575,10 @@ struct MusicLibraryView: View {
         let brandColor: Color = {
             switch service {
             case "Spotify": return Color(hex: 0x1DB954)
+            case "Apple Music": return Color(hex: 0xFA243C)
+            case "YouTube": return Color(hex: 0xFF0000)
+            case "Tidal": return Color(hex: 0x00E5FF)
+            case "SoundCloud": return Color(hex: 0xFF5500)
             case "Amazon Music": return Color(hex: 0x00A8E1)
             default: return AppTheme.ytMusicRedAccent
             }
@@ -539,7 +587,23 @@ struct MusicLibraryView: View {
         let authUrlStr: String = {
             switch service {
             case "Spotify": return "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
-            case "Amazon Music": return "https://www.amazon.com/ap/signin?openid.return_to=https%3A%2F%2Fmusic.amazon.com"
+            case "Apple Music": return "https://music.apple.com"
+            case "YouTube": return "https://music.youtube.com"
+            case "Tidal": return "https://login.tidal.com"
+            case "SoundCloud": return "https://soundcloud.com/signin"
+            case "Amazon Music": return "https://music.amazon.com"
+            default: return "https://www.tunemymusic.com"
+            }
+        }()
+
+        let tuneMyMusicUrlStr: String = {
+            switch service {
+            case "Spotify": return "https://www.tunemymusic.com/spotify"
+            case "Apple Music": return "https://www.tunemymusic.com/apple-music"
+            case "YouTube": return "https://www.tunemymusic.com/youtube"
+            case "Tidal": return "https://www.tunemymusic.com/tidal"
+            case "SoundCloud": return "https://www.tunemymusic.com/soundcloud"
+            case "Amazon Music": return "https://www.tunemymusic.com/amazon-music"
             default: return "https://www.tunemymusic.com"
             }
         }()
@@ -566,6 +630,62 @@ struct MusicLibraryView: View {
                     .padding(.vertical, 12)
                     .background(brandColor)
                     .cornerRadius(12)
+                }
+
+                // TuneMyMusic Official Cloud Transfer
+                Button(action: {
+                    inAppBrowserUrl = tuneMyMusicUrlStr
+                    showInAppBrowser = true
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bolt.fill")
+                            .foregroundColor(brandColor)
+                        Text("⚡ Sync via TuneMyMusic (Official)")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(brandColor.opacity(0.6), lineWidth: 1)
+                    )
+                }
+
+                // Safari / External Browser fallback
+                Button(action: {
+                    if let url = URL(string: authUrlStr) {
+                        UIApplication.shared.open(url)
+                    }
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "safari")
+                            .foregroundColor(.white)
+                        Text("↗ Open in External Safari")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Color(hex: 0xDDDDDD))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.04))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                    )
+                }
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(brandColor)
+                        Text("⚡ Sync via TuneMyMusic (Official)")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(brandColor.opacity(0.6), lineWidth: 1))
                 }
 
                 HStack {
@@ -828,6 +948,17 @@ struct InAppWebTransferSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
                         .foregroundColor(.white)
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button(action: {
+                        let target = currentUrl.isEmpty ? initialUrl : currentUrl
+                        if let u = URL(string: target) {
+                            UIApplication.shared.open(u)
+                        }
+                    }) {
+                        Image(systemName: "safari")
+                            .foregroundColor(.white)
+                    }
                 }
             }
         }

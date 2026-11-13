@@ -59,6 +59,12 @@ object PlaybackController {
     private var lastServiceSyncedPositionSec: Float = -1f
     private var lastServiceSyncedDurationSec: Float = -1f
 
+    // Offline native playback support
+    private var offlineTickerJob: kotlinx.coroutines.Job? = null
+    private var offlineMediaPlayer: android.media.MediaPlayer? = null
+    var isOfflineModeActive: Boolean = false
+        private set
+
     // Listener to dispatch JavaScript commands directly to the active YouTube WebView
     private var webViewCommandListener: ((String) -> Unit)? = null
 
@@ -196,8 +202,91 @@ object PlaybackController {
         }
 
         startOrUpdateService()
-        sendCommand("loadVideo('${track.id}')")
-        sendCommand("setPlaybackState(true)")
+
+        val isDownloaded = com.videoguard.app.data.UserDataRepository.isDownloaded(track.id)
+        if (isDownloaded) {
+            startOfflinePlayback(track, initialDurationSec)
+        } else {
+            stopOfflinePlayback()
+            sendCommand("loadVideo('${track.id}')")
+            sendCommand("setPlaybackState(true)")
+        }
+    }
+
+    private fun startOfflinePlayback(track: VideoItem, initialDuration: Float) {
+        stopOfflinePlayback()
+        isOfflineModeActive = true
+        val dur = if (initialDuration > 0f) initialDuration else 180f
+        _durationSeconds.value = dur
+        val ctx = appContext
+        if (ctx != null) {
+            try {
+                val f = java.io.File(ctx.filesDir, "downloads/${track.id}.m4a")
+                if (f.exists() && f.length() > 500) {
+                    offlineMediaPlayer = android.media.MediaPlayer().apply {
+                        setDataSource(f.absolutePath)
+                        isLooping = _isLoopEnabled.value
+                        setOnCompletionListener {
+                            if (_isLoopEnabled.value) {
+                                seekTo(0f)
+                            } else if (_isAutoplayEnabled.value) {
+                                nextTrack()
+                            } else {
+                                pause()
+                            }
+                        }
+                        prepare()
+                        start()
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+        resumeOfflineTicker()
+    }
+
+    private fun resumeOfflineTicker() {
+        offlineTickerJob?.cancel()
+        offlineTickerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            while (kotlinx.coroutines.isActive && _isPlaying.value) {
+                kotlinx.coroutines.delay(500)
+                val mp = offlineMediaPlayer
+                if (mp != null && try { mp.isPlaying } catch (e: Exception) { false }) {
+                    val sec = mp.currentPosition / 1000f
+                    _currentTimeSeconds.value = sec
+                    val d = mp.duration / 1000f
+                    if (d > 0f) _durationSeconds.value = d
+                } else {
+                    val cur = _currentTimeSeconds.value
+                    val maxDur = _durationSeconds.value
+                    val next = (cur + 0.5f).coerceAtMost(maxDur)
+                    _currentTimeSeconds.value = next
+                    if (next >= maxDur && maxDur > 0f) {
+                        if (_isLoopEnabled.value) {
+                            seekTo(0f)
+                        } else if (_isAutoplayEnabled.value) {
+                            nextTrack()
+                        } else {
+                            pause()
+                        }
+                        break
+                    }
+                }
+                syncServiceProgress(force = false)
+            }
+        }
+    }
+
+    fun stopOfflinePlayback() {
+        isOfflineModeActive = false
+        offlineTickerJob?.cancel()
+        offlineTickerJob = null
+        try {
+            offlineMediaPlayer?.stop()
+            offlineMediaPlayer?.release()
+        } catch (e: Exception) {}
+        offlineMediaPlayer = null
     }
 
     fun setQueue(queue: List<VideoItem>) {
@@ -221,14 +310,24 @@ object PlaybackController {
 
     fun play() {
         _isPlaying.value = true
-        sendCommand("setPlaybackState(true)")
+        if (isOfflineModeActive) {
+            try { offlineMediaPlayer?.start() } catch (e: Exception) {}
+            resumeOfflineTicker()
+        } else {
+            sendCommand("setPlaybackState(true)")
+        }
         startOrUpdateService()
     }
 
     fun pause() {
         lastTrackChangeTimeMs = 0L
         _isPlaying.value = false
-        sendCommand("setPlaybackState(false)")
+        if (isOfflineModeActive) {
+            try { offlineMediaPlayer?.pause() } catch (e: Exception) {}
+            offlineTickerJob?.cancel()
+        } else {
+            sendCommand("setPlaybackState(false)")
+        }
         startOrUpdateService()
     }
 
@@ -241,6 +340,7 @@ object PlaybackController {
     }
 
     fun updateProgress(current: Float, duration: Float) {
+        if (isOfflineModeActive) return // Managed by offline ticker
         val safeCurrent = current.coerceAtLeast(0f)
         _currentTimeSeconds.value = safeCurrent
         if (duration > 0f) {
@@ -253,7 +353,13 @@ object PlaybackController {
         val dur = _durationSeconds.value
         val target = if (dur > 0f) seconds.coerceIn(0f, dur) else seconds.coerceAtLeast(0f)
         _currentTimeSeconds.value = target
-        sendCommand("seekTo($target)")
+        if (isOfflineModeActive) {
+            try {
+                offlineMediaPlayer?.seekTo((target * 1000).toInt())
+            } catch (e: Exception) {}
+        } else {
+            sendCommand("seekTo($target)")
+        }
         syncServiceProgress(force = true)
     }
 

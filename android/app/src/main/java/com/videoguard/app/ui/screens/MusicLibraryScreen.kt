@@ -73,6 +73,7 @@ fun MusicLibraryScreen(
     // Service Import State
     var selectedImportService by remember { mutableStateOf<String?>(null) }
     var showInAppWebSheet by remember { mutableStateOf(false) }
+    var webSheetCurrentUrl by remember { mutableStateOf("") }
     var importUrlInput by remember { mutableStateOf("") }
     var importProgress by remember { mutableStateOf<ImportProgress?>(null) }
     var isImporting by remember { mutableStateOf(false) }
@@ -220,29 +221,101 @@ fun MusicLibraryScreen(
 
                             HorizontalDivider(
                                 color = Color.White.copy(alpha = 0.07f),
-                                modifier = Modifier.padding(vertical = 4.dp)
+                                modifier = Modifier.padding(vertical = 2.dp)
                             )
 
-                            // 2. Amazon Music
+                            // 2. Apple Music
                             ServiceRow(
-                                title = "Amazon Music",
-                                brandColor = Color(0xFF00A8E1),
-                                icon = Icons.Default.Headphones,
+                                title = "Apple Music",
+                                brandColor = Color(0xFFFA243C),
+                                icon = Icons.Default.MusicNote,
                                 onClick = {
-                                    selectedImportService = "Amazon Music"
+                                    selectedImportService = "Apple Music"
                                     importUrlInput = ""
                                     importProgress = null
                                     importedPlaylistResult = null
                                 }
                             )
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+
+                            // 3. YouTube
+                            ServiceRow(
+                                title = "YouTube",
+                                brandColor = Color(0xFFFF0000),
+                                icon = Icons.Default.PlayArrow,
+                                onClick = {
+                                    selectedImportService = "YouTube"
+                                    importUrlInput = ""
+                                    importProgress = null
+                                    importedPlaylistResult = null
+                                }
+                            )
+
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+
+                            // 4. Tidal
+                            ServiceRow(
+                                title = "Tidal",
+                                brandColor = Color(0xFF16181F),
+                                icon = Icons.Default.Album,
+                                onClick = {
+                                    selectedImportService = "Tidal"
+                                    importUrlInput = ""
+                                    importProgress = null
+                                    importedPlaylistResult = null
+                                }
+                            )
+
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+
+                            // 5. SoundCloud
+                            ServiceRow(
+                                title = "SoundCloud",
+                                brandColor = Color(0xFFFF5500),
+                                icon = Icons.Default.Cloud,
+                                onClick = {
+                                    selectedImportService = "SoundCloud"
+                                    importUrlInput = ""
+                                    importProgress = null
+                                    importedPlaylistResult = null
+                                }
+                            )
+
+                            HorizontalDivider(
+                                color = Color.White.copy(alpha = 0.07f),
+                                modifier = Modifier.padding(vertical = 2.dp)
+                            )
+
+                            // 6. More Services
+                            ServiceRow(
+                                title = "More Services",
+                                brandColor = Color(0xFF2C3140),
+                                icon = Icons.Default.MoreHoriz,
+                                onClick = {
+                                    selectedImportService = "More Services"
+                                    importUrlInput = ""
+                                    importProgress = null
+                                    importedPlaylistResult = null
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
 
                             Text(
-                                text = "By selecting a service above, you are choosing to transfer your followed artists, liked tracks, albums and playlists to AURALIX via TuneMyMusic or Direct Sync.",
-                                color = Color(0xFF6E7180),
-                                fontSize = 10.sp,
-                                lineHeight = 14.sp
+                                text = "By selecting a service above, you are choosing to transfer your followed artists, liked tracks, albums and playlists to AURALIX via TuneMyMusic.",
+                                color = Color(0xFF888B9E),
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
                             )
                         }
                     }
@@ -791,13 +864,31 @@ fun MusicLibraryScreen(
     if (currentService != null) {
         val brandColor = when (currentService) {
             "Spotify" -> Color(0xFF1DB954)
+            "Apple Music" -> Color(0xFFFA243C)
+            "YouTube" -> Color(0xFFFF0000)
+            "Tidal" -> Color(0xFF00E5FF)
+            "SoundCloud" -> Color(0xFFFF5500)
             "Amazon Music" -> Color(0xFF00A8E1)
             else -> YTMusicRedAccent
         }
 
         val authUrl = when (currentService) {
             "Spotify" -> "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
-            "Amazon Music" -> "https://www.amazon.com/ap/signin?openid.return_to=https%3A%2F%2Fmusic.amazon.com"
+            "Apple Music" -> "https://music.apple.com"
+            "YouTube" -> "https://music.youtube.com"
+            "Tidal" -> "https://login.tidal.com"
+            "SoundCloud" -> "https://soundcloud.com/signin"
+            "Amazon Music" -> "https://music.amazon.com"
+            else -> "https://www.tunemymusic.com"
+        }
+
+        val tuneMyMusicUrl = when (currentService) {
+            "Spotify" -> "https://www.tunemymusic.com/spotify"
+            "Apple Music" -> "https://www.tunemymusic.com/apple-music"
+            "YouTube" -> "https://www.tunemymusic.com/youtube"
+            "Tidal" -> "https://www.tunemymusic.com/tidal"
+            "SoundCloud" -> "https://www.tunemymusic.com/soundcloud"
+            "Amazon Music" -> "https://www.tunemymusic.com/amazon-music"
             else -> "https://www.tunemymusic.com"
         }
 
@@ -850,6 +941,7 @@ fun MusicLibraryScreen(
                     // In-App Sign In & Connect Button
                     Button(
                         onClick = {
+                            webSheetCurrentUrl = authUrl
                             showInAppWebSheet = true
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = brandColor),
@@ -859,6 +951,42 @@ fun MusicLibraryScreen(
                         Icon(Icons.Default.Language, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Connect & Sign In (In-App)", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // TuneMyMusic Official Cloud Transfer
+                    OutlinedButton(
+                        onClick = {
+                            webSheetCurrentUrl = tuneMyMusicUrl
+                            showInAppWebSheet = true
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, brandColor.copy(alpha = 0.6f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Sync, contentDescription = null, tint = brandColor, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("⚡ Sync via TuneMyMusic (Official)", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Open in External Chrome Browser (Fallback for 2FA / Google Login)
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
+                                context.startActivity(intent)
+                            } catch (e: Exception) {}
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.OpenInBrowser, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("↗ Open in External Chrome", color = Color(0xFFDDDDDD), fontWeight = FontWeight.Normal, fontSize = 12.sp)
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -1091,6 +1219,15 @@ fun MusicLibraryScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
+                        IconButton(onClick = {
+                            try {
+                                val target = currentWebUrl.ifBlank { webSheetCurrentUrl }
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(target))
+                                context.startActivity(intent)
+                            } catch (e: Exception) {}
+                        }) {
+                            Icon(Icons.Default.OpenInBrowser, contentDescription = "Open in Chrome", tint = Color.White)
+                        }
                         IconButton(onClick = { showInAppWebSheet = false }) {
                             Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                         }
@@ -1109,8 +1246,8 @@ fun MusicLibraryScreen(
                                 settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                                 settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
                                 settings.javaScriptCanOpenWindowsAutomatically = true
-                                settings.setSupportMultipleWindows(true)
-                                settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                                settings.setSupportMultipleWindows(false)
+                                settings.userAgentString = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
                                 webChromeClient = android.webkit.WebChromeClient()
                                 android.webkit.CookieManager.getInstance().setAcceptCookie(true)
                                 android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
@@ -1120,7 +1257,7 @@ fun MusicLibraryScreen(
                                         url?.let { currentWebUrl = it }
                                     }
                                 }
-                                loadUrl(authUrl)
+                                loadUrl(webSheetCurrentUrl.ifBlank { authUrl })
                             }
                         },
                         modifier = Modifier
@@ -1326,7 +1463,7 @@ private fun ServiceRow(
         Box(
             modifier = Modifier
                 .size(36.dp)
-                .clip(CircleShape)
+                .clip(RoundedCornerShape(8.dp))
                 .background(brandColor),
             contentAlignment = Alignment.Center
         ) {

@@ -59,6 +59,11 @@ class MediaPlaybackService: ObservableObject {
     private var silentAudioPlayer: AVAudioPlayer?
     private var lastNowPlayingUpdate: Date = .distantPast
 
+    // Offline native playback support
+    private var offlineTimer: Timer? = nil
+    private var offlineAudioPlayer: AVAudioPlayer? = nil
+    @Published var isOfflineModeActive: Bool = false
+
     private init() {
         activateAudioSessionIfNeeded()
         setupRemoteCommands()
@@ -261,10 +266,77 @@ class MediaPlaybackService: ObservableObject {
             }
 
             self.updateSilentAnchor()
-            self.sendCommand("loadVideo('\(track.id)')")
-            self.sendCommand("setPlaybackState(true)")
+
+            let isDownloaded = UserDataRepository.shared.isDownloaded(id: track.id)
+            if isDownloaded {
+                self.startOfflinePlayback(for: track)
+            } else {
+                self.stopOfflinePlayback()
+                self.sendCommand("loadVideo('\(track.id)')")
+                self.sendCommand("setPlaybackState(true)")
+            }
             self.updateNowPlayingInfo(force: true)
         }
+    }
+
+    private func startOfflinePlayback(for track: VideoItem) {
+        stopOfflinePlayback()
+        isOfflineModeActive = true
+        let dur = durationSeconds > 0 ? durationSeconds : Double(parseDuration(track.duration)) / 1000.0
+        durationSeconds = dur > 0 ? dur : 180.0
+        currentTimeSeconds = 0.0
+
+        if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let fileUrl = docs.appendingPathComponent("downloads/\(track.id).m4a")
+            if FileManager.default.fileExists(atPath: fileUrl.path) {
+                do {
+                    activateAudioSessionIfNeeded()
+                    let player = try AVAudioPlayer(contentsOf: fileUrl)
+                    player.numberOfLoops = isLoopEnabled ? -1 : 0
+                    player.prepareToPlay()
+                    player.play()
+                    self.offlineAudioPlayer = player
+                } catch {
+                    print("Offline player error: \(error)")
+                }
+            }
+        }
+        resumeOfflineTimer()
+    }
+
+    private func resumeOfflineTimer() {
+        offlineTimer?.invalidate()
+        offlineTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self = self, self.isPlaying else { return }
+            if let player = self.offlineAudioPlayer, player.isPlaying {
+                self.currentTimeSeconds = player.currentTime
+                if player.duration > 0 {
+                    self.durationSeconds = max(self.durationSeconds, player.duration)
+                }
+            } else {
+                let next = min(self.currentTimeSeconds + 0.5, self.durationSeconds)
+                self.currentTimeSeconds = next
+                if next >= self.durationSeconds && self.durationSeconds > 0 {
+                    if self.isLoopEnabled {
+                        self.seekTo(seconds: 0)
+                    } else if self.isAutoplayEnabled {
+                        self.nextTrack()
+                    } else {
+                        self.pause()
+                    }
+                    return
+                }
+            }
+            self.updateNowPlayingInfo(force: false)
+        }
+    }
+
+    func stopOfflinePlayback() {
+        isOfflineModeActive = false
+        offlineTimer?.invalidate()
+        offlineTimer = nil
+        offlineAudioPlayer?.stop()
+        offlineAudioPlayer = nil
     }
 
     func setQueue(_ queue: [VideoItem]) {
@@ -291,7 +363,12 @@ class MediaPlaybackService: ObservableObject {
         DispatchQueue.main.async {
             self.isPlaying = true
             self.updateSilentAnchor()
-            self.sendCommand("setPlaybackState(true)")
+            if self.isOfflineModeActive {
+                self.offlineAudioPlayer?.play()
+                self.resumeOfflineTimer()
+            } else {
+                self.sendCommand("setPlaybackState(true)")
+            }
             self.updateNowPlayingInfo(force: true)
         }
     }
@@ -301,7 +378,12 @@ class MediaPlaybackService: ObservableObject {
             self.lastTrackChangeTime = .distantPast
             self.isPlaying = false
             self.updateSilentAnchor()
-            self.sendCommand("setPlaybackState(false)")
+            if self.isOfflineModeActive {
+                self.offlineAudioPlayer?.pause()
+                self.offlineTimer?.invalidate()
+            } else {
+                self.sendCommand("setPlaybackState(false)")
+            }
             self.updateNowPlayingInfo(force: true)
         }
     }
@@ -311,6 +393,7 @@ class MediaPlaybackService: ObservableObject {
     }
 
     func updateProgress(current: Double, duration: Double) {
+        if isOfflineModeActive { return } // Managed by offline timer
         DispatchQueue.main.async {
             self.currentTimeSeconds = current
             if duration > 0 {
@@ -322,8 +405,14 @@ class MediaPlaybackService: ObservableObject {
 
     func seekTo(seconds: Double) {
         DispatchQueue.main.async {
-            self.currentTimeSeconds = max(0, seconds)
-            self.sendCommand("seekTo(\(seconds))")
+            let dur = self.durationSeconds
+            let target = dur > 0 ? min(max(0, seconds), dur) : max(0, seconds)
+            self.currentTimeSeconds = target
+            if self.isOfflineModeActive {
+                self.offlineAudioPlayer?.currentTime = target
+            } else {
+                self.sendCommand("seekTo(\(target))")
+            }
             self.updateNowPlayingInfo(force: true)
         }
     }

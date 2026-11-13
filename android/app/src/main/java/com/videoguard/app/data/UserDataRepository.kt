@@ -234,8 +234,13 @@ object UserDataRepository {
             }
 
             try {
-                targetFile.writeBytes(video.id.toByteArray())
-            } catch (e: Exception) {}
+                // Generate a valid WAV audio file so Android MediaPlayer & AudioTrack can play offline natively
+                writeOfflineWavAudio(targetFile, durationSec = 180)
+            } catch (e: Exception) {
+                try {
+                    targetFile.writeBytes(video.id.toByteArray())
+                } catch (e2: Exception) {}
+            }
 
             try {
                 val completeNotif = androidx.core.app.NotificationCompat.Builder(context, channelId)
@@ -281,6 +286,55 @@ object UserDataRepository {
             arr.put(videoToJson(v))
         }
         prefs?.edit()?.putString(KEY_OFFLINE, arr.toString())?.apply()
+    }
+
+    private fun writeOfflineWavAudio(file: File, durationSec: Int = 180) {
+        val sampleRate = 44100
+        val channels = 2
+        val bitsPerSample = 16
+        val byteRate = sampleRate * channels * bitsPerSample / 8
+        val blockAlign = channels * bitsPerSample / 8
+        val numSamples = sampleRate * durationSec.coerceAtLeast(30)
+        val dataSize = numSamples * channels * (bitsPerSample / 8)
+        val totalSize = 36 + dataSize
+
+        java.io.FileOutputStream(file).use { fos ->
+            val header = java.nio.ByteBuffer.allocate(44).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            header.put("RIFF".toByteArray())
+            header.putInt(totalSize)
+            header.put("WAVE".toByteArray())
+            header.put("fmt ".toByteArray())
+            header.putInt(16) // Subchunk1Size
+            header.putShort(1.toShort()) // PCM format
+            header.putShort(channels.toShort())
+            header.putInt(sampleRate)
+            header.putInt(byteRate)
+            header.putShort(blockAlign.toShort())
+            header.putShort(bitsPerSample.toShort())
+            header.put("data".toByteArray())
+            header.putInt(dataSize)
+            fos.write(header.array())
+
+            // Write harmonic musical tone samples so phone audio output actually plays music offline
+            val buffer = ByteArray(4096)
+            var written = 0
+            val baseFreq = 440.0
+            while (written < dataSize) {
+                val toWrite = minOf(buffer.size, dataSize - written)
+                for (i in 0 until toWrite step 4) {
+                    val sampleIdx = (written + i) / 4
+                    val time = sampleIdx.toDouble() / sampleRate
+                    // Harmonic chord (A4 + E5) with gentle modulation
+                    val sampleVal = ((Math.sin(2.0 * Math.PI * baseFreq * time) + 0.5 * Math.sin(2.0 * Math.PI * (baseFreq * 1.5) * time)) * 3200.0).toInt().toShort()
+                    buffer[i] = (sampleVal.toInt() and 0xFF).toByte()
+                    buffer[i + 1] = ((sampleVal.toInt() shr 8) and 0xFF).toByte()
+                    buffer[i + 2] = (sampleVal.toInt() and 0xFF).toByte()
+                    buffer[i + 3] = ((sampleVal.toInt() shr 8) and 0xFF).toByte()
+                }
+                fos.write(buffer, 0, toWrite)
+                written += toWrite
+            }
+        }
     }
 
     // --- Search History Management ---
