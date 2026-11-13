@@ -725,19 +725,19 @@ struct MusicLibraryView: View {
                         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08), lineWidth: 1))
                     }
 
-                    Text("Sign in to transfer your playlists and liked library automatically, or paste a direct playlist link below:")
+                    Text("Connect with TuneMyMusic to sync your playlists and library directly, or paste a link below:")
                         .font(.system(size: 13))
                         .foregroundColor(Color(hex: 0xCCCCCC))
 
-                    // In-App Sign In Button
+                    // Connect & Sign In (TuneMyMusic) - Exactly 1 primary button
                     Button(action: {
-                        inAppBrowserUrl = authUrlStr
+                        inAppBrowserUrl = tuneMyMusicUrlStr
                         showInAppBrowser = true
                     }) {
                         HStack(spacing: 8) {
                             Image(systemName: "globe")
                                 .font(.system(size: 16, weight: .bold))
-                            Text("Connect & Sign In (In-App)")
+                            Text("Connect & Sign In (TuneMyMusic)")
                                 .font(.system(size: 14, weight: .bold))
                         }
                         .foregroundColor(.black)
@@ -745,51 +745,6 @@ struct MusicLibraryView: View {
                         .padding(.vertical, 12)
                         .background(brandColor)
                         .cornerRadius(12)
-                    }
-
-                    // TuneMyMusic Official Cloud Transfer
-                    Button(action: {
-                        inAppBrowserUrl = tuneMyMusicUrlStr
-                        showInAppBrowser = true
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "bolt.fill")
-                                .foregroundColor(brandColor)
-                            Text("⚡ Sync via TuneMyMusic (Official)")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.white)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 11)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(brandColor.opacity(0.6), lineWidth: 1)
-                        )
-                    }
-
-                    // Safari / External Browser fallback
-                    Button(action: {
-                        if let url = URL(string: authUrlStr) {
-                            UIApplication.shared.open(url)
-                        }
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "safari")
-                                .foregroundColor(.white)
-                            Text("↗ Open in External Safari")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(Color(hex: 0xDDDDDD))
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.white.opacity(0.04))
-                        .cornerRadius(12)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                        )
                     }
                 }
 

@@ -1029,17 +1029,17 @@ fun MusicLibraryScreen(
                         }
 
                         Text(
-                            text = "Connect your account to fetch your playlists automatically, or paste a link below:",
+                            text = "Connect with TuneMyMusic to sync your playlists and library directly, or paste a link below:",
                             color = Color(0xFFCCCCCC),
                             fontSize = 12.sp
                         )
 
                         Spacer(modifier = Modifier.height(14.dp))
 
-                        // In-App Sign In & Connect Button
+                        // Connect & Sign In (TuneMyMusic) - Exactly 1 primary button
                         Button(
                             onClick = {
-                                webSheetCurrentUrl = authUrl
+                                webSheetCurrentUrl = tuneMyMusicUrl
                                 showInAppWebSheet = true
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = brandColor),
@@ -1048,43 +1048,7 @@ fun MusicLibraryScreen(
                         ) {
                             Icon(Icons.Default.Language, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Connect & Sign In (In-App)", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // TuneMyMusic Official Cloud Transfer
-                        OutlinedButton(
-                            onClick = {
-                                webSheetCurrentUrl = tuneMyMusicUrl
-                                showInAppWebSheet = true
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, brandColor.copy(alpha = 0.6f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Sync, contentDescription = null, tint = brandColor, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("⚡ Sync via TuneMyMusic (Official)", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                        }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        // Open in External Chrome Browser (Fallback for 2FA / Google Login)
-                        OutlinedButton(
-                            onClick = {
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {}
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.OpenInBrowser, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("↗ Open in External Chrome", color = Color(0xFFDDDDDD), fontWeight = FontWeight.Normal, fontSize = 12.sp)
+                            Text("Connect & Sign In (TuneMyMusic)", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
 
