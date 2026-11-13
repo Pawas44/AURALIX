@@ -556,33 +556,15 @@ struct MusicPlayerView: View {
                             }
                             .padding(.top, 40)
                         } else if let lyrics = lyricsResult, !lyrics.lines.isEmpty {
-                            let currentMs = (isUserScrubbing ? scrubPosition : playbackService.currentTimeSeconds) * 1000.0
-                            let activeIdx = lyrics.isSynced ? (lyrics.lines.lastIndex(where: { $0.timestampMs <= currentMs }) ?? 0) : -1
-                            ScrollViewReader { proxy in
-                                ScrollView {
-                                    LazyVStack(alignment: .leading, spacing: 14) {
-                                        ForEach(Array(lyrics.lines.enumerated()), id: \.element.id) { idx, line in
-                                            LyricsLineRow(
-                                                line: line,
-                                                isActive: idx == activeIdx && lyrics.isSynced,
-                                                isSynced: lyrics.isSynced,
-                                                onTap: {
-                                                    playbackService.seek(to: line.timestampMs / 1000.0)
-                                                }
-                                            )
-                                            .id(idx)
-                                        }
-                                    }
-                                    .padding(16)
+                            SyncedLyricsView(
+                                lyrics: lyrics,
+                                currentTimeSeconds: playbackService.currentTimeSeconds,
+                                isUserScrubbing: isUserScrubbing,
+                                scrubPosition: scrubPosition,
+                                onSeek: { targetSec in
+                                    playbackService.seek(to: targetSec)
                                 }
-                                .onChange(of: activeIdx) { newIdx in
-                                    if newIdx >= 0 && lyrics.isSynced {
-                                        withAnimation {
-                                            proxy.scrollTo(max(0, newIdx - 1), anchor: .top)
-                                        }
-                                    }
-                                }
-                            }
+                            )
                         } else {
                             Text(track.lyrics.isEmpty ? "Lyrics are not currently available for this track." : track.lyrics)
                                 .font(.system(size: 15))
@@ -651,6 +633,44 @@ private struct RoundedCornerShape: Shape {
             cornerRadii: CGSize(width: radius, height: radius)
         )
         return Path(path.cgPath)
+    }
+}
+
+private struct SyncedLyricsView: View {
+    let lyrics: LyricsResult
+    let currentTimeSeconds: Double
+    let isUserScrubbing: Bool
+    let scrubPosition: Double
+    let onSeek: (Double) -> Void
+
+    var body: some View {
+        let currentMs = (isUserScrubbing ? scrubPosition : currentTimeSeconds) * 1000.0
+        let activeIdx = lyrics.isSynced ? (lyrics.lines.lastIndex(where: { $0.timestampMs <= currentMs }) ?? 0) : -1
+
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 14) {
+                    ForEach(0..<lyrics.lines.count, id: \.self) { idx in
+                        let line = lyrics.lines[idx]
+                        LyricsLineRow(
+                            line: line,
+                            isActive: idx == activeIdx && lyrics.isSynced,
+                            isSynced: lyrics.isSynced,
+                            onTap: { onSeek(line.timestampMs / 1000.0) }
+                        )
+                        .id(idx)
+                    }
+                }
+                .padding(16)
+            }
+            .onChange(of: activeIdx) { newIdx in
+                if newIdx >= 0 && lyrics.isSynced {
+                    withAnimation {
+                        proxy.scrollTo(max(0, newIdx - 1), anchor: .top)
+                    }
+                }
+            }
+        }
     }
 }
 
