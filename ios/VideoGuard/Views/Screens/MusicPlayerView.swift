@@ -228,7 +228,7 @@ struct MusicPlayerView: View {
             lyricsResult = await LyricsEngine.shared.getLyrics(
                 trackTitle: track.title,
                 artistName: track.artist.isEmpty ? track.channelName : track.artist,
-                durationSeconds: Int(playbackService.duration)
+                durationSeconds: Int(playbackService.durationSeconds)
             )
             isLoadingLyrics = false
         }
@@ -556,7 +556,7 @@ struct MusicPlayerView: View {
                             }
                             .padding(.top, 40)
                         } else if let lyrics = lyricsResult, !lyrics.lines.isEmpty {
-                            let currentMs = (isUserScrubbing ? scrubPosition : playbackService.currentTime) * 1000.0
+                            let currentMs = (isUserScrubbing ? scrubPosition : playbackService.currentTimeSeconds) * 1000.0
                             let activeIdx = lyrics.isSynced ? (lyrics.lines.lastIndex(where: { $0.timestampMs <= currentMs }) ?? 0) : -1
                             ScrollViewReader { proxy in
                                 ScrollView {
