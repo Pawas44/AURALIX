@@ -100,8 +100,6 @@ fun VideoDetailScreen(
 
     var showAddToPlaylistSheet by remember { mutableStateOf(false) }
     var isDownloaded by remember { mutableStateOf(false) }
-    var isLiked by remember(video.id) { mutableStateOf(false) }
-    var isDisliked by remember(video.id) { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     Column(
@@ -254,8 +252,7 @@ fun VideoDetailScreen(
                 ) {
                     Surface(
                         onClick = {
-                            isLiked = !isLiked
-                            if (isLiked) isDisliked = false
+                            com.videoguard.app.data.UserDataRepository.toggleLiked(video)
                         },
                         shape = RoundedCornerShape(18.dp),
                         color = Color.White.copy(alpha = 0.08f)
