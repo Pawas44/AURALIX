@@ -1449,6 +1449,7 @@ class YouTubeSyncEngine: ObservableObject {
 struct ImportTrackMeta: Sendable {
     let title: String
     let artist: String
+    var album: String = ""
 }
 
 struct ImportProgress: Sendable {
@@ -1460,9 +1461,194 @@ struct ImportProgress: Sendable {
     var error: String? = nil
 }
 
+struct RemotePlaylistSummary: Identifiable, Codable {
+    let id: String
+    let title: String
+    let description: String
+    let trackCount: Int
+    let coverUrl: String?
+    var sourceProvider: String = "Spotify"
+}
+
 final class SpotifyImportEngine {
     static let shared = SpotifyImportEngine()
-    private init() {}
+    private init() {
+        let token = UserDefaults.standard.string(forKey: "spotify_oauth_token")
+        self.isConnected = token != nil && !token!.isEmpty
+        self.userDisplayName = UserDefaults.standard.string(forKey: "spotify_oauth_name")
+    }
+
+    var isConnected: Bool = false
+    var userDisplayName: String? = nil
+    var userPlaylists: [RemotePlaylistSummary] = []
+
+    func getAccessToken() -> String? {
+        UserDefaults.standard.string(forKey: "spotify_oauth_token")
+    }
+
+    func createAuthUrl() -> String {
+        let clientId = "271077752670460c918ef93949f506e7"
+        let redirectUri = "https://open.spotify.com/"
+        let scopes = "playlist-read-private%20playlist-read-collaborative%20user-library-read"
+        return "https://accounts.spotify.com/authorize?client_id=\(clientId)&response_type=token&redirect_uri=\(redirectUri)&scope=\(scopes)&show_dialog=true"
+    }
+
+    func handleAuthCallback(url: String) -> Bool {
+        if url.contains("#access_token=") || url.contains("&access_token=") {
+            let marker = url.contains("#access_token=") ? "#access_token=" : "&access_token="
+            let after = url.components(separatedBy: marker).last ?? ""
+            let token = after.components(separatedBy: "&").first ?? ""
+            if !token.isEmpty {
+                UserDefaults.standard.set(token, forKey: "spotify_oauth_token")
+                self.isConnected = true
+                return true
+            }
+        }
+        return false
+    }
+
+    func disconnect() {
+        UserDefaults.standard.removeObject(forKey: "spotify_oauth_token")
+        UserDefaults.standard.removeObject(forKey: "spotify_oauth_name")
+        self.isConnected = false
+        self.userDisplayName = nil
+        self.userPlaylists = []
+    }
+
+    func fetchUserProfile() async -> String? {
+        guard let token = getAccessToken(), let url = URL(string: "https://api.spotify.com/v1/me") else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let (data, _) = try? await URLSession.shared.data(for: req),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let name = json["display_name"] as? String {
+            self.userDisplayName = name
+            UserDefaults.standard.set(name, forKey: "spotify_oauth_name")
+            return name
+        }
+        return nil
+    }
+
+    func fetchUserPlaylists() async -> [RemotePlaylistSummary] {
+        guard let token = getAccessToken() else { return [] }
+        var list: [RemotePlaylistSummary] = []
+        var nextUrlStr: String? = "https://api.spotify.com/v1/me/playlists?limit=50"
+
+        while let urlStr = nextUrlStr, let url = URL(string: urlStr) {
+            var req = URLRequest(url: url)
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            guard let (data, _) = try? await URLSession.shared.data(for: req),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let items = json["items"] as? [[String: Any]] else { break }
+
+            for item in items {
+                guard let id = item["id"] as? String,
+                      let title = item["name"] as? String else { continue }
+                let desc = (item["description"] as? String) ?? ""
+                let tracksObj = item["tracks"] as? [String: Any]
+                let count = (tracksObj?["total"] as? Int) ?? 0
+                var coverUrl: String? = nil
+                if let images = item["images"] as? [[String: Any]], let first = images.first {
+                    coverUrl = first["url"] as? String
+                }
+                list.append(RemotePlaylistSummary(id: id, title: title, description: desc, trackCount: count, coverUrl: coverUrl, sourceProvider: "Spotify"))
+            }
+
+            nextUrlStr = json["next"] as? String
+        }
+
+        self.userPlaylists = list
+        return list
+    }
+
+    func fetchPlaylistTracks(playlistId: String) async -> [ImportTrackMeta] {
+        guard let token = getAccessToken() else { return [] }
+        var tracks: [ImportTrackMeta] = []
+        var nextUrlStr: String? = "https://api.spotify.com/v1/playlists/\(playlistId)/tracks?limit=50"
+
+        while let urlStr = nextUrlStr, let url = URL(string: urlStr) {
+            var req = URLRequest(url: url)
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            guard let (data, _) = try? await URLSession.shared.data(for: req),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let items = json["items"] as? [[String: Any]] else { break }
+
+            for item in items {
+                guard let track = item["track"] as? [String: Any],
+                      let name = track["name"] as? String else { continue }
+                var artists: [String] = []
+                if let artistsArr = track["artists"] as? [[String: Any]] {
+                    for a in artistsArr {
+                        if let n = a["name"] as? String { artists.append(n) }
+                    }
+                }
+                let artistStr = artists.joined(separator: ", ")
+                let albumObj = track["album"] as? [String: Any]
+                let albumName = (albumObj?["name"] as? String) ?? ""
+                tracks.append(ImportTrackMeta(title: name, artist: artistStr, album: albumName))
+            }
+
+            nextUrlStr = json["next"] as? String
+        }
+
+        return tracks
+    }
+
+    func importRemotePlaylist(
+        summary: RemotePlaylistSummary,
+        onProgress: @escaping (ImportProgress) -> Void
+    ) async -> Result<UserPlaylist, Error> {
+        onProgress(ImportProgress(stage: "Fetching tracks from \(summary.sourceProvider)...", current: 0, total: summary.trackCount))
+        let tracks = await fetchPlaylistTracks(playlistId: summary.id)
+        guard !tracks.isEmpty else {
+            return .failure(NSError(domain: "SpotifyImport", code: 404, userInfo: [NSLocalizedDescriptionKey: "No tracks found in playlist"]))
+        }
+
+        let total = tracks.count
+        onProgress(ImportProgress(stage: "Matching tracks with YouTube Music...", current: 0, total: total))
+
+        var matchedVideos: [VideoItem] = []
+        for (idx, meta) in tracks.enumerated() {
+            let query = meta.artist.isEmpty ? meta.title : "\(meta.title) \(meta.artist)"
+            var results = await YouTubeSearchEngine.searchVideos(query: query, isMusicOnly: true)
+            if results.isEmpty && !meta.artist.isEmpty {
+                results = await YouTubeSearchEngine.searchVideos(query: meta.title, isMusicOnly: true)
+            }
+            if let first = results.first {
+                matchedVideos.append(first)
+            }
+            onProgress(
+                ImportProgress(
+                    stage: "Matching tracks...",
+                    current: idx + 1,
+                    total: total,
+                    currentTrackName: "\(meta.title) • \(meta.artist)"
+                )
+            )
+        }
+
+        guard !matchedVideos.isEmpty else {
+            return .failure(NSError(domain: "SpotifyImport", code: 404, userInfo: [NSLocalizedDescriptionKey: "Could not find matching audio on YouTube Music"]))
+        }
+
+        let finalPlaylist = UserPlaylist(
+            id: UUID().uuidString,
+            title: summary.title.isEmpty ? "Imported Playlist" : summary.title,
+            description: "Imported from \(summary.sourceProvider) (\(matchedVideos.count) tracks)",
+            videos: matchedVideos,
+            isSystem: false,
+            iconType: "playlist",
+            customCoverUrl: summary.coverUrl ?? matchedVideos.first?.thumbnailUrl
+        )
+
+        await MainActor.run {
+            UserDataRepository.shared.playlists.append(finalPlaylist)
+            UserDataRepository.shared.savePlaylists()
+        }
+
+        onProgress(ImportProgress(stage: "Complete!", current: total, total: total, isComplete: true))
+        return .success(finalPlaylist)
+    }
 
     func importPlaylist(
         from urlOrText: String,

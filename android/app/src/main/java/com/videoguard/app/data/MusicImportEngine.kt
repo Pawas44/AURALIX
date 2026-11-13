@@ -16,7 +16,8 @@ import java.util.regex.Pattern
 
 data class ImportTrackMeta(
     val title: String,
-    val artist: String
+    val artist: String,
+    val album: String = ""
 )
 
 data class ImportProgress(
@@ -54,48 +55,7 @@ object MusicImportEngine {
                 return@withContext Result.failure(IllegalStateException("No tracks found to import. Please check the link or song list."))
             }
 
-            val total = trackMetas.size
-            onProgress(ImportProgress("Matching tracks with YouTube Music...", 0, total))
-
-            val matchedVideos = mutableListOf<VideoItem>()
-            val batchSize = 4 // process in controlled parallel batches for faster 100+ tracks import
-
-            for (i in trackMetas.indices step batchSize) {
-                val batch = trackMetas.subList(i, minOf(i + batchSize, total))
-                val resolvedBatch = coroutineScope {
-                    batch.map { meta ->
-                        async {
-                            try {
-                                val query = if (meta.artist.isNotBlank()) "${meta.title} ${meta.artist}" else meta.title
-                                var results = YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)
-                                if (results.isEmpty() && meta.artist.isNotBlank()) {
-                                    results = YouTubeSearchEngine.searchVideos(meta.title, isMusicOnly = true)
-                                }
-                                results.firstOrNull()
-                            } catch (e: Exception) {
-                                null
-                            }
-                        }
-                    }.awaitAll()
-                }
-
-                for (idx in resolvedBatch.indices) {
-                    val resolved = resolvedBatch[idx]
-                    val meta = batch[idx]
-                    if (resolved != null) {
-                        matchedVideos.add(resolved)
-                    }
-                    val currentDone = minOf(i + idx + 1, total)
-                    onProgress(
-                        ImportProgress(
-                            stage = "Matching tracks...",
-                            current = currentDone,
-                            total = total,
-                            currentTrackName = "${meta.title} • ${meta.artist}"
-                        )
-                    )
-                }
-            }
+            val matchedVideos = matchTracksWithYouTube(trackMetas, onProgress)
 
             if (matchedVideos.isEmpty()) {
                 return@withContext Result.failure(IllegalStateException("Could not match any tracks on YouTube Music"))
@@ -113,7 +73,7 @@ object MusicImportEngine {
 
             // Auto-save into UserDataRepository
             UserDataRepository.savePlaylist(finalPlaylist)
-            onProgress(ImportProgress("Complete!", total, total, isComplete = true))
+            onProgress(ImportProgress("Complete!", trackMetas.size, trackMetas.size, isComplete = true))
 
             Result.success(finalPlaylist)
         } catch (e: Exception) {
@@ -121,6 +81,90 @@ object MusicImportEngine {
             onProgress(ImportProgress("Failed", 0, 0, error = e.localizedMessage))
             Result.failure(e)
         }
+    }
+
+    suspend fun importRemotePlaylist(
+        summary: RemotePlaylistSummary,
+        onProgress: (ImportProgress) -> Unit = {}
+    ): Result<UserPlaylist> = withContext(Dispatchers.IO) {
+        try {
+            onProgress(ImportProgress("Fetching tracks from ${summary.sourceProvider}...", 0, summary.trackCount))
+            val tracks = if (summary.sourceProvider == "Spotify") {
+                SpotifyOAuthEngine.fetchPlaylistTracks(summary.id)
+            } else {
+                emptyList()
+            }
+            if (tracks.isEmpty()) {
+                return@withContext Result.failure(IllegalStateException("No tracks found in playlist"))
+            }
+            val matchedVideos = matchTracksWithYouTube(tracks, onProgress)
+            if (matchedVideos.isEmpty()) {
+                return@withContext Result.failure(IllegalStateException("Could not match tracks on YouTube Music"))
+            }
+            val finalPlaylist = UserPlaylist(
+                id = UUID.randomUUID().toString(),
+                title = summary.title,
+                description = "Imported from ${summary.sourceProvider} (${matchedVideos.size} tracks)",
+                videos = matchedVideos,
+                isSystem = false,
+                iconType = "playlist",
+                customCoverUrl = summary.coverUrl ?: matchedVideos.firstOrNull()?.thumbnailUrl
+            )
+            UserDataRepository.savePlaylist(finalPlaylist)
+            onProgress(ImportProgress("Complete!", tracks.size, tracks.size, isComplete = true))
+            Result.success(finalPlaylist)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun matchTracksWithYouTube(
+        trackMetas: List<ImportTrackMeta>,
+        onProgress: (ImportProgress) -> Unit
+    ): List<VideoItem> = withContext(Dispatchers.IO) {
+        val total = trackMetas.size
+        onProgress(ImportProgress("Matching tracks with YouTube Music...", 0, total))
+
+        val matchedVideos = mutableListOf<VideoItem>()
+        val batchSize = 4 // process in controlled parallel batches for faster 100+ tracks import
+
+        for (i in trackMetas.indices step batchSize) {
+            val batch = trackMetas.subList(i, minOf(i + batchSize, total))
+            val resolvedBatch = coroutineScope {
+                batch.map { meta ->
+                    async {
+                        try {
+                            val query = if (meta.artist.isNotBlank()) "${meta.title} ${meta.artist}" else meta.title
+                            var results = YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)
+                            if (results.isEmpty() && meta.artist.isNotBlank()) {
+                                results = YouTubeSearchEngine.searchVideos(meta.title, isMusicOnly = true)
+                            }
+                            results.firstOrNull()
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                }.awaitAll()
+            }
+
+            for (idx in resolvedBatch.indices) {
+                val resolved = resolvedBatch[idx]
+                val meta = batch[idx]
+                if (resolved != null) {
+                    matchedVideos.add(resolved)
+                }
+                val currentDone = minOf(i + idx + 1, total)
+                onProgress(
+                    ImportProgress(
+                        stage = "Matching tracks...",
+                        current = currentDone,
+                        total = total,
+                        currentTrackName = "${meta.title} • ${meta.artist}"
+                    )
+                )
+            }
+        }
+        matchedVideos
     }
 
     private fun parseSpotify(url: String, onProgress: (ImportProgress) -> Unit): Pair<String, List<ImportTrackMeta>> {

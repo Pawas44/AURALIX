@@ -20,6 +20,10 @@ struct MusicLibraryView: View {
     @State private var importProgress: ImportProgress? = nil
     @State private var isImporting = false
     @State private var importedPlaylistResult: UserPlaylist? = nil
+    @State private var isSpotifyConnected: Bool = SpotifyImportEngine.shared.isConnected
+    @State private var spotifyUserName: String? = SpotifyImportEngine.shared.userDisplayName
+    @State private var spotifyPlaylists: [RemotePlaylistSummary] = SpotifyImportEngine.shared.userPlaylists
+    @State private var selectedPlaylistIds: Set<String> = []
 
     @Environment(\.openURL) var openURL
 
@@ -586,7 +590,7 @@ struct MusicLibraryView: View {
 
         let authUrlStr: String = {
             switch service {
-            case "Spotify": return "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
+            case "Spotify": return SpotifyImportEngine.shared.createAuthUrl()
             case "Apple Music": return "https://music.apple.com"
             case "YouTube": return "https://music.youtube.com"
             case "Tidal": return "https://login.tidal.com"
@@ -610,71 +614,227 @@ struct MusicLibraryView: View {
 
         NavigationView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Sign in to transfer your playlists and liked library automatically, or paste a direct playlist link below:")
-                    .font(.system(size: 13))
-                    .foregroundColor(Color(hex: 0xCCCCCC))
-
-                // In-App Sign In Button
-                Button(action: {
-                    inAppBrowserUrl = authUrlStr
-                    showInAppBrowser = true
-                }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "globe")
-                            .font(.system(size: 16, weight: .bold))
-                        Text("Connect & Sign In (In-App)")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .foregroundColor(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(brandColor)
-                    .cornerRadius(12)
-                }
-
-                // TuneMyMusic Official Cloud Transfer
-                Button(action: {
-                    inAppBrowserUrl = tuneMyMusicUrlStr
-                    showInAppBrowser = true
-                }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "bolt.fill")
+                if service == "Spotify" && isSpotifyConnected {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
                             .foregroundColor(brandColor)
-                        Text("⚡ Sync via TuneMyMusic (Official)")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
+                            .font(.system(size: 18))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Connected to Spotify")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(.white)
+                            Text(spotifyUserName ?? "Authorized Account")
+                                .font(.system(size: 11))
+                                .foregroundColor(Color.gray)
+                        }
+                        Spacer()
+                        Button("Disconnect") {
+                            SpotifyImportEngine.shared.disconnect()
+                            isSpotifyConnected = false
+                            spotifyUserName = nil
+                            spotifyPlaylists = []
+                        }
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(Color.red.opacity(0.8))
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
-                    .background(Color.white.opacity(0.08))
+                    .padding(12)
+                    .background(brandColor.opacity(0.15))
                     .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(brandColor.opacity(0.6), lineWidth: 1)
-                    )
-                }
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(brandColor.opacity(0.4), lineWidth: 1))
 
-                // Safari / External Browser fallback
-                Button(action: {
-                    if let url = URL(string: authUrlStr) {
-                        UIApplication.shared.open(url)
+                    if spotifyPlaylists.isEmpty {
+                        Button(action: {
+                            Task {
+                                let pls = await SpotifyImportEngine.shared.fetchUserPlaylists()
+                                await MainActor.run { self.spotifyPlaylists = pls }
+                            }
+                        }) {
+                            HStack {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Fetch My Playlists")
+                                    .fontWeight(.bold)
+                            }
+                            .font(.system(size: 13))
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(brandColor)
+                            .cornerRadius(12)
+                        }
+                    } else {
+                        HStack {
+                            Text("\(spotifyPlaylists.count) Playlists Found")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                            Spacer()
+                            Button(selectedPlaylistIds.count == spotifyPlaylists.count ? "Deselect All" : "Select All") {
+                                if selectedPlaylistIds.count == spotifyPlaylists.count {
+                                    selectedPlaylistIds = []
+                                } else {
+                                    selectedPlaylistIds = Set(spotifyPlaylists.map { $0.id })
+                                }
+                            }
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(brandColor)
+                        }
+
+                        ScrollView {
+                            VStack(spacing: 8) {
+                                ForEach(spotifyPlaylists) { pl in
+                                    let isSelected = selectedPlaylistIds.contains(pl.id)
+                                    Button(action: {
+                                        if isSelected {
+                                            selectedPlaylistIds.remove(pl.id)
+                                        } else {
+                                            selectedPlaylistIds.insert(pl.id)
+                                        }
+                                    }) {
+                                        HStack(spacing: 10) {
+                                            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                                .foregroundColor(isSelected ? brandColor : Color.gray)
+                                                .font(.system(size: 18))
+                                            if let urlStr = pl.coverUrl, let url = URL(string: urlStr) {
+                                                AsyncImage(url: url) { phase in
+                                                    if let img = phase.image {
+                                                        img.resizable().scaledToFill()
+                                                    } else {
+                                                        Color.gray.opacity(0.3)
+                                                    }
+                                                }
+                                                .frame(width: 36, height: 36)
+                                                .cornerRadius(6)
+                                            }
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(pl.title)
+                                                    .font(.system(size: 13, weight: .semibold))
+                                                    .foregroundColor(.white)
+                                                    .lineLimit(1)
+                                                Text("\(pl.trackCount) tracks")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(Color.gray)
+                                            }
+                                            Spacer()
+                                        }
+                                        .padding(8)
+                                        .background(isSelected ? brandColor.opacity(0.15) : Color(hex: 0x1E202E))
+                                        .cornerRadius(8)
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 200)
+
+                        Button(action: {
+                            let targets = spotifyPlaylists.filter { selectedPlaylistIds.contains($0.id) }
+                            guard !targets.isEmpty && !isImporting else { return }
+                            isImporting = true
+                            importProgress = nil
+                            Task {
+                                for target in targets {
+                                    _ = await SpotifyImportEngine.shared.importRemotePlaylist(summary: target) { prog in
+                                        DispatchQueue.main.async {
+                                            self.importProgress = prog
+                                        }
+                                    }
+                                }
+                                await MainActor.run {
+                                    self.isImporting = false
+                                }
+                            }
+                        }) {
+                            Text(isImporting ? "Importing Playlists..." : "Import Selected (\(selectedPlaylistIds.count))")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(selectedPlaylistIds.isEmpty ? Color.gray : brandColor)
+                                .cornerRadius(12)
+                        }
+                        .disabled(selectedPlaylistIds.isEmpty || isImporting)
                     }
-                }) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "safari")
-                            .foregroundColor(.white)
-                        Text("↗ Open in External Safari")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(Color(hex: 0xDDDDDD))
+                } else {
+                    if service == "Amazon Music" {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Official Amazon Music Partner Notice")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.white)
+                            Text("Amazon restricts playlist export APIs to enterprise whitelisted partners. Use TuneMyMusic (Official Partner) or Amazon Music Web below to transfer seamlessly.")
+                                .font(.system(size: 10))
+                                .foregroundColor(Color(hex: 0xAAAAAA))
+                                .lineSpacing(3)
+                        }
+                        .padding(10)
+                        .background(Color(hex: 0x161A26))
+                        .cornerRadius(10)
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08), lineWidth: 1))
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.04))
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                    )
+
+                    Text("Sign in to transfer your playlists and liked library automatically, or paste a direct playlist link below:")
+                        .font(.system(size: 13))
+                        .foregroundColor(Color(hex: 0xCCCCCC))
+
+                    // In-App Sign In Button
+                    Button(action: {
+                        inAppBrowserUrl = authUrlStr
+                        showInAppBrowser = true
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "globe")
+                                .font(.system(size: 16, weight: .bold))
+                            Text("Connect & Sign In (In-App)")
+                                .font(.system(size: 14, weight: .bold))
+                        }
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(brandColor)
+                        .cornerRadius(12)
+                    }
+
+                    // TuneMyMusic Official Cloud Transfer
+                    Button(action: {
+                        inAppBrowserUrl = tuneMyMusicUrlStr
+                        showInAppBrowser = true
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "bolt.fill")
+                                .foregroundColor(brandColor)
+                            Text("⚡ Sync via TuneMyMusic (Official)")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 11)
+                        .background(Color.white.opacity(0.08))
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(brandColor.opacity(0.6), lineWidth: 1)
+                        )
+                    }
+
+                    // Safari / External Browser fallback
+                    Button(action: {
+                        if let url = URL(string: authUrlStr) {
+                            UIApplication.shared.open(url)
+                        }
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "safari")
+                                .foregroundColor(.white)
+                            Text("↗ Open in External Safari")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(Color(hex: 0xDDDDDD))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.04))
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                        )
+                    }
                 }
 
                 HStack {
@@ -834,6 +994,19 @@ struct MusicLibraryView: View {
                     }
                 )
             }
+            .onChange(of: showInAppBrowser) { isOpen in
+                if !isOpen && service == "Spotify" && SpotifyImportEngine.shared.isConnected {
+                    self.isSpotifyConnected = true
+                    Task {
+                        _ = await SpotifyImportEngine.shared.fetchUserProfile()
+                        let pls = await SpotifyImportEngine.shared.fetchUserPlaylists()
+                        await MainActor.run {
+                            self.spotifyUserName = SpotifyImportEngine.shared.userDisplayName
+                            self.spotifyPlaylists = pls
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -855,6 +1028,9 @@ struct InAppWebTransferSheet: View {
                     urlString: initialUrl,
                     onUrlChange: { url in
                         currentUrl = url
+                        if serviceName == "Spotify" && SpotifyImportEngine.shared.handleAuthCallback(url: url) {
+                            dismiss()
+                        }
                     },
                     webViewRef: $webViewInstance
                 )

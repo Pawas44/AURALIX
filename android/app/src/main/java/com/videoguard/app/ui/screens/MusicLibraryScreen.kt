@@ -10,6 +10,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -78,6 +79,10 @@ fun MusicLibraryScreen(
     var importProgress by remember { mutableStateOf<ImportProgress?>(null) }
     var isImporting by remember { mutableStateOf(false) }
     var importedPlaylistResult by remember { mutableStateOf<UserPlaylist?>(null) }
+    val isSpotifyConnected by com.videoguard.app.data.SpotifyOAuthEngine.isConnected.collectAsState()
+    val spotifyUserName by com.videoguard.app.data.SpotifyOAuthEngine.userDisplayName.collectAsState()
+    val spotifyPlaylists by com.videoguard.app.data.SpotifyOAuthEngine.userPlaylists.collectAsState()
+    var selectedPlaylistIds by remember { mutableStateOf(setOf<String>()) }
     val clipboardManager = LocalClipboardManager.current
 
     val likedPlaylist = playlists.find { it.id == "liked_videos" }
@@ -873,7 +878,7 @@ fun MusicLibraryScreen(
         }
 
         val authUrl = when (currentService) {
-            "Spotify" -> "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
+            "Spotify" -> com.videoguard.app.data.SpotifyOAuthEngine.createAuthUrl()
             "Apple Music" -> "https://music.apple.com"
             "YouTube" -> "https://music.youtube.com"
             "Tidal" -> "https://login.tidal.com"
@@ -930,63 +935,229 @@ fun MusicLibraryScreen(
             },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Sign in to transfer your playlists and liked library automatically, or paste a direct playlist link below:",
-                        color = Color(0xFFCCCCCC),
-                        fontSize = 12.sp
-                    )
+                    if (currentService == "Spotify" && isSpotifyConnected) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = brandColor.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, brandColor.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = brandColor, modifier = Modifier.size(20.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text("Connected to Spotify", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Text(spotifyUserName ?: "Authorized Account", color = Color.LightGray, fontSize = 11.sp)
+                                    }
+                                }
+                                TextButton(onClick = { com.videoguard.app.data.SpotifyOAuthEngine.disconnect() }) {
+                                    Text("Disconnect", color = Color(0xFFFF6B6B), fontSize = 11.sp)
+                                }
+                            }
+                        }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                    // In-App Sign In & Connect Button
-                    Button(
-                        onClick = {
-                            webSheetCurrentUrl = authUrl
-                            showInAppWebSheet = true
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = brandColor),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Language, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Connect & Sign In (In-App)", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
+                        if (spotifyPlaylists.isEmpty()) {
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        com.videoguard.app.data.SpotifyOAuthEngine.fetchUserPlaylists()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = brandColor),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Fetch My Playlists", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("${spotifyPlaylists.size} Playlists Found", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                TextButton(
+                                    onClick = {
+                                        selectedPlaylistIds = if (selectedPlaylistIds.size == spotifyPlaylists.size) {
+                                            emptySet()
+                                        } else {
+                                            spotifyPlaylists.map { it.id }.toSet()
+                                        }
+                                    }
+                                ) {
+                                    Text(
+                                        if (selectedPlaylistIds.size == spotifyPlaylists.size) "Deselect All" else "Select All",
+                                        color = brandColor,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 200.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                spotifyPlaylists.forEach { pl ->
+                                    val isSelected = selectedPlaylistIds.contains(pl.id)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) brandColor.copy(alpha = 0.2f) else Color(0xFF1E202E))
+                                            .clickable {
+                                                selectedPlaylistIds = if (isSelected) {
+                                                    selectedPlaylistIds - pl.id
+                                                } else {
+                                                    selectedPlaylistIds + pl.id
+                                                }
+                                            }
+                                            .padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Checkbox(
+                                            checked = isSelected,
+                                            onCheckedChange = { checked ->
+                                                selectedPlaylistIds = if (checked) selectedPlaylistIds + pl.id else selectedPlaylistIds - pl.id
+                                            },
+                                            colors = CheckboxDefaults.colors(checkedColor = brandColor)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        AsyncImage(
+                                            model = pl.coverUrl,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(4.dp)).background(Color.DarkGray)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(pl.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            Text("${pl.trackCount} tracks", color = Color.Gray, fontSize = 11.sp)
+                                        }
+                                    }
+                                }
+                            }
 
-                    // TuneMyMusic Official Cloud Transfer
-                    OutlinedButton(
-                        onClick = {
-                            webSheetCurrentUrl = tuneMyMusicUrl
-                            showInAppWebSheet = true
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, brandColor.copy(alpha = 0.6f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Sync, contentDescription = null, tint = brandColor, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("⚡ Sync via TuneMyMusic (Official)", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                    }
+                            Spacer(modifier = Modifier.height(10.dp))
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                            Button(
+                                onClick = {
+                                    val targets = spotifyPlaylists.filter { selectedPlaylistIds.contains(it.id) }
+                                    if (targets.isNotEmpty()) {
+                                        isImporting = true
+                                        scope.launch {
+                                            for (p in targets) {
+                                                com.videoguard.app.data.MusicImportEngine.importRemotePlaylist(p) { prog ->
+                                                    importProgress = prog
+                                                }
+                                            }
+                                            isImporting = false
+                                        }
+                                    }
+                                },
+                                enabled = selectedPlaylistIds.isNotEmpty() && !isImporting,
+                                colors = ButtonDefaults.buttonColors(containerColor = brandColor),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    if (isImporting) "Importing Playlists..." else "Import Selected (${selectedPlaylistIds.size})",
+                                    color = Color.Black,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    } else {
+                        if (currentService == "Amazon Music") {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFF161A26),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text("Official Amazon Music Partner Notice", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        "Amazon restricts playlist export APIs to enterprise whitelisted partners. Use TuneMyMusic (Official Partner) or open Amazon Music web below to transfer seamlessly.",
+                                        color = Color(0xFFAAAAAA),
+                                        fontSize = 10.sp,
+                                        lineHeight = 14.sp
+                                    )
+                                }
+                            }
+                        }
 
-                    // Open in External Chrome Browser (Fallback for 2FA / Google Login)
-                    OutlinedButton(
-                        onClick = {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
-                                context.startActivity(intent)
-                            } catch (e: Exception) {}
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.OpenInBrowser, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("↗ Open in External Chrome", color = Color(0xFFDDDDDD), fontWeight = FontWeight.Normal, fontSize = 12.sp)
+                        Text(
+                            text = "Connect your account to fetch your playlists automatically, or paste a link below:",
+                            color = Color(0xFFCCCCCC),
+                            fontSize = 12.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // In-App Sign In & Connect Button
+                        Button(
+                            onClick = {
+                                webSheetCurrentUrl = authUrl
+                                showInAppWebSheet = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = brandColor),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Language, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Connect & Sign In (In-App)", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // TuneMyMusic Official Cloud Transfer
+                        OutlinedButton(
+                            onClick = {
+                                webSheetCurrentUrl = tuneMyMusicUrl
+                                showInAppWebSheet = true
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, brandColor.copy(alpha = 0.6f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Sync, contentDescription = null, tint = brandColor, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("⚡ Sync via TuneMyMusic (Official)", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        // Open in External Chrome Browser (Fallback for 2FA / Google Login)
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {}
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.OpenInBrowser, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("↗ Open in External Chrome", color = Color(0xFFDDDDDD), fontWeight = FontWeight.Normal, fontSize = 12.sp)
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -1254,7 +1425,16 @@ fun MusicLibraryScreen(
                                 webViewClient = object : WebViewClient() {
                                     override fun onPageFinished(view: WebView?, url: String?) {
                                         super.onPageFinished(view, url)
-                                        url?.let { currentWebUrl = it }
+                                        url?.let {
+                                            currentWebUrl = it
+                                            if (currentService == "Spotify" && com.videoguard.app.data.SpotifyOAuthEngine.handleAuthCallback(it)) {
+                                                showInAppWebSheet = false
+                                                scope.launch {
+                                                    com.videoguard.app.data.SpotifyOAuthEngine.fetchCurrentUserProfile()
+                                                    com.videoguard.app.data.SpotifyOAuthEngine.fetchUserPlaylists()
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                                 loadUrl(webSheetCurrentUrl.ifBlank { authUrl })
