@@ -2,6 +2,8 @@ package com.videoguard.app.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,6 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.videoguard.app.data.AccountRepository
 import com.videoguard.app.data.ImportProgress
@@ -61,6 +67,7 @@ fun MusicLibraryScreen(
 
     // Service Import State
     var selectedImportService by remember { mutableStateOf<String?>(null) }
+    var showInAppWebSheet by remember { mutableStateOf(false) }
     var importUrlInput by remember { mutableStateOf("") }
     var importProgress by remember { mutableStateOf<ImportProgress?>(null) }
     var isImporting by remember { mutableStateOf(false) }
@@ -741,23 +748,18 @@ fun MusicLibraryScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Sign In Button
+                    // In-App Sign In & Connect Button
                     Button(
                         onClick = {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl))
-                                context.startActivity(intent)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
+                            showInAppWebSheet = true
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = brandColor),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(Icons.Default.Login, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Language, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Sign In with $currentService", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text("Connect & Sign In (In-App)", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
@@ -929,6 +931,147 @@ fun MusicLibraryScreen(
             },
             containerColor = Color(0xFF1B1D28)
         )
+    }
+
+    // In-App Web Browser Sheet for Sign-In & Sync
+    if (showInAppWebSheet && currentService != null) {
+        val authUrl = when (currentService) {
+            "Spotify" -> "https://accounts.spotify.com/login"
+            "Apple Music" -> "https://music.apple.com/login"
+            "Amazon Music" -> "https://music.amazon.com"
+            else -> "https://www.tunemymusic.com"
+        }
+        val brandColor = when (currentService) {
+            "Spotify" -> Color(0xFF1DB954)
+            "Apple Music" -> Color(0xFFFA243C)
+            "Amazon Music" -> Color(0xFF00A8E1)
+            else -> YTMusicRedAccent
+        }
+        var currentWebUrl by remember { mutableStateOf(authUrl) }
+        var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+
+        Dialog(
+            onDismissRequest = { showInAppWebSheet = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF0C0E14))
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // Header
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .height(52.dp)
+                            .background(Color(0xFF141620))
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = {
+                            if (webViewInstance?.canGoBack() == true) {
+                                webViewInstance?.goBack()
+                            } else {
+                                showInAppWebSheet = false
+                            }
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "$currentService Connect",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = currentWebUrl,
+                                color = Color.Gray,
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(onClick = { showInAppWebSheet = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                        }
+                    }
+
+                    // WebView
+                    AndroidView(
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                webViewInstance = this
+                                settings.javaScriptEnabled = true
+                                settings.domStorageEnabled = true
+                                settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                                webViewClient = object : WebViewClient() {
+                                    override fun onPageFinished(view: WebView?, url: String?) {
+                                        super.onPageFinished(view, url)
+                                        url?.let { currentWebUrl = it }
+                                    }
+                                }
+                                loadUrl(authUrl)
+                            }
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    )
+
+                    // Bottom Floating Action Pill for In-App Sync
+                    Surface(
+                        color = Color(0xFF141620),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Browse to playlist & tap Sync:",
+                                color = Color(0xFFCCCCCC),
+                                fontSize = 12.sp,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    importUrlInput = currentWebUrl
+                                    showInAppWebSheet = false
+                                    isImporting = true
+                                    importProgress = null
+                                    importedPlaylistResult = null
+                                    scope.launch {
+                                        val res = MusicImportEngine.importPlaylistFromUrl(currentWebUrl) { prog ->
+                                            importProgress = prog
+                                        }
+                                        isImporting = false
+                                        res.onSuccess { pl ->
+                                            importedPlaylistResult = pl
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = brandColor),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
+                                Icon(Icons.Default.Sync, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("⚡ Sync This", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

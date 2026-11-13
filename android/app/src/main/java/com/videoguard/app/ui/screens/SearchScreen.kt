@@ -38,6 +38,7 @@ import com.videoguard.app.data.UserDataRepository
 import com.videoguard.app.data.YouTubeSearchEngine
 import com.videoguard.app.model.AppMode
 import com.videoguard.app.model.VideoItem
+import com.videoguard.app.ui.components.AddToPlaylistSheet
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.shadow
 import com.videoguard.app.ui.theme.LiquidGlassDefaults
@@ -66,6 +67,7 @@ fun SearchScreen(
     var searchResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var suggestionsList by remember { mutableStateOf<List<String>>(emptyList()) }
     var hasSearched by remember { mutableStateOf(false) }
+    var selectedVideoForPlaylist by remember { mutableStateOf<VideoItem?>(null) }
     val searchHistory by UserDataRepository.searchHistory.collectAsState()
 
     // Infinite scroll state
@@ -378,6 +380,17 @@ fun SearchScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
+                                IconButton(
+                                    onClick = { selectedVideoForPlaylist = track },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.MoreVert,
+                                        contentDescription = "Options",
+                                        tint = Color(0xFFAAAAAA),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     } else {
@@ -396,7 +409,8 @@ fun SearchScreen(
                                         val playableQueue = searchResults.filter { it.category != "Channel" && !it.id.startsWith("channel_") }
                                         onVideoSelected(video, playableQueue)
                                     },
-                                    onChannelClick = { onChannelClick(video) }
+                                    onChannelClick = { onChannelClick(video) },
+                                    onMoreClick = { selectedVideoForPlaylist = video }
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
                             }
@@ -651,6 +665,13 @@ fun SearchScreen(
             }
         }
     }
+
+    if (selectedVideoForPlaylist != null) {
+        AddToPlaylistSheet(
+            video = selectedVideoForPlaylist!!,
+            onDismiss = { selectedVideoForPlaylist = null }
+        )
+    }
 }
 
 @Composable
@@ -738,6 +759,13 @@ fun SearchChannelCard(
                 }
             }
         }
+    }
+
+    if (selectedVideoForPlaylist != null) {
+        AddToPlaylistSheet(
+            video = selectedVideoForPlaylist!!,
+            onDismiss = { selectedVideoForPlaylist = null }
+        )
     }
 }
 

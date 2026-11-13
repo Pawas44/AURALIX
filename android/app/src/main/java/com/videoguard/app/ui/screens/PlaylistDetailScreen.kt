@@ -26,6 +26,7 @@ import com.videoguard.app.data.UserDataRepository
 import com.videoguard.app.data.YouTubeSyncEngine
 import com.videoguard.app.model.UserPlaylist
 import com.videoguard.app.model.VideoItem
+import com.videoguard.app.ui.theme.YTMusicRedAccent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,6 +50,10 @@ fun PlaylistDetailScreen(
     var currentVideos by remember(playlistId) { mutableStateOf(playlist.videos) }
     var isLoading by remember(playlistId) { mutableStateOf(playlist.videos.isEmpty()) }
     var isRefreshing by remember(playlistId) { mutableStateOf(false) }
+    var showAddSongsSheet by remember { mutableStateOf(false) }
+    var addSongSearchQuery by remember { mutableStateOf("") }
+    var addSongResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
+    var isSearchingAddSong by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // Keep currentVideos in sync with repository updates
@@ -61,6 +66,11 @@ fun PlaylistDetailScreen(
     }
 
     suspend fun refreshVideos() {
+        if (!playlistId.startsWith("PL") && playlistId != "liked_videos" && playlistId != "watch_later") {
+            isRefreshing = false
+            isLoading = false
+            return
+        }
         isRefreshing = true
         val online = withContext(Dispatchers.IO) {
             YouTubeSyncEngine.fetchPlaylistVideos(playlistId)
@@ -263,6 +273,24 @@ fun PlaylistDetailScreen(
                             Text("Shuffle", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Button(
+                        onClick = { showAddSongsSheet = true },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White.copy(alpha = 0.08f),
+                            contentColor = Color.White
+                        ),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Add songs to this playlist", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
 
@@ -311,6 +339,106 @@ fun PlaylistDetailScreen(
             // Bottom space for mini player
             item {
                 Spacer(modifier = Modifier.height(90.dp))
+            }
+        }
+    }
+
+    if (showAddSongsSheet) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showAddSongsSheet = false
+                addSongSearchQuery = ""
+                addSongResults = emptyList()
+            },
+            containerColor = Color(0xFF1E1E28)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Add to ${playlist.title}",
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = addSongSearchQuery,
+                    onValueChange = { q ->
+                        addSongSearchQuery = q
+                        if (q.trim().length >= 2) {
+                            scope.launch {
+                                isSearchingAddSong = true
+                                val res = withContext(Dispatchers.IO) {
+                                    com.videoguard.app.data.YouTubeSearchEngine.searchVideos(q.trim(), isMusicOnly = true)
+                                }
+                                addSongResults = res
+                                isSearchingAddSong = false
+                            }
+                        }
+                    },
+                    placeholder = { Text("Search song or artist name...", color = Color.Gray, fontSize = 13.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = YTMusicRedAccent,
+                        unfocusedBorderColor = Color(0xFF444444)
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (isSearchingAddSong) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = YTMusicRedAccent, modifier = Modifier.size(24.dp))
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 350.dp)) {
+                        items(addSongResults, key = { it.id }) { item ->
+                            val alreadyIn = currentVideos.any { it.id == item.id }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                AsyncImage(
+                                    model = item.thumbnailUrl,
+                                    contentDescription = item.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(44.dp).clip(RoundedCornerShape(6.dp))
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(item.title, color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(item.channelName, color = Color.Gray, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                                IconButton(
+                                    onClick = {
+                                        if (alreadyIn) {
+                                            UserDataRepository.removeVideoFromPlaylist(playlist.id, item.id)
+                                            currentVideos = currentVideos.filter { it.id != item.id }
+                                        } else {
+                                            UserDataRepository.addVideoToPlaylist(playlist.id, item)
+                                            currentVideos = currentVideos + item
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = if (alreadyIn) Icons.Default.Check else Icons.Default.Add,
+                                        contentDescription = null,
+                                        tint = if (alreadyIn) YTMusicRedAccent else Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 struct MusicLibraryView: View {
     let onTrackSelected: (VideoItem, [VideoItem]) -> Void
@@ -12,6 +13,8 @@ struct MusicLibraryView: View {
     @State private var newPlaylistTitle = ""
 
     @State private var selectedService: String? = nil
+    @State private var showInAppBrowser = false
+    @State private var inAppBrowserUrl: String = ""
     @State private var importUrlInput = ""
     @State private var importProgress: ImportProgress? = nil
     @State private var isImporting = false
@@ -456,16 +459,15 @@ struct MusicLibraryView: View {
                     .font(.system(size: 13))
                     .foregroundColor(Color(hex: 0xCCCCCC))
 
-                // Sign In Button
+                // In-App Sign In Button
                 Button(action: {
-                    if let url = URL(string: authUrlStr) {
-                        openURL(url)
-                    }
+                    inAppBrowserUrl = authUrlStr
+                    showInAppBrowser = true
                 }) {
                     HStack(spacing: 8) {
-                        Image(systemName: "person.crop.circle.badge.checkmark")
+                        Image(systemName: "globe")
                             .font(.system(size: 16, weight: .bold))
-                        Text("Sign In with \(service)")
+                        Text("Connect & Sign In (In-App)")
                             .font(.system(size: 14, weight: .bold))
                     }
                     .foregroundColor(.black)
@@ -605,6 +607,131 @@ struct MusicLibraryView: View {
                     }
                     .foregroundColor(.white)
                 }
+            }
+            .sheet(isPresented: $showInAppBrowser) {
+                InAppWebTransferSheet(
+                    initialUrl: inAppBrowserUrl,
+                    serviceName: service,
+                    brandColor: brandColor,
+                    onSyncUrl: { detectedUrl in
+                        importUrlInput = detectedUrl
+                        showInAppBrowser = false
+                        isImporting = true
+                        importProgress = nil
+                        importedPlaylistResult = nil
+                        Task {
+                            let result = await SpotifyImportEngine.shared.importPlaylist(from: detectedUrl) { prog in
+                                DispatchQueue.main.async {
+                                    self.importProgress = prog
+                                }
+                            }
+                            await MainActor.run {
+                                self.isImporting = false
+                                if case .success(let pl) = result {
+                                    self.importedPlaylistResult = pl
+                                }
+                            }
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+struct InAppWebTransferSheet: View {
+    let initialUrl: String
+    let serviceName: String
+    let brandColor: Color
+    let onSyncUrl: (String) -> Void
+
+    @Environment(\.dismiss) var dismiss
+    @State private var currentUrl: String = ""
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                InAppWKWebView(urlString: initialUrl, onUrlChange: { url in
+                    currentUrl = url
+                })
+
+                VStack(spacing: 8) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Active Page:")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(Color.gray)
+                            Text(currentUrl.isEmpty ? initialUrl : currentUrl)
+                                .font(.system(size: 11))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Button(action: {
+                            let urlToSync = currentUrl.isEmpty ? initialUrl : currentUrl
+                            onSyncUrl(urlToSync)
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "bolt.fill")
+                                Text("Sync This")
+                                    .fontWeight(.bold)
+                            }
+                            .font(.system(size: 13))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 9)
+                            .background(brandColor)
+                            .cornerRadius(18)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                }
+                .background(Color(hex: 0x161824))
+            }
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("\(serviceName) Connect")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                        .foregroundColor(.white)
+                }
+            }
+        }
+    }
+}
+
+struct InAppWKWebView: UIViewRepresentable {
+    let urlString: String
+    let onUrlChange: (String) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onUrlChange: onUrlChange)
+    }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
+        if let url = URL(string: urlString) {
+            webView.load(URLRequest(url: url))
+        }
+        return webView
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    class Coordinator: NSObject, WKNavigationDelegate {
+        let onUrlChange: (String) -> Void
+
+        init(onUrlChange: @escaping (String) -> Void) {
+            self.onUrlChange = onUrlChange
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            if let urlStr = webView.url?.absoluteString {
+                onUrlChange(urlStr)
             }
         }
     }

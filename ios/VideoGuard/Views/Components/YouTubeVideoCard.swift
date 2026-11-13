@@ -4,6 +4,7 @@ struct YouTubeVideoCard: View {
     let video: VideoItem
     let onClick: () -> Void
     var onChannelClick: (() -> Void)? = nil
+    var onSaveToPlaylist: (() -> Void)? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,6 +78,11 @@ struct YouTubeVideoCard: View {
                 }
 
                 Menu {
+                    if let onSaveToPlaylist = onSaveToPlaylist {
+                        Button(action: onSaveToPlaylist) {
+                            Label("Save to playlist", systemImage: "plus.rectangle.on.folder")
+                        }
+                    }
                     Button(action: { UserDataRepository.shared.toggleWatchLater(video) }) {
                         Label(
                             UserDataRepository.shared.isWatchLater(video.id) ? "Remove from Watch later" : "Save to Watch later",

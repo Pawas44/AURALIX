@@ -13,6 +13,7 @@ struct SearchScreenView: View {
     @State private var searchResults: [VideoItem] = []
     @State private var suggestionsList: [String] = []
     @State private var hasSearched = false
+    @State private var selectedVideoForPlaylist: VideoItem? = nil
     @State private var searchPage = 0
     @State private var isLoadingMore = false
     @State private var seenIds = Set<String>()
@@ -150,6 +151,9 @@ struct SearchScreenView: View {
                                         },
                                         onChannelClick: {
                                             onChannelClick(item)
+                                        },
+                                        onSaveToPlaylist: {
+                                            selectedVideoForPlaylist = item
                                         }
                                     )
                                 }
@@ -262,6 +266,11 @@ struct SearchScreenView: View {
                         }
                     }
                 }
+            }
+        }
+        .sheet(item: $selectedVideoForPlaylist) { vid in
+            AddToPlaylistSheet(video: vid) {
+                selectedVideoForPlaylist = nil
             }
         }
     }

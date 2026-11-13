@@ -10,6 +10,10 @@ struct PlaylistDetailView: View {
     @ObservedObject var userData = UserDataRepository.shared
     @State private var currentVideos: [VideoItem] = []
     @State private var isLoading = false
+    @State private var showAddSongsSheet = false
+    @State private var addSongQuery = ""
+    @State private var addSongResults: [VideoItem] = []
+    @State private var isSearchingAdd = false
 
     private var playlist: UserPlaylist {
         userData.playlists.first(where: { $0.id == playlistId })
@@ -116,6 +120,20 @@ struct PlaylistDetailView: View {
                                 }
                             }
                         }
+
+                        Button(action: { showAddSongsSheet = true }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "plus")
+                                Text("Add songs to this playlist")
+                                    .fontWeight(.semibold)
+                            }
+                            .font(.system(size: 13))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.08))
+                            .cornerRadius(20)
+                        }
                     }
                     .padding(16)
                     .background(
@@ -172,6 +190,16 @@ struct PlaylistDetailView: View {
                                                 .lineLimit(1)
                                         }
                                         Spacer()
+
+                                        Button(action: {
+                                            userData.removeVideoFromPlaylist(playlistId: playlist.id, videoId: vid.id)
+                                            currentVideos.removeAll { $0.id == vid.id }
+                                        }) {
+                                            Image(systemName: "xmark")
+                                                .font(.system(size: 13, weight: .semibold))
+                                                .foregroundColor(Color.gray)
+                                                .padding(8)
+                                        }
                                     }
                                     .padding(.horizontal, 14)
                                 }
@@ -191,9 +219,103 @@ struct PlaylistDetailView: View {
             if currentVideos.isEmpty { isLoading = true }
             await refreshVideos()
         }
+        .sheet(isPresented: $showAddSongsSheet) {
+            NavigationView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.gray)
+                        TextField("Search song or artist...", text: $addSongQuery)
+                            .foregroundColor(.white)
+                            .onChange(of: addSongQuery) { q in
+                                let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard trimmed.count >= 2 else { return }
+                                Task {
+                                    isSearchingAdd = true
+                                    let res = await YouTubeSearchEngine.searchVideos(query: trimmed, isMusicOnly: true)
+                                    await MainActor.run {
+                                        addSongResults = res
+                                        isSearchingAdd = false
+                                    }
+                                }
+                            }
+                    }
+                    .padding(10)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(10)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+
+                    if isSearchingAdd {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .tint(.white)
+                                .padding()
+                            Spacer()
+                        }
+                    } else {
+                        List(addSongResults) { item in
+                            let alreadyIn = currentVideos.contains(where: { $0.id == item.id })
+                            HStack(spacing: 12) {
+                                AsyncImage(url: URL(string: item.thumbnailUrl)) { img in
+                                    img.resizable().aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    Rectangle().fill(Color.white.opacity(0.08))
+                                }
+                                .frame(width: 44, height: 44)
+                                .cornerRadius(6)
+                                .clipped()
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.title)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                    Text(item.channelName)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Color.gray)
+                                }
+
+                                Spacer()
+
+                                Button(action: {
+                                    if alreadyIn {
+                                        userData.removeVideoFromPlaylist(playlistId: playlist.id, videoId: item.id)
+                                        currentVideos.removeAll { $0.id == item.id }
+                                    } else {
+                                        userData.addVideoToPlaylist(playlistId: playlist.id, video: item)
+                                        currentVideos.insert(item, at: 0)
+                                    }
+                                }) {
+                                    Image(systemName: alreadyIn ? "checkmark.circle.fill" : "plus.circle")
+                                        .font(.system(size: 20))
+                                        .foregroundColor(alreadyIn ? AppTheme.ytMusicRedAccent : .white)
+                                }
+                            }
+                            .listRowBackground(Color.clear)
+                        }
+                        .listStyle(.plain)
+                    }
+                }
+                .background(Color(hex: 0x161824).ignoresSafeArea())
+                .navigationTitle("Add to \(playlist.title)")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showAddSongsSheet = false }
+                            .foregroundColor(.white)
+                    }
+                }
+            }
+        }
     }
 
     private func refreshVideos() async {
+        guard playlistId.hasPrefix("PL") || playlistId == "liked_videos" || playlistId == "watch_later" else {
+            await MainActor.run { isLoading = false }
+            return
+        }
         let online = await YouTubeSyncEngine.shared.fetchPlaylistVideos(playlistId: playlistId)
         await MainActor.run {
             if !online.isEmpty {

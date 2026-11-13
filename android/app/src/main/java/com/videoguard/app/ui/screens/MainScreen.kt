@@ -266,19 +266,6 @@ fun MainScreen() {
                     isSupportActive -> {
                         SupportScreen()
                     }
-                    isLibraryActive -> {
-                        MusicLibraryScreen(
-                            onTrackSelected = { track, queue ->
-                                PlaybackController.playTrack(track, queue)
-                                isPlayerExpanded = true
-                            },
-                            onPlaylistClick = { playlist ->
-                                activePlaylist = playlist
-                            },
-                            onOpenSearch = { isSearchActive = true },
-                            onOpenAccountSheet = { showAccountSheet = true }
-                        )
-                    }
                     activePlaylist != null -> {
                         PlaylistDetailScreen(
                             playlistId = activePlaylist!!.id,
@@ -303,6 +290,19 @@ fun MainScreen() {
                             onPlaylistClick = { playlist ->
                                 activePlaylist = playlist
                             }
+                        )
+                    }
+                    isLibraryActive -> {
+                        MusicLibraryScreen(
+                            onTrackSelected = { track, queue ->
+                                PlaybackController.playTrack(track, queue)
+                                isPlayerExpanded = true
+                            },
+                            onPlaylistClick = { playlist ->
+                                activePlaylist = playlist
+                            },
+                            onOpenSearch = { isSearchActive = true },
+                            onOpenAccountSheet = { showAccountSheet = true }
                         )
                     }
                     else -> {

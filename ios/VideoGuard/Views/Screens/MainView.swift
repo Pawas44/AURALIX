@@ -79,18 +79,6 @@ struct MainView: View {
                         )
                     } else if isSupportActive {
                         SupportView()
-                    } else if isLibraryActive {
-                        MusicLibraryView(
-                            onTrackSelected: { track, queue in
-                                playbackService.playTrack(track, queue: queue)
-                                isPlayerExpanded = true
-                            },
-                            onPlaylistClick: { pl in
-                                activePlaylist = pl
-                            },
-                            onOpenSearch: { isSearchActive = true },
-                            onOpenAccountSheet: { showAccountSheet = true }
-                        )
                     } else if let pl = activePlaylist {
                         PlaylistDetailView(
                             playlistId: pl.id,
@@ -108,6 +96,26 @@ struct MainView: View {
                             channelAvatarUrl: chVid.channelAvatarUrl,
                             subscriberCount: chVid.subscriberCount.isEmpty ? "10M subscribers" : chVid.subscriberCount,
                             onBack: { activeChannelVideo = nil },
+                            onVideoSelected: { video, queue in
+                                playbackService.playTrack(video, queue: queue)
+                                isPlayerExpanded = true
+                            },
+                            onPlaylistClick: { pl in
+                                activePlaylist = pl
+                            }
+                        )
+                    } else if isLibraryActive {
+                        MusicLibraryView(
+                            onTrackSelected: { track, queue in
+                                playbackService.playTrack(track, queue: queue)
+                                isPlayerExpanded = true
+                            },
+                            onPlaylistClick: { pl in
+                                activePlaylist = pl
+                            },
+                            onOpenSearch: { isSearchActive = true },
+                            onOpenAccountSheet: { showAccountSheet = true }
+                        )
                             onVideoSelected: { video, queue in
                                 playbackService.playTrack(video, queue: queue)
                                 isPlayerExpanded = true

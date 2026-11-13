@@ -33,6 +33,7 @@ import coil.compose.AsyncImage
 import com.videoguard.app.data.VideoRepository
 import com.videoguard.app.model.AppMode
 import com.videoguard.app.model.VideoItem
+import com.videoguard.app.ui.components.AddToPlaylistSheet
 import com.videoguard.app.ui.theme.LiquidGlassDefaults
 import com.videoguard.app.ui.theme.YouTubeDarkBg
 import com.videoguard.app.ui.theme.YouTubeRed
@@ -55,6 +56,7 @@ fun YouTubeFeedScreen(
     var isLoadingFeed by remember { mutableStateOf(false) }
     var isLoadingMore by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
+    var selectedVideoForPlaylist by remember { mutableStateOf<VideoItem?>(null) }
 
     val currentAccount by com.videoguard.app.data.AccountRepository.currentAccount.collectAsState()
     val synchronizedFeed by com.videoguard.app.data.YouTubeSyncEngine.homeFeed.collectAsState()
@@ -208,7 +210,8 @@ fun YouTubeFeedScreen(
             YouTubeVideoCard(
                 video = video,
                 onClick = { onVideoSelected(video, feedVideos) },
-                onChannelClick = { onChannelClick(video) }
+                onChannelClick = { onChannelClick(video) },
+                onMoreClick = { selectedVideoForPlaylist = video }
             )
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -236,6 +239,13 @@ fun YouTubeFeedScreen(
             Spacer(modifier = Modifier.height(80.dp))
         }
     }
+
+    if (selectedVideoForPlaylist != null) {
+        AddToPlaylistSheet(
+            video = selectedVideoForPlaylist!!,
+            onDismiss = { selectedVideoForPlaylist = null }
+        )
+    }
 }
 }
 
@@ -244,6 +254,7 @@ fun YouTubeVideoCard(
     video: VideoItem,
     onClick: () -> Unit,
     onChannelClick: () -> Unit = {},
+    onMoreClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -330,7 +341,7 @@ fun YouTubeVideoCard(
             }
 
             IconButton(
-                onClick = { /* Menu */ },
+                onClick = { onMoreClick?.invoke() },
                 modifier = Modifier.size(24.dp)
             ) {
                 Icon(
