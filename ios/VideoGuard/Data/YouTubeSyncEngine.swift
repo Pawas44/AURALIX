@@ -1544,10 +1544,19 @@ final class SpotifyImportEngine {
         let cleanUrl = url.components(separatedBy: "?").first ?? url
         let isTrack = cleanUrl.contains("/track/")
         let isAlbum = cleanUrl.contains("/album/")
-        let isPlaylist = cleanUrl.contains("/playlist/")
+        let isPlaylist = cleanUrl.contains("/playlist/") || (!isTrack && !isAlbum)
+
+        var spotifyId = ""
+        if let regex = try? NSRegularExpression(pattern: "(?:playlist|album|track)/([a-zA-Z0-9]+)"),
+           let match = regex.firstMatch(in: url, range: NSRange(location: 0, length: (url as NSString).length)),
+           match.numberOfRanges > 1 {
+            spotifyId = (url as NSString).substring(with: match.range(at: 1))
+        } else {
+            spotifyId = cleanUrl.trimmingCharacters(in: CharacterSet(charactersIn: "/")).components(separatedBy: "/").last ?? ""
+        }
 
         if isTrack {
-            if let enc = cleanUrl.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+            if let enc = "https://open.spotify.com/track/\(spotifyId)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
                let oembedUrl = URL(string: "https://open.spotify.com/oembed?url=\(enc)"),
                let (data, _) = try? await URLSession.shared.data(from: oembedUrl),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -1557,21 +1566,13 @@ final class SpotifyImportEngine {
             }
         }
 
-        let id = cleanUrl.components(separatedBy: "/").last ?? ""
-        let embedUrlString: String
-        if isPlaylist {
-            embedUrlString = "https://open.spotify.com/embed/playlist/\(id)"
-        } else if isAlbum {
-            embedUrlString = "https://open.spotify.com/embed/album/\(id)"
-        } else {
-            embedUrlString = cleanUrl
-        }
-
+        let embedUrlString = isAlbum ? "https://open.spotify.com/embed/album/\(spotifyId)" : "https://open.spotify.com/embed/playlist/\(spotifyId)"
         guard let embedUrl = URL(string: embedUrlString) else { return ("Spotify Playlist", []) }
 
         var req = URLRequest(url: embedUrl)
-        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
-        req.setValue("text/html,application/json", forHTTPHeaderField: "Accept")
+        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        req.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        req.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
 
         guard let (data, _) = try? await URLSession.shared.data(for: req),
               let html = String(data: data, encoding: .utf8) else {
@@ -1582,9 +1583,10 @@ final class SpotifyImportEngine {
         var tracks: [ImportTrackMeta] = []
 
         // Extract __NEXT_DATA__
-        if let startRange = html.range(of: "<script id=\"__NEXT_DATA__\" type=\"application/json\">"),
-           let endRange = html[startRange.upperBound...].range(of: "</script>") {
-            let jsonString = String(html[startRange.upperBound..<endRange.lowerBound])
+        if let startRange = html.range(of: "<script id=\"__NEXT_DATA__\""),
+           let tagClose = html[startRange.lowerBound...].range(of: ">"),
+           let endRange = html[tagClose.upperBound...].range(of: "</script>") {
+            let jsonString = String(html[tagClose.upperBound..<endRange.lowerBound])
             if let jsonData = jsonString.data(using: .utf8),
                let root = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
                let props = root["props"] as? [String: Any],
@@ -1600,6 +1602,35 @@ final class SpotifyImportEngine {
                         let t = (item["title"] as? String) ?? ""
                         let s = (item["subtitle"] as? String) ?? ""
                         if !t.isEmpty {
+                            tracks.append(ImportTrackMeta(title: t, artist: s))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: oEmbed for playlist title
+        if tracks.isEmpty {
+            if let enc = "https://open.spotify.com/playlist/\(spotifyId)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+               let oembedUrl = URL(string: "https://open.spotify.com/oembed?url=\(enc)"),
+               let (data, _) = try? await URLSession.shared.data(from: oembedUrl),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let t = json["title"] as? String, !t.isEmpty {
+                playlistTitle = t
+            }
+        }
+
+        // Fallback: regex for title / subtitle
+        if tracks.isEmpty {
+            let pattern = "\"title\":\"([^\"]+)\"[^}]*?\"subtitle\":\"([^\"]+)\""
+            if let regex = try? NSRegularExpression(pattern: pattern) {
+                let nsHtml = html as NSString
+                let matches = regex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
+                for m in matches {
+                    if m.numberOfRanges > 2 {
+                        let t = nsHtml.substring(with: m.range(at: 1))
+                        let s = nsHtml.substring(with: m.range(at: 2))
+                        if !t.isEmpty && !t.contains("Spotify") {
                             tracks.append(ImportTrackMeta(title: t, artist: s))
                         }
                     }

@@ -796,8 +796,8 @@ fun MusicLibraryScreen(
         }
 
         val authUrl = when (currentService) {
-            "Spotify" -> "https://open.spotify.com"
-            "Amazon Music" -> "https://music.amazon.com"
+            "Spotify" -> "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
+            "Amazon Music" -> "https://www.amazon.com/ap/signin?openid.return_to=https%3A%2F%2Fmusic.amazon.com"
             else -> "https://www.tunemymusic.com"
         }
 
@@ -1034,8 +1034,8 @@ fun MusicLibraryScreen(
     // In-App Web Browser Sheet for Sign-In & Sync
     if (showInAppWebSheet && currentService != null) {
         val authUrl = when (currentService) {
-            "Spotify" -> "https://open.spotify.com"
-            "Amazon Music" -> "https://music.amazon.com"
+            "Spotify" -> "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
+            "Amazon Music" -> "https://www.amazon.com/ap/signin?openid.return_to=https%3A%2F%2Fmusic.amazon.com"
             else -> "https://www.tunemymusic.com"
         }
         val brandColor = when (currentService) {

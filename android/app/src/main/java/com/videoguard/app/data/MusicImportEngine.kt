@@ -123,38 +123,37 @@ object MusicImportEngine {
     }
 
     private fun parseSpotify(url: String, onProgress: (ImportProgress) -> Unit): Pair<String, List<ImportTrackMeta>> {
-        val cleanUrl = url.substringBefore("?")
-        val isTrack = cleanUrl.contains("/track/")
-        val isAlbum = cleanUrl.contains("/album/")
-        val isPlaylist = cleanUrl.contains("/playlist/")
+        val cleanUrl = url.substringBefore("?").trimEnd('/')
+        val isTrack = url.contains("/track/")
+        val isAlbum = url.contains("/album/")
+        val isPlaylist = url.contains("/playlist/") || (!isTrack && !isAlbum)
+
+        val id = Regex("(?:playlist|album|track)/([a-zA-Z0-9]+)").find(url)?.groupValues?.get(1)
+            ?: cleanUrl.substringAfterLast("/")
 
         if (isTrack) {
-            // Single Track via oEmbed
-            val oembedUrl = "https://open.spotify.com/oembed?url=" + java.net.URLEncoder.encode(cleanUrl, "UTF-8")
+            val oembedUrl = "https://open.spotify.com/oembed?url=" + java.net.URLEncoder.encode("https://open.spotify.com/track/$id", "UTF-8")
             val jsonStr = httpGet(oembedUrl)
-            val json = JSONObject(jsonStr)
-            val title = json.optString("title", "Spotify Track")
-            val author = json.optString("author_name", "")
-            return Pair(title, listOf(ImportTrackMeta(title, author)))
+            if (jsonStr.isNotBlank() && jsonStr.startsWith("{")) {
+                val json = JSONObject(jsonStr)
+                val title = json.optString("title", "Spotify Track")
+                val author = json.optString("author_name", "")
+                return Pair(title, listOf(ImportTrackMeta(title, author)))
+            }
         }
 
-        // Playlist or Album via Embed
-        val embedUrl = if (isPlaylist) {
-            val id = cleanUrl.substringAfterLast("/")
-            "https://open.spotify.com/embed/playlist/$id"
-        } else if (isAlbum) {
-            val id = cleanUrl.substringAfterLast("/")
+        val embedUrl = if (isAlbum) {
             "https://open.spotify.com/embed/album/$id"
         } else {
-            cleanUrl
+            "https://open.spotify.com/embed/playlist/$id"
         }
 
         val html = httpGet(embedUrl)
 
-        // Extract Title from HTML or NEXT_DATA
         var playlistTitle = "Spotify Playlist"
         val tracks = mutableListOf<ImportTrackMeta>()
 
+        // 1. __NEXT_DATA__ JSON blob
         val nextDataPattern = Pattern.compile("<script id=\"__NEXT_DATA__\"[^>]*>(.*?)</script>", Pattern.DOTALL)
         val matcher = nextDataPattern.matcher(html)
         if (matcher.find()) {
@@ -186,12 +185,21 @@ object MusicImportEngine {
             }
         }
 
-        // Fallback title / track extraction if __NEXT_DATA__ is absent
+        // 2. Fallback to oEmbed for playlist title
         if (tracks.isEmpty()) {
-            val titleMatcher = Pattern.compile("<title>([^<]+)</title>", Pattern.CASE_INSENSITIVE).matcher(html)
-            if (titleMatcher.find()) {
-                playlistTitle = titleMatcher.group(1)?.replace(" | Spotify", "")?.replace("Spotify – ", "")?.trim() ?: "Spotify Playlist"
-            }
+            try {
+                val oembedUrl = "https://open.spotify.com/oembed?url=" + java.net.URLEncoder.encode("https://open.spotify.com/playlist/$id", "UTF-8")
+                val oembedJson = httpGet(oembedUrl)
+                if (oembedJson.isNotBlank() && oembedJson.startsWith("{")) {
+                    val obj = JSONObject(oembedJson)
+                    val t = obj.optString("title")
+                    if (t.isNotBlank()) playlistTitle = t
+                }
+            } catch (e: Exception) {}
+        }
+
+        // 3. Fallback regex match for title/subtitle in HTML
+        if (tracks.isEmpty()) {
             val trackRegex = Pattern.compile("\"title\":\"([^\"]+)\"[^}]*?\"subtitle\":\"([^\"]+)\"")
             val trMatcher = trackRegex.matcher(html)
             while (trMatcher.find()) {
@@ -482,15 +490,21 @@ object MusicImportEngine {
     }
 
     private fun httpGet(urlStr: String): String {
-        val url = URL(urlStr)
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 8000
-            readTimeout = 8000
-            setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-            setRequestProperty("Accept", "text/html,application/json,*/*")
-            setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+        return try {
+            val url = URL(urlStr)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 10000
+                readTimeout = 10000
+                instanceFollowRedirects = true
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+            }
+            val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream ?: return ""
+            stream.bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            ""
         }
-        return conn.inputStream.bufferedReader().use { it.readText() }
     }
 }

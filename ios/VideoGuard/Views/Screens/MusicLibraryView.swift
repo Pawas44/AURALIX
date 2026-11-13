@@ -538,8 +538,8 @@ struct MusicLibraryView: View {
 
         let authUrlStr: String = {
             switch service {
-            case "Spotify": return "https://open.spotify.com"
-            case "Amazon Music": return "https://music.amazon.com"
+            case "Spotify": return "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
+            case "Amazon Music": return "https://www.amazon.com/ap/signin?openid.return_to=https%3A%2F%2Fmusic.amazon.com"
             default: return "https://www.tunemymusic.com"
             }
         }()
