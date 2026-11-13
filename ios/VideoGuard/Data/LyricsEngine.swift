@@ -126,7 +126,7 @@ final class LyricsEngine {
         if !synced.isEmpty {
             let lines = parseLrcText(synced)
             if !lines.isEmpty {
-                return LyricsResult(lines = lines, plainLyrics = plain, isSynced = true)
+                return LyricsResult(lines: lines, plainLyrics: plain, isSynced: true)
             }
         }
 
@@ -137,7 +137,7 @@ final class LyricsEngine {
                 guard !trimmed.isEmpty else { return nil }
                 return LyricLine(timestampMs: Double(idx * 3000), text: trimmed)
             }
-            return LyricsResult(lines = parsedLines, plainLyrics = plain, isSynced = false)
+            return LyricsResult(lines: parsedLines, plainLyrics: plain, isSynced: false)
         }
 
         return nil
