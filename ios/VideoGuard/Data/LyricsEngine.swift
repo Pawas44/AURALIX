@@ -37,41 +37,31 @@ final class LyricsEngine {
 
         var result: LyricsResult? = nil
 
-        // 1. Try LRCLib direct get endpoint
-        if let encTitle = cleanTitle.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-           let encArtist = cleanArtist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
-            var urlStr = "https://lrclib.net/api/get?track_name=\(encTitle)&artist_name=\(encArtist)"
-            if durationSeconds > 0 {
-                urlStr += "&duration=\(durationSeconds)"
-            }
-            if let url = URL(string: urlStr) {
-                var req = URLRequest(url: url, timeoutInterval: 5.0)
-                req.setValue("AURALIX-Music/1.0 (https://github.com/Pawas44/AURALIX)", forHTTPHeaderField: "User-Agent")
-                if let (data, response) = try? await URLSession.shared.data(for: req),
-                   let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200,
-                   let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
-                    result = parseLrcResponse(json)
-                }
+        // 1. Direct LRCLib GET endpoint
+        result = await tryGetLrc(title: cleanTitle, artist: cleanArtist, duration: durationSeconds)
+
+        // 1b. If YouTube title has "Artist - Track" format
+        if (result == nil || result?.lines.isEmpty == true) && trackTitle.contains(" - ") {
+            let parts = trackTitle.components(separatedBy: " - ")
+            if parts.count >= 2 {
+                let guessedArtist = cleanArtistName(parts[0])
+                let guessedTitle = cleanTrackName(parts[1])
+                result = await tryGetLrc(title: guessedTitle, artist: guessedArtist, duration: durationSeconds)
             }
         }
 
-        // 2. Fallback to LRCLib search endpoint
+        // 2. LRCLib Search: query = title + artist
         if result == nil || result?.lines.isEmpty == true {
-            let query = "\(cleanTitle) \(cleanArtist)".trimmingCharacters(in: .whitespacesAndNewlines)
-            if let encQ = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-               let searchUrl = URL(string: "https://lrclib.net/api/search?q=\(encQ)") {
-                var req = URLRequest(url: searchUrl, timeoutInterval: 5.0)
-                req.setValue("AURALIX-Music/1.0 (https://github.com/Pawas44/AURALIX)", forHTTPHeaderField: "User-Agent")
-                if let (data, response) = try? await URLSession.shared.data(for: req),
-                   let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200,
-                   let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] {
-                    for item in arr {
-                        if let parsed = parseLrcResponse(item), (parsed.isSynced || !parsed.plainLyrics.isEmpty) {
-                            result = parsed
-                            break
-                        }
-                    }
-                }
+            let q = "\(cleanTitle) \(cleanArtist)".trimmingCharacters(in: .whitespacesAndNewlines)
+            if !q.isEmpty {
+                result = await trySearchLrc(query: q)
+            }
+        }
+
+        // 3. LRCLib Search: query = title alone
+        if result == nil || result?.lines.isEmpty == true {
+            if !cleanTitle.isEmpty {
+                result = await trySearchLrc(query: cleanTitle)
             }
         }
 
@@ -82,6 +72,53 @@ final class LyricsEngine {
         return result
     }
 
+    private func tryGetLrc(title: String, artist: String, duration: Int) async -> LyricsResult? {
+        guard !title.isEmpty,
+              let encTitle = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let encArtist = artist.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return nil
+        }
+        var urlStr = "https://lrclib.net/api/get?track_name=\(encTitle)&artist_name=\(encArtist)"
+        if duration > 0 {
+            urlStr += "&duration=\(duration)"
+        }
+        guard let url = URL(string: urlStr) else { return nil }
+
+        var req = URLRequest(url: url, timeoutInterval: 5.0)
+        req.setValue("AURALIX-Music/1.0 (https://github.com/Pawas44/AURALIX)", forHTTPHeaderField: "User-Agent")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: req),
+              let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200,
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return nil
+        }
+        return parseLrcResponse(json)
+    }
+
+    private func trySearchLrc(query: String) async -> LyricsResult? {
+        guard !query.isEmpty,
+              let encQ = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://lrclib.net/api/search?q=\(encQ)") else {
+            return nil
+        }
+
+        var req = URLRequest(url: url, timeoutInterval: 5.0)
+        req.setValue("AURALIX-Music/1.0 (https://github.com/Pawas44/AURALIX)", forHTTPHeaderField: "User-Agent")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: req),
+              let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200,
+              let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
+            return nil
+        }
+
+        for item in arr {
+            if let parsed = parseLrcResponse(item), (parsed.isSynced || !parsed.plainLyrics.isEmpty) {
+                return parsed
+            }
+        }
+        return nil
+    }
+
     private func parseLrcResponse(_ json: [String: Any]) -> LyricsResult? {
         let synced = (json["syncedLyrics"] as? String) ?? ""
         let plain = (json["plainLyrics"] as? String) ?? ""
@@ -89,7 +126,7 @@ final class LyricsEngine {
         if !synced.isEmpty {
             let lines = parseLrcText(synced)
             if !lines.isEmpty {
-                return LyricsResult(lines: lines, plainLyrics: plain, isSynced: true)
+                return LyricsResult(lines = lines, plainLyrics = plain, isSynced = true)
             }
         }
 
@@ -100,7 +137,7 @@ final class LyricsEngine {
                 guard !trimmed.isEmpty else { return nil }
                 return LyricLine(timestampMs: Double(idx * 3000), text: trimmed)
             }
-            return LyricsResult(lines: parsedLines, plainLyrics: plain, isSynced: false)
+            return LyricsResult(lines = parsedLines, plainLyrics = plain, isSynced = false)
         }
 
         return nil
@@ -133,24 +170,38 @@ final class LyricsEngine {
 
     private func cleanTrackName(_ name: String) -> String {
         var res = name
-        // Remove bracketed info like [Official Video], (Remix), etc.
+        // Remove bracketed info
         if let regex = try? NSRegularExpression(pattern: "(?i)\\[.*?\\]|\\(.*?\\)") {
             res = regex.stringByReplacingMatches(in: res, range: NSRange(location: 0, length: (res as NSString).length), withTemplate: "")
         }
-        // Remove ft. / feat.
-        if let regex = try? NSRegularExpression(pattern: "(?i)ft\\..*|feat\\..*") {
-            res = regex.stringByReplacingMatches(in: res, range: NSRange(location: 0, length: (res as NSString).length), withTemplate: "")
-        }
         // Remove boilerplate keywords
-        if let regex = try? NSRegularExpression(pattern: "(?i)official video|music video|lyric video|audio") {
+        if let regex = try? NSRegularExpression(pattern: "(?i)\\b(official music video|official video|music video|lyric video|visualizer|official audio|audio|video|4k|hd|remastered|lyrics|prod\\. by.*)\\b") {
             res = regex.stringByReplacingMatches(in: res, range: NSRange(location: 0, length: (res as NSString).length), withTemplate: "")
         }
-        return res.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Remove feat.
+        if let regex = try? NSRegularExpression(pattern: "(?i)\\b(ft\\.?|feat\\.?|featuring)\\s+[^|\\-]+") {
+            res = regex.stringByReplacingMatches(in: res, range: NSRange(location: 0, length: (res as NSString).length), withTemplate: "")
+        }
+        // Remove pipe
+        if let regex = try? NSRegularExpression(pattern: "\\|.*$") {
+            res = regex.stringByReplacingMatches(in: res, range: NSRange(location: 0, length: (res as NSString).length), withTemplate: "")
+        }
+        res = res.trimmingCharacters(in: .whitespacesAndNewlines)
+        if res.contains(" - ") {
+            let parts = res.components(separatedBy: " - ")
+            if parts.count >= 2 {
+                res = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        return res.trimmingCharacters(in: CharacterSet(charactersIn: "\"' \t\n"))
     }
 
     private func cleanArtistName(_ name: String) -> String {
         var res = name
         if let regex = try? NSRegularExpression(pattern: "(?i) - Topic|Official|VEVO") {
+            res = regex.stringByReplacingMatches(in: res, range: NSRange(location: 0, length: (res as NSString).length), withTemplate: "")
+        }
+        if let regex = try? NSRegularExpression(pattern: "(?i)\\[.*?\\]|\\(.*?\\)") {
             res = regex.stringByReplacingMatches(in: res, range: NSRange(location: 0, length: (res as NSString).length), withTemplate: "")
         }
         return res.trimmingCharacters(in: .whitespacesAndNewlines)

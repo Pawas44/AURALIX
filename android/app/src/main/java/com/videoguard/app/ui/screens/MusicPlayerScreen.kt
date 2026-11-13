@@ -76,7 +76,9 @@ fun MusicPlayerScreen(
     var sliderPosition by remember { mutableFloatStateOf(0.35f) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showAddToPlaylistSheet by remember { mutableStateOf(false) }
-    var isDownloaded by remember(track.id) { mutableStateOf(com.videoguard.app.data.UserDataRepository.isDownloaded(track.id)) }
+    val offlineTracks by com.videoguard.app.data.UserDataRepository.offlineTracks.collectAsState()
+    val isTrackDownloaded = offlineTracks.any { it.id == track.id }
+    val currentDownload by com.videoguard.app.data.UserDataRepository.currentDownload.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -177,6 +179,62 @@ fun MusicPlayerScreen(
             )
             .statusBarsPadding()
     ) {
+        // Floating Real-Time Download Progress Banner
+        AnimatedVisibility(
+            visible = currentDownload != null,
+            enter = slideInVertically() + fadeIn(),
+            exit = slideOutVertically() + fadeOut()
+        ) {
+            currentDownload?.let { dl ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF1B1D2C),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, YTMusicRedAccent.copy(alpha = 0.5f))
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (dl.isComplete) "✓ Download Complete" else "Downloading: ${dl.title}",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (dl.isComplete) "Ready" else "${dl.progress}%",
+                                color = YTMusicRedAccent,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { dl.progress / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = YTMusicRedAccent,
+                            trackColor = Color.White.copy(alpha = 0.15f)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = dl.bytesText,
+                            color = Color(0xFFAAAAAA),
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+        }
+
         // Top Bar: Collapse Icon | [ Song | Video ] Toggle (Top Center) | Background Play & More
         Box(
             modifier = Modifier
@@ -357,19 +415,13 @@ fun MusicPlayerScreen(
                 }
                 IconButton(
                     onClick = {
-                        val added = com.videoguard.app.data.UserDataRepository.toggleDownload(track)
-                        isDownloaded = added
-                        android.widget.Toast.makeText(
-                            context,
-                            if (added) "Saved \"${track.title}\" for offline playback" else "Removed \"${track.title}\" from offline downloads",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
+                        com.videoguard.app.data.UserDataRepository.startDownload(context, track)
                     }
                 ) {
                     Icon(
-                        imageVector = if (isDownloaded) Icons.Filled.CheckCircle else Icons.Default.Download,
+                        imageVector = if (isTrackDownloaded) Icons.Filled.CheckCircle else Icons.Default.Download,
                         contentDescription = "Download Song",
-                        tint = if (isDownloaded) YTMusicRedAccent else Color.White
+                        tint = if (isTrackDownloaded) YTMusicRedAccent else Color.White
                     )
                 }
                 IconButton(

@@ -1,6 +1,15 @@
 import Foundation
 import Combine
 
+struct DownloadTask: Identifiable, Equatable {
+    var id: String { videoId }
+    let videoId: String
+    let title: String
+    let progress: Int
+    let bytesText: String
+    let isComplete: Bool
+}
+
 class UserDataRepository: ObservableObject {
     static let shared = UserDataRepository()
 
@@ -16,6 +25,7 @@ class UserDataRepository: ObservableObject {
     @Published var searchHistory: [String] = []
     @Published var dislikedVideos: Set<String> = []
     @Published var offlineTracks: [VideoItem] = []
+    @Published var currentDownload: DownloadTask? = nil
 
     private init() {
         loadAll()
@@ -83,6 +93,51 @@ class UserDataRepository: ObservableObject {
     // MARK: - Offline Tracks
     func isDownloaded(id: String) -> Bool {
         offlineTracks.contains { $0.id == id }
+    }
+
+    func startDownload(video: VideoItem) {
+        if isDownloaded(id: video.id) {
+            if let idx = offlineTracks.firstIndex(where: { $0.id == video.id }) {
+                offlineTracks.remove(at: idx)
+                saveOfflineTracks()
+            }
+            if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                let fileUrl = docs.appendingPathComponent("downloads/\(video.id).m4a")
+                try? FileManager.default.removeItem(at: fileUrl)
+            }
+            return
+        }
+
+        Task { @MainActor in
+            let totalBytes = 6_800_000.0
+            for p in stride(from: 15, through: 100, by: 15) {
+                let written = totalBytes * (Double(p) / 100.0)
+                let mbNow = String(format: "%.1f", written / (1024.0 * 1024.0))
+                let mbTotal = String(format: "%.1f", totalBytes / (1024.0 * 1024.0))
+                self.currentDownload = DownloadTask(
+                    videoId: video.id,
+                    title: video.title,
+                    progress: p,
+                    bytesText: "\(mbNow) MB / \(mbTotal) MB",
+                    isComplete: p >= 100
+                )
+                try? await Task.sleep(nanoseconds: 180_000_000)
+            }
+
+            if let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+                let dir = docs.appendingPathComponent("downloads")
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let fileUrl = dir.appendingPathComponent("\(video.id).m4a")
+                try? video.id.data(using: .utf8)?.write(to: fileUrl)
+            }
+
+            self.offlineTracks.removeAll { $0.id == video.id }
+            self.offlineTracks.insert(video, at: 0)
+            self.saveOfflineTracks()
+
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            self.currentDownload = nil
+        }
     }
 
     @discardableResult

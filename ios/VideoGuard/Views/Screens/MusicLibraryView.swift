@@ -95,17 +95,6 @@ struct MusicLibraryView: View {
 
                             Divider().background(Color.white.opacity(0.08))
 
-                            // Apple Music
-                            importServiceRow(
-                                title: "Apple Music",
-                                brandColor: Color(hex: 0xFA243C),
-                                iconName: "music.note"
-                            ) {
-                                openServiceImport(service: "Apple Music")
-                            }
-
-                            Divider().background(Color.white.opacity(0.08))
-
                             // Amazon Music
                             importServiceRow(
                                 title: "Amazon Music",
@@ -542,7 +531,6 @@ struct MusicLibraryView: View {
         let brandColor: Color = {
             switch service {
             case "Spotify": return Color(hex: 0x1DB954)
-            case "Apple Music": return Color(hex: 0xFA243C)
             case "Amazon Music": return Color(hex: 0x00A8E1)
             default: return AppTheme.ytMusicRedAccent
             }
@@ -551,7 +539,6 @@ struct MusicLibraryView: View {
         let authUrlStr: String = {
             switch service {
             case "Spotify": return "https://open.spotify.com"
-            case "Apple Music": return "https://music.apple.com"
             case "Amazon Music": return "https://music.amazon.com"
             default: return "https://www.tunemymusic.com"
             }
@@ -859,8 +846,9 @@ struct InAppWKWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.defaultWebpagePreferences.allowsContentJavaScript = true
+        config.websiteDataStore = WKWebsiteDataStore.default()
         let webView = WKWebView(frame: .zero, configuration: config)
-        webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
         webView.navigationDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         DispatchQueue.main.async {

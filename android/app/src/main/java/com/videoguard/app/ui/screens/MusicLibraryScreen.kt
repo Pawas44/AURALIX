@@ -223,25 +223,7 @@ fun MusicLibraryScreen(
                                 modifier = Modifier.padding(vertical = 4.dp)
                             )
 
-                            // 2. Apple Music
-                            ServiceRow(
-                                title = "Apple Music",
-                                brandColor = Color(0xFFFA243C),
-                                icon = Icons.Default.MusicNote,
-                                onClick = {
-                                    selectedImportService = "Apple Music"
-                                    importUrlInput = ""
-                                    importProgress = null
-                                    importedPlaylistResult = null
-                                }
-                            )
-
-                            HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.07f),
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
-
-                            // 3. Amazon Music
+                            // 2. Amazon Music
                             ServiceRow(
                                 title = "Amazon Music",
                                 brandColor = Color(0xFF00A8E1),
@@ -809,14 +791,12 @@ fun MusicLibraryScreen(
     if (currentService != null) {
         val brandColor = when (currentService) {
             "Spotify" -> Color(0xFF1DB954)
-            "Apple Music" -> Color(0xFFFA243C)
             "Amazon Music" -> Color(0xFF00A8E1)
             else -> YTMusicRedAccent
         }
 
         val authUrl = when (currentService) {
             "Spotify" -> "https://open.spotify.com"
-            "Apple Music" -> "https://music.apple.com"
             "Amazon Music" -> "https://music.amazon.com"
             else -> "https://www.tunemymusic.com"
         }
@@ -907,7 +887,6 @@ fun MusicLibraryScreen(
                             Text(
                                 text = when (currentService) {
                                     "Spotify" -> "https://open.spotify.com/playlist/..."
-                                    "Apple Music" -> "https://music.apple.com/.../playlist/..."
                                     else -> "https://music.amazon.com/playlists/..."
                                 },
                                 fontSize = 12.sp,
@@ -1125,9 +1104,14 @@ fun MusicLibraryScreen(
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
                                 settings.databaseEnabled = true
+                                settings.useWideViewPort = true
+                                settings.loadWithOverviewMode = true
+                                settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
                                 settings.javaScriptCanOpenWindowsAutomatically = true
                                 settings.setSupportMultipleWindows(true)
-                                settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+                                settings.userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                                webChromeClient = android.webkit.WebChromeClient()
                                 android.webkit.CookieManager.getInstance().setAcceptCookie(true)
                                 android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                                 webViewClient = object : WebViewClient() {

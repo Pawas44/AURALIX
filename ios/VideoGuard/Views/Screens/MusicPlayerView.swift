@@ -147,9 +147,7 @@ struct MusicPlayerView: View {
                         }
 
                         Button(action: {
-                            let added = userData.toggleDownload(video: track)
-                            isDownloaded = added
-                            downloadToastText = added ? "Saved \"\(track.title)\" for offline playback" : "Removed from offline downloads"
+                            userData.startDownload(video: track)
                         }) {
                             Image(systemName: userData.isDownloaded(id: track.id) ? "checkmark.circle.fill" : "arrow.down.circle")
                                 .font(.system(size: 20))
@@ -242,22 +240,50 @@ struct MusicPlayerView: View {
             }
         }
         .overlay(alignment: .top) {
-            if let msg = downloadToastText {
-                Text(msg)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Color.black.opacity(0.85))
-                    .cornerRadius(20)
-                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.2), lineWidth: 1))
-                    .padding(.top, 60)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .task {
-                        try? await Task.sleep(nanoseconds: 2_500_000_000)
-                        withAnimation { downloadToastText = nil }
+            VStack(spacing: 8) {
+                if let dl = userData.currentDownload {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(dl.isComplete ? "✓ Download Complete" : "Downloading: \(dl.title)")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                            Spacer()
+                            Text(dl.isComplete ? "Ready" : "\(dl.progress)%")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(AppTheme.ytMusicRedAccent)
+                        }
+                        ProgressView(value: Double(dl.progress), total: 100.0)
+                            .tint(AppTheme.ytMusicRedAccent)
+                        Text(dl.bytesText)
+                            .font(.system(size: 10))
+                            .foregroundColor(Color.gray)
                     }
+                    .padding(12)
+                    .background(Color(hex: 0x161824))
+                    .cornerRadius(12)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppTheme.ytMusicRedAccent.opacity(0.4), lineWidth: 1))
+                    .padding(.horizontal, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
+                if let msg = downloadToastText {
+                    Text(msg)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.black.opacity(0.85))
+                        .cornerRadius(20)
+                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .task {
+                            try? await Task.sleep(nanoseconds: 2_500_000_000)
+                            withAnimation { downloadToastText = nil }
+                        }
+                }
             }
+            .padding(.top, 50)
         }
         .task(id: track.id) {
             if playbackService.playbackQueue.count <= 1 {
