@@ -676,17 +676,6 @@ struct MusicLibraryView: View {
                             .stroke(Color.white.opacity(0.15), lineWidth: 1)
                     )
                 }
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(brandColor)
-                        Text("⚡ Sync via TuneMyMusic (Official)")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(brandColor.opacity(0.6), lineWidth: 1))
-                }
 
                 HStack {
                     Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
