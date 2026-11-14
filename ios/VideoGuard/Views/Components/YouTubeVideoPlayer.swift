@@ -235,11 +235,45 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
             window.userWantsPlay = true;
             window.isLoadingNewVideo = false;
             window.currentVideoId = '\(videoId)';
+            window.pendingSeekTime = null;
+            window.lastSeekTimestamp = 0;
 
             function postBridge(payload) {
               try {
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iOSBridge) {
                   window.webkit.messageHandlers.iOSBridge.postMessage(payload);
+                }
+              } catch(e) {}
+            }
+
+            function stopVideo() {
+              window.userWantsPlay = false;
+              window.isLoadingNewVideo = false;
+              window.pendingSeekTime = null;
+              try {
+                if (window.ytPlayer && typeof window.ytPlayer.stopVideo === 'function') {
+                  window.ytPlayer.stopVideo();
+                } else if (window.ytPlayer && typeof window.ytPlayer.pauseVideo === 'function') {
+                  window.ytPlayer.pauseVideo();
+                }
+                var vids = document.getElementsByTagName('video');
+                for (var i = 0; i < vids.length; i++) {
+                  vids[i].pause();
+                  vids[i].currentTime = 0;
+                }
+              } catch(e) {}
+            }
+
+            function pauseVideo() {
+              window.userWantsPlay = false;
+              window.isLoadingNewVideo = false;
+              try {
+                if (window.ytPlayer && typeof window.ytPlayer.pauseVideo === 'function') {
+                  window.ytPlayer.pauseVideo();
+                }
+                var vids = document.getElementsByTagName('video');
+                for (var i = 0; i < vids.length; i++) {
+                  vids[i].pause();
                 }
               } catch(e) {}
             }
@@ -319,6 +353,8 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
             }
 
             function seekTo(seconds) {
+              window.pendingSeekTime = seconds;
+              window.lastSeekTimestamp = Date.now();
               if (window.ytPlayer && window.ytPlayer.seekTo) {
                 window.ytPlayer.seekTo(seconds, true);
               }
@@ -327,7 +363,10 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
             function seekBy(seconds) {
               if (window.ytPlayer && window.ytPlayer.getCurrentTime && window.ytPlayer.seekTo) {
                 var cur = window.ytPlayer.getCurrentTime();
-                window.ytPlayer.seekTo(cur + seconds, true);
+                var target = cur + seconds;
+                window.pendingSeekTime = target;
+                window.lastSeekTimestamp = Date.now();
+                window.ytPlayer.seekTo(target, true);
               }
             }
 
@@ -363,6 +402,17 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
                   var cur = window.ytPlayer.getCurrentTime();
                   var dur = window.ytPlayer.getDuration();
                   if (typeof cur === 'number' && typeof dur === 'number' && !isNaN(cur) && !isNaN(dur) && cur >= 0) {
+                    if (window.pendingSeekTime !== null) {
+                      var elapsedSeek = Date.now() - window.lastSeekTimestamp;
+                      if (elapsedSeek < 1800) {
+                        if (Math.abs(cur - window.pendingSeekTime) > 2.0) {
+                          return;
+                        }
+                        window.pendingSeekTime = null;
+                      } else {
+                        window.pendingSeekTime = null;
+                      }
+                    }
                     postBridge({ event: 'onTimeUpdate', currentTime: cur, duration: dur });
                   }
                 } catch(e) {}

@@ -158,12 +158,11 @@ fun VideoDetailScreen(
                 .pointerInput(Unit) {
                     detectVerticalDragGestures(
                         onVerticalDrag = { change, dragAmount ->
-                            if (dragAmount > 0f) {
-                                change.consume()
-                                onSwipeDownDelta(dragAmount)
-                            }
+                            change.consume()
+                            onSwipeDownDelta(dragAmount)
                         },
-                        onDragEnd = { onSwipeDownRelease(0f) }
+                        onDragEnd = { onSwipeDownRelease(0f) },
+                        onDragCancel = { onSwipeDownRelease(0f) }
                     )
                 }
         )
@@ -175,23 +174,22 @@ fun VideoDetailScreen(
                 .pointerInput(Unit) {
                     detectVerticalDragGestures(
                         onVerticalDrag = { change, dragAmount ->
-                            if (dragAmount > 0f) {
-                                change.consume()
-                                onSwipeDownDelta(dragAmount)
-                            }
+                            change.consume()
+                            onSwipeDownDelta(dragAmount)
                         },
-                        onDragEnd = { onSwipeDownRelease(0f) }
+                        onDragEnd = { onSwipeDownRelease(0f) },
+                        onDragCancel = { onSwipeDownRelease(0f) }
                     )
                 }
-                .padding(top = 4.dp, bottom = 4.dp),
+                .padding(top = 6.dp, bottom = 6.dp),
             contentAlignment = Alignment.Center
         ) {
             Box(
                 modifier = Modifier
-                    .width(36.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(Color.White.copy(alpha = 0.35f))
+                    .width(42.dp)
+                    .height(5.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color.White.copy(alpha = 0.4f))
             )
         }
 

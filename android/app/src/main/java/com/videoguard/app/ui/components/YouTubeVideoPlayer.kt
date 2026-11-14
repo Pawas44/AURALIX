@@ -282,6 +282,8 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             window.userWantsPlay = true;
             window.isLoadingNewVideo = false;
             window.currentVideoId = '$videoId';
+            window.pendingSeekTime = null;
+            window.lastSeekTimestamp = 0;
 
             try {
               Object.defineProperty(document, 'hidden', { get: function() { return false; } });
@@ -292,6 +294,54 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               window.addEventListener('pagehide', function(e) { e.stopImmediatePropagation(); }, true);
               window.addEventListener('blur', function(e) { e.stopImmediatePropagation(); }, true);
             } catch(e) {}
+
+            function stopVideo() {
+              window.userWantsPlay = false;
+              window.isLoadingNewVideo = false;
+              window.pendingSeekTime = null;
+              try {
+                if (window.ytPlayer && typeof window.ytPlayer.stopVideo === 'function') {
+                  window.ytPlayer.stopVideo();
+                } else if (window.ytPlayer && typeof window.ytPlayer.pauseVideo === 'function') {
+                  window.ytPlayer.pauseVideo();
+                }
+                var vids = document.getElementsByTagName('video');
+                for (var i = 0; i < vids.length; i++) {
+                  vids[i].pause();
+                  vids[i].currentTime = 0;
+                }
+                var iframe = document.getElementById('player');
+                if (iframe && iframe.contentWindow) {
+                  iframe.contentWindow.postMessage(JSON.stringify({
+                    "event": "command",
+                    "func": "stopVideo",
+                    "args": ""
+                  }), '*');
+                }
+              } catch(e) {}
+            }
+
+            function pauseVideo() {
+              window.userWantsPlay = false;
+              window.isLoadingNewVideo = false;
+              try {
+                if (window.ytPlayer && typeof window.ytPlayer.pauseVideo === 'function') {
+                  window.ytPlayer.pauseVideo();
+                }
+                var vids = document.getElementsByTagName('video');
+                for (var i = 0; i < vids.length; i++) {
+                  vids[i].pause();
+                }
+                var iframe = document.getElementById('player');
+                if (iframe && iframe.contentWindow) {
+                  iframe.contentWindow.postMessage(JSON.stringify({
+                    "event": "command",
+                    "func": "pauseVideo",
+                    "args": ""
+                  }), '*');
+                }
+              } catch(e) {}
+            }
 
             function setPlaybackState(play) {
               window.userWantsPlay = play;
@@ -366,6 +416,8 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             }
 
             function seekTo(seconds) {
+              window.pendingSeekTime = seconds;
+              window.lastSeekTimestamp = Date.now();
               if (window.ytPlayer && window.ytPlayer.seekTo) {
                 window.ytPlayer.seekTo(seconds, true);
               }
@@ -374,7 +426,10 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             function seekBy(seconds) {
               if (window.ytPlayer && window.ytPlayer.getCurrentTime && window.ytPlayer.seekTo) {
                 var cur = window.ytPlayer.getCurrentTime();
-                window.ytPlayer.seekTo(cur + seconds, true);
+                var target = cur + seconds;
+                window.pendingSeekTime = target;
+                window.lastSeekTimestamp = Date.now();
+                window.ytPlayer.seekTo(target, true);
               }
             }
 
@@ -530,6 +585,17 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                   var cur = window.ytPlayer.getCurrentTime();
                   var dur = window.ytPlayer.getDuration();
                   if (typeof cur === 'number' && typeof dur === 'number' && !isNaN(cur) && !isNaN(dur) && cur >= 0 && dur > 0) {
+                    if (window.pendingSeekTime !== null) {
+                      var elapsedSeek = Date.now() - window.lastSeekTimestamp;
+                      if (elapsedSeek < 1800) {
+                        if (Math.abs(cur - window.pendingSeekTime) > 2.0) {
+                          return; // Still seeking/buffering, suppress stale timestamp jump
+                        }
+                        window.pendingSeekTime = null;
+                      } else {
+                        window.pendingSeekTime = null;
+                      }
+                    }
                     if (window.AndroidBridge && window.AndroidBridge.onTimeUpdate) {
                       window.AndroidBridge.onTimeUpdate(cur, dur);
                     }

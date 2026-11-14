@@ -200,6 +200,55 @@ object UserDataRepository {
     // --- Offline Tracks Management ---
     fun isDownloaded(id: String): Boolean = _offlineTracks.value.any { it.id == id }
 
+    fun formatCombinedDuration(tracks: List<VideoItem>): String {
+        var totalSeconds = 0L
+        for (t in tracks) {
+            val parts = t.duration.trim().split(":").mapNotNull { it.toIntOrNull() }
+            val sec = when (parts.size) {
+                2 -> parts[0] * 60L + parts[1]
+                3 -> parts[0] * 3600L + parts[1] * 60L + parts[2]
+                else -> 0L
+            }
+            totalSeconds += sec
+        }
+        if (totalSeconds <= 0L) return "0 min"
+        val hours = totalSeconds / 3600
+        val minutes = (totalSeconds % 3600) / 60
+        return when {
+            hours > 0 && minutes > 0 -> "$hours hr $minutes min"
+            hours > 0 -> "$hours hr"
+            else -> "$minutes min"
+        }
+    }
+
+    fun getDownloadsPlaylist(): UserPlaylist {
+        val tracks = _offlineTracks.value
+        return UserPlaylist(
+            id = "downloads",
+            title = "Downloads",
+            description = "Offline downloaded songs",
+            videos = tracks,
+            isSystem = true,
+            iconType = "download",
+            customCoverUrl = tracks.firstOrNull()?.thumbnailUrl
+        )
+    }
+
+    fun deleteDownload(context: Context, videoId: String) {
+        val current = _offlineTracks.value.toMutableList()
+        val removed = current.removeAll { it.id == videoId }
+        if (removed) {
+            _offlineTracks.value = current
+            saveOfflineTracks()
+            try {
+                val f = File(context.filesDir, "downloads/$videoId.m4a")
+                if (f.exists()) f.delete()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
     fun fetchRealVideoMeta(videoId: String): Triple<String, String, String>? {
         if (videoId.isBlank()) return null
         return try {

@@ -180,8 +180,23 @@ fun MusicPlayerScreen(
     val duration by com.videoguard.app.service.PlaybackController.durationSeconds.collectAsState()
     var isUserScrubbing by remember { mutableStateOf(false) }
     var scrubPosition by remember { mutableFloatStateOf(0f) }
+    var optimisticScrubTarget by remember { mutableStateOf<Float?>(null) }
+    var optimisticScrubTimeMs by remember { mutableLongStateOf(0L) }
 
-    val currentSeconds = if (isUserScrubbing) scrubPosition else currentTime
+    val currentSeconds = when {
+        isUserScrubbing -> scrubPosition
+        optimisticScrubTarget != null -> {
+            val target = optimisticScrubTarget!!
+            val elapsed = System.currentTimeMillis() - optimisticScrubTimeMs
+            if (elapsed < 1600L && kotlin.math.abs(currentTime - target) > 1.5f) {
+                target
+            } else {
+                optimisticScrubTarget = null
+                currentTime
+            }
+        }
+        else -> currentTime
+    }
     val maxSeconds = if (duration > 0f) duration else 100f
     val sliderProgress = (currentSeconds / maxSeconds).coerceIn(0f, 1f)
 
@@ -307,28 +322,27 @@ fun MusicPlayerScreen(
                 .pointerInput(Unit) {
                     detectVerticalDragGestures(
                         onVerticalDrag = { change, dragAmount ->
-                            if (dragAmount > 0f) {
-                                change.consume()
-                                onSwipeDownDelta(dragAmount)
-                            }
+                            change.consume()
+                            onSwipeDownDelta(dragAmount)
                         },
-                        onDragEnd = { onSwipeDownRelease(0f) }
+                        onDragEnd = { onSwipeDownRelease(0f) },
+                        onDragCancel = { onSwipeDownRelease(0f) }
                     )
                 }
         ) {
-            // Top Drag Handle Indicator
+            // Top Drag Handle Indicator with generous touch target
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 4.dp, bottom = 2.dp),
+                    .padding(top = 8.dp, bottom = 6.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Box(
                     modifier = Modifier
-                        .width(36.dp)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color.White.copy(alpha = 0.35f))
+                        .width(42.dp)
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color.White.copy(alpha = 0.4f))
                 )
             }
         }
@@ -469,81 +483,97 @@ fun MusicPlayerScreen(
             }
         }
 
-        // Center Area: YouTube Music Artwork Carousel (Swipe left/right to change tracks)
-        HorizontalPager(
-            state = pagerState,
-            contentPadding = PaddingValues(horizontal = 38.dp),
-            pageSpacing = 16.dp,
+        // Center Area: YouTube Music Artwork Carousel (Swipe left/right to change tracks, drag down to minimize)
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-        ) { pageIndex ->
-            val itemTrack = activeQueue.getOrNull(pageIndex) ?: track
-            val pageOffset = abs((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction).coerceIn(0f, 1f)
-            val scale = 0.88f + (1f - 0.88f) * (1f - pageOffset)
-            val alpha = 0.45f + (1f - 0.45f) * (1f - pageOffset)
-            val itemPalette = remember(itemTrack.id) { getTrackPalette(itemTrack) }
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onVerticalDrag = { change, dragAmount ->
+                            if (dragAmount > 0f) {
+                                change.consume()
+                                onSwipeDownDelta(dragAmount)
+                            }
+                        },
+                        onDragEnd = { onSwipeDownRelease(0f) },
+                        onDragCancel = { onSwipeDownRelease(0f) }
+                    )
+                }
+        ) {
+            HorizontalPager(
+                state = pagerState,
+                contentPadding = PaddingValues(horizontal = 38.dp),
+                pageSpacing = 16.dp,
+                modifier = Modifier.fillMaxSize()
+            ) { pageIndex ->
+                val itemTrack = activeQueue.getOrNull(pageIndex) ?: track
+                val pageOffset = abs((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction).coerceIn(0f, 1f)
+                val scale = 0.88f + (1f - 0.88f) * (1f - pageOffset)
+                val alpha = 0.45f + (1f - 0.45f) * (1f - pageOffset)
+                val itemPalette = remember(itemTrack.id) { getTrackPalette(itemTrack) }
 
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .graphicsLayer {
-                                scaleX = scale
-                                scaleY = scale
-                                this.alpha = alpha
-                            }
-                            .shadow(
-                                elevation = (22 * (1f - pageOffset)).dp,
-                                shape = RoundedCornerShape(18.dp),
-                                spotColor = itemPalette.primary.copy(alpha = 0.65f)
-                            )
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(Color(0xFF161616))
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        AsyncImage(
-                            model = itemTrack.thumbnailUrl,
-                            contentDescription = itemTrack.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    // Audio visualizer bar when playing on the active page
-                    if (pageIndex == pagerState.currentPage && isPlaying) {
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.height(18.dp)
-                        ) {
-                            listOf(wave1, wave2, wave3, wave1 * 0.7f, wave2 * 0.9f).forEach { h ->
-                                Box(
-                                    modifier = Modifier
-                                        .width(3.5.dp)
-                                        .fillMaxHeight(h)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(YTMusicRedAccent)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(1f)
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                    this.alpha = alpha
+                                }
+                                .shadow(
+                                    elevation = (22 * (1f - pageOffset)).dp,
+                                    shape = RoundedCornerShape(18.dp),
+                                    spotColor = itemPalette.primary.copy(alpha = 0.65f)
                                 )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "High Quality Audio",
-                                color = Color(0xFFAAAAAA),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(Color(0xFF161616))
+                        ) {
+                            AsyncImage(
+                                model = itemTrack.thumbnailUrl,
+                                contentDescription = itemTrack.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
                             )
                         }
-                    } else {
-                        Spacer(modifier = Modifier.height(32.dp))
+
+                        // Audio visualizer bar when playing on the active page
+                        if (pageIndex == pagerState.currentPage && isPlaying) {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.height(18.dp)
+                            ) {
+                                listOf(wave1, wave2, wave3, wave1 * 0.7f, wave2 * 0.9f).forEach { h ->
+                                    Box(
+                                        modifier = Modifier
+                                            .width(3.5.dp)
+                                            .fillMaxHeight(h)
+                                            .clip(RoundedCornerShape(2.dp))
+                                            .background(YTMusicRedAccent)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "High Quality Audio",
+                                    color = Color(0xFFAAAAAA),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.height(32.dp))
+                        }
                     }
                 }
             }
@@ -636,6 +666,8 @@ fun MusicPlayerScreen(
                 },
                 onValueChangeFinished = {
                     isUserScrubbing = false
+                    optimisticScrubTarget = scrubPosition
+                    optimisticScrubTimeMs = System.currentTimeMillis()
                     com.videoguard.app.service.PlaybackController.seekTo(scrubPosition)
                 },
                 valueRange = 0f..maxSeconds,

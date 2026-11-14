@@ -294,6 +294,126 @@ fun MusicLibraryScreen(
                 }
             }
 
+            // 2b. Downloads Playlist Hero Card (Dedicated Music Library Playlist)
+            if (selectedFilter == "All" || selectedFilter == "Playlists" || selectedFilter == "Downloads") {
+                item {
+                    val downloadDurationStr = remember(offlineTracks) {
+                        UserDataRepository.formatCombinedDuration(offlineTracks)
+                    }
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                            .clickable {
+                                onPlaylistClick(UserDataRepository.getDownloadsPlaylist())
+                            },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF101918)),
+                        border = BorderStroke(1.dp, Color(0xFF40DCA5).copy(alpha = 0.35f))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = listOf(Color(0xFF107050), Color(0xFF0A4030))
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                val coverUrl = offlineTracks.firstOrNull()?.thumbnailUrl
+                                if (!coverUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = coverUrl,
+                                        contentDescription = "Downloads",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.35f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.DownloadDone,
+                                            contentDescription = "Downloads",
+                                            tint = Color(0xFF40DCA5),
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.DownloadDone,
+                                        contentDescription = "Downloads",
+                                        tint = Color(0xFF40DCA5),
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Downloads",
+                                    color = Color.White,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${offlineTracks.size} Songs • $downloadDurationStr • 100% Offline",
+                                    color = Color(0xFFAAAAAA),
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (offlineTracks.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = {
+                                            val shuffled = offlineTracks.shuffled()
+                                            onTrackSelected(shuffled.first(), shuffled)
+                                        },
+                                        modifier = Modifier.size(32.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Shuffle,
+                                            contentDescription = "Shuffle Downloads",
+                                            tint = Color(0xFFAAAAAA),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.PlayCircle,
+                                    contentDescription = "Play All Downloads",
+                                    tint = Color(0xFF40DCA5),
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clickable {
+                                            if (offlineTracks.isNotEmpty()) {
+                                                onTrackSelected(offlineTracks.first(), offlineTracks)
+                                            } else {
+                                                onPlaylistClick(UserDataRepository.getDownloadsPlaylist())
+                                            }
+                                        }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // 3. Recently Played Carousel
             if ((selectedFilter == "All" || selectedFilter == "Recently Played") && history.isNotEmpty()) {
                 item {
@@ -523,12 +643,19 @@ fun MusicLibraryScreen(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                         }
-                                        Icon(
-                                            imageVector = Icons.Filled.CheckCircle,
-                                            contentDescription = "Downloaded",
-                                            tint = YTMusicRedAccent,
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                        IconButton(
+                                            onClick = {
+                                                UserDataRepository.deleteDownload(context, track.id)
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.CheckCircle,
+                                                contentDescription = "Downloaded - Tap to remove",
+                                                tint = Color(0xFF40DCA5),
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }

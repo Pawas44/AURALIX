@@ -42,16 +42,35 @@ fun PlaylistDetailScreen(
     initialPlaylist: UserPlaylist? = null,
     modifier: Modifier = Modifier
 ) {
+    val isDownloads = playlistId == "downloads"
+    val offlineTracks by UserDataRepository.offlineTracks.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
     val playlists by UserDataRepository.playlists.collectAsState()
-    val repoPlaylist = playlists.find { it.id == playlistId }
+    val repoPlaylist = if (isDownloads) {
+        UserDataRepository.getDownloadsPlaylist()
+    } else {
+        playlists.find { it.id == playlistId }
+    }
     val playlist = repoPlaylist ?: initialPlaylist ?: UserPlaylist(
         id = playlistId,
-        title = "Playlist",
-        videos = emptyList()
+        title = if (isDownloads) "Downloads" else "Playlist",
+        videos = if (isDownloads) offlineTracks else emptyList(),
+        iconType = if (isDownloads) "download" else "playlist"
     )
 
-    var currentVideos by remember(playlistId) { mutableStateOf(playlist.videos) }
-    var isLoading by remember(playlistId) { mutableStateOf(playlist.videos.isEmpty()) }
+    val currentVideos = if (isDownloads) offlineTracks else {
+        var videos by remember(playlistId) { mutableStateOf(playlist.videos) }
+        LaunchedEffect(repoPlaylist?.videos) {
+            val updated = repoPlaylist?.videos
+            if (!updated.isNullOrEmpty()) {
+                videos = updated
+            }
+        }
+        videos
+    }
+
+    var isLoading by remember(playlistId) { mutableStateOf(!isDownloads && playlist.videos.isEmpty()) }
     var isRefreshing by remember(playlistId) { mutableStateOf(false) }
     var showAddSongsSheet by remember { mutableStateOf(false) }
     var addSongSearchQuery by remember { mutableStateOf("") }
@@ -59,17 +78,8 @@ fun PlaylistDetailScreen(
     var isSearchingAddSong by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // Keep currentVideos in sync with repository updates
-    LaunchedEffect(repoPlaylist?.videos) {
-        val updated = repoPlaylist?.videos
-        if (!updated.isNullOrEmpty()) {
-            currentVideos = updated
-            isLoading = false
-        }
-    }
-
     suspend fun refreshVideos() {
-        if (!playlistId.startsWith("PL") && playlistId != "liked_videos" && playlistId != "watch_later") {
+        if (isDownloads || (!playlistId.startsWith("PL") && playlistId != "liked_videos" && playlistId != "watch_later")) {
             isRefreshing = false
             isLoading = false
             return
@@ -79,7 +89,6 @@ fun PlaylistDetailScreen(
             YouTubeSyncEngine.fetchPlaylistVideos(playlistId)
         }
         if (online.isNotEmpty()) {
-            currentVideos = online
             when (playlistId) {
                 "liked_videos" -> UserDataRepository.updateLikedVideos(online)
                 "watch_later" -> UserDataRepository.updateWatchLaterVideos(online)
@@ -90,12 +99,14 @@ fun PlaylistDetailScreen(
         isLoading = false
     }
 
-    // Always fetch fresh real-time videos on open
+    // Always fetch fresh real-time videos on open (unless offline downloads)
     LaunchedEffect(playlistId) {
-        if (currentVideos.isEmpty()) {
-            isLoading = true
+        if (!isDownloads) {
+            if (currentVideos.isEmpty()) {
+                isLoading = true
+            }
+            refreshVideos()
         }
-        refreshVideos()
     }
 
     Scaffold(
@@ -202,14 +213,24 @@ fun PlaylistDetailScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(4.dp))
+                            val totalDurationStr = remember(currentVideos) {
+                                UserDataRepository.formatCombinedDuration(currentVideos)
+                            }
                             Text(
-                                text = if (isRefreshing) "Syncing latest changes..." else "${currentVideos.size} videos • Synced with YouTube",
-                                color = if (isRefreshing) Color(0xFF3EA6FF) else Color(0xFFAAAAAA),
-                                fontSize = 12.sp
+                                text = if (isDownloads) {
+                                    "${currentVideos.size} Songs • $totalDurationStr • Available Offline"
+                                } else if (isRefreshing) {
+                                    "Syncing latest changes..."
+                                } else {
+                                    "${currentVideos.size} videos • $totalDurationStr"
+                                },
+                                color = if (isDownloads) Color(0xFF40DCA5) else if (isRefreshing) Color(0xFF3EA6FF) else Color(0xFFAAAAAA),
+                                fontSize = 12.sp,
+                                fontWeight = if (isDownloads) FontWeight.SemiBold else FontWeight.Normal
                             )
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = if (playlist.description.isNotBlank()) playlist.description else "Auto playlist",
+                                text = if (playlist.description.isNotBlank()) playlist.description else if (isDownloads) "All offline downloaded songs" else "Auto playlist",
                                 color = Color(0xFF888888),
                                 fontSize = 12.sp,
                                 maxLines = 2,
@@ -277,22 +298,23 @@ fun PlaylistDetailScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Button(
-                        onClick = { showAddSongsSheet = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.White.copy(alpha = 0.08f),
-                            contentColor = Color.White
-                        ),
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(40.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Add songs to this playlist", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    if (!isDownloads) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = { showAddSongsSheet = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White.copy(alpha = 0.08f),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Add songs to this playlist", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
                     }
                 }
             }
@@ -318,9 +340,10 @@ fun PlaylistDetailScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No videos in this playlist yet.",
+                            text = if (isDownloads) "No downloaded songs yet.\nTap the Download icon on any track to listen offline anytime." else "No videos in this playlist yet.",
                             color = Color(0xFFAAAAAA),
-                            fontSize = 14.sp
+                            fontSize = 14.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                     }
                 }
@@ -331,8 +354,11 @@ fun PlaylistDetailScreen(
                         video = video,
                         onClick = { onVideoSelected(video, currentVideos) },
                         onRemove = {
-                            currentVideos = currentVideos.filter { it.id != video.id }
-                            UserDataRepository.removeVideoFromPlaylist(playlist.id, video.id)
+                            if (isDownloads) {
+                                UserDataRepository.deleteDownload(context, video.id)
+                            } else {
+                                UserDataRepository.removeVideoFromPlaylist(playlist.id, video.id)
+                            }
                         }
                     )
                     Spacer(modifier = Modifier.height(10.dp))

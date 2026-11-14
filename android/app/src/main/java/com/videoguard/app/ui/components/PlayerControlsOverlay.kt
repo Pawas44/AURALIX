@@ -54,6 +54,8 @@ fun PlayerControlsOverlay(
     var controlsVisible by remember { mutableStateOf(true) }
     var isUserScrubbing by remember { mutableStateOf(false) }
     var scrubPosition by remember { mutableFloatStateOf(0f) }
+    var optimisticScrubTarget by remember { mutableStateOf<Float?>(null) }
+    var optimisticScrubTimeMs by remember { mutableLongStateOf(0L) }
     var showSettingsSheet by remember { mutableStateOf(false) }
 
     var doubleTapSide by remember { mutableStateOf<String?>(null) }
@@ -353,12 +355,27 @@ fun PlayerControlsOverlay(
                             vertical = if (isFullscreen) 12.dp else 6.dp
                         )
                 ) {
+                    val safeCurrentTime = when {
+                        isUserScrubbing -> scrubPosition
+                        optimisticScrubTarget != null -> {
+                            val target = optimisticScrubTarget!!
+                            val elapsed = System.currentTimeMillis() - optimisticScrubTimeMs
+                            if (elapsed < 1600L && kotlin.math.abs(currentTime - target) > 1.5f) {
+                                target
+                            } else {
+                                optimisticScrubTarget = null
+                                currentTime
+                            }
+                        }
+                        else -> currentTime
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        val displayCurrent = if (isUserScrubbing) scrubPosition else currentTime
+                        val displayCurrent = safeCurrentTime
                         val currentStr = formatTime(displayCurrent)
                         val totalStr = formatTime(duration)
 
@@ -392,7 +409,7 @@ fun PlayerControlsOverlay(
 
                     // Scrubber Bar - sleek thin slider
                     val effectiveMax = if (duration > 0f) duration else 100f
-                    val effectiveVal = (if (isUserScrubbing) scrubPosition else currentTime).coerceIn(0f, effectiveMax)
+                    val effectiveVal = safeCurrentTime.coerceIn(0f, effectiveMax)
 
                     Slider(
                         value = effectiveVal,
@@ -402,6 +419,8 @@ fun PlayerControlsOverlay(
                         },
                         onValueChangeFinished = {
                             isUserScrubbing = false
+                            optimisticScrubTarget = scrubPosition
+                            optimisticScrubTimeMs = System.currentTimeMillis()
                             onSeekTo(scrubPosition)
                         },
                         valueRange = 0f..effectiveMax,

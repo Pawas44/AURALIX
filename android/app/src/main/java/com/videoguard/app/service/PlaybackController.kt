@@ -60,6 +60,17 @@ object PlaybackController {
     private var lastServiceSyncedPositionSec: Float = -1f
     private var lastServiceSyncedDurationSec: Float = -1f
 
+    // Audio Engine Mutual Exclusion Lock
+    private val audioEngineLock = Any()
+
+    // Seek debouncing & progress sync trackers
+    private var pendingSeekTarget: Float? = null
+    private var lastSeekTimestampMs: Long = 0L
+
+    // Continuous & Unlimited Playback queue trackers
+    private val recentPlayedTrackIds = java.util.concurrent.ConcurrentLinkedDeque<String>()
+    private var isReplenishingQueue = false
+
     // Offline native playback support
     private var offlineTickerJob: kotlinx.coroutines.Job? = null
     private var offlineMediaPlayer: android.media.MediaPlayer? = null
@@ -180,81 +191,134 @@ object PlaybackController {
         }
     }
 
+    private fun markTrackPlayed(id: String) {
+        recentPlayedTrackIds.remove(id)
+        recentPlayedTrackIds.addLast(id)
+        while (recentPlayedTrackIds.size > 150) {
+            recentPlayedTrackIds.pollFirst()
+        }
+    }
+
+    /**
+     * Strict Mutual Audio Exclusion:
+     * Immediately stops, pauses, and releases both online WebView audio and offline MediaPlayer
+     * ensuring that under no circumstances can two audio sources play simultaneously.
+     */
+    fun stopAllAudioSources() {
+        synchronized(audioEngineLock) {
+            // 1. Immediately stop and silence online WebView audio & any DOM video elements
+            sendCommand("stopVideo()")
+            sendCommand("setPlaybackState(false)")
+
+            // 2. Immediately stop, reset and release offline MediaPlayer
+            try {
+                offlineTickerJob?.cancel()
+                offlineTickerJob = null
+                offlineMediaPlayer?.apply {
+                    if (isPlaying) {
+                        stop()
+                    }
+                    reset()
+                    release()
+                }
+            } catch (e: Exception) {
+                // Ignore
+            } finally {
+                offlineMediaPlayer = null
+                isOfflineModeActive = false
+            }
+        }
+    }
+
     fun playTrack(track: VideoItem, queue: List<VideoItem> = emptyList()) {
-        lastTrackChangeTimeMs = System.currentTimeMillis()
-        _currentTrack.value = track
-        _isPlaying.value = true
-        val initialDurationSec = parseDurationSeconds(track.duration)
-        _currentTimeSeconds.value = 0f
-        _durationSeconds.value = initialDurationSec
-        lastServiceSyncTimeMs = System.currentTimeMillis()
-        lastServiceSyncedPositionSec = 0f
-        lastServiceSyncedDurationSec = initialDurationSec
+        synchronized(audioEngineLock) {
+            // Guarantee previous audio source is 100% stopped and released before new playback starts
+            stopAllAudioSources()
 
-        // Automatically record to User History
-        com.videoguard.app.data.UserDataRepository.addToHistory(track)
-        com.videoguard.app.recommendation.ListeningHistoryManager.onTrackStarted(track, initialDurationSec)
+            lastTrackChangeTimeMs = System.currentTimeMillis()
+            pendingSeekTarget = null
+            lastSeekTimestampMs = 0L
 
-        if (queue.isNotEmpty()) {
-            _playbackQueue.value = queue
-        } else if (_playbackQueue.value.none { it.id == track.id }) {
-            _playbackQueue.value = listOf(track)
-        }
+            _currentTrack.value = track
+            _isPlaying.value = true
+            val initialDurationSec = parseDurationSeconds(track.duration)
+            _currentTimeSeconds.value = 0f
+            _durationSeconds.value = initialDurationSec
+            lastServiceSyncTimeMs = System.currentTimeMillis()
+            lastServiceSyncedPositionSec = 0f
+            lastServiceSyncedDurationSec = initialDurationSec
 
-        val isDownloaded = com.videoguard.app.data.UserDataRepository.isDownloaded(track.id)
-        if (!isDownloaded && _playbackQueue.value.size <= 2) {
-            checkAndFetchSimilarTracks(track)
-        }
+            markTrackPlayed(track.id)
 
-        startOrUpdateService()
+            // Automatically record to User History
+            com.videoguard.app.data.UserDataRepository.addToHistory(track)
+            com.videoguard.app.recommendation.ListeningHistoryManager.onTrackStarted(track, initialDurationSec)
 
-        if (isDownloaded) {
-            startOfflinePlayback(track, initialDurationSec)
-        } else {
-            stopOfflinePlayback()
-            sendCommand("loadVideo('${track.id}')")
-            sendCommand("setPlaybackState(true)")
+            if (queue.isNotEmpty()) {
+                _playbackQueue.value = queue
+            } else if (_playbackQueue.value.none { it.id == track.id }) {
+                _playbackQueue.value = listOf(track)
+            }
+
+            val isDownloaded = com.videoguard.app.data.UserDataRepository.isDownloaded(track.id)
+
+            startOrUpdateService()
+
+            if (isDownloaded) {
+                startOfflinePlayback(track, initialDurationSec)
+            } else {
+                sendCommand("loadVideo('${track.id}')")
+                sendCommand("setPlaybackState(true)")
+            }
+
+            // Proactively check and replenish queue
+            replenishQueueIfNeeded(track)
         }
     }
 
     private fun startOfflinePlayback(track: VideoItem, initialDuration: Float) {
-        stopOfflinePlayback()
-        isOfflineModeActive = true
-        val dur = if (initialDuration > 0f) initialDuration else 180f
-        _durationSeconds.value = dur
-        val ctx = appContext
-        if (ctx != null) {
-            try {
-                val f = java.io.File(ctx.filesDir, "downloads/${track.id}.m4a")
-                if (f.exists() && f.length() > 500) {
-                    offlineMediaPlayer = android.media.MediaPlayer().apply {
-                        setDataSource(f.absolutePath)
-                        isLooping = _isLoopEnabled.value
-                        setOnCompletionListener {
-                            if (_isLoopEnabled.value) {
-                                this@PlaybackController.seekTo(0f)
-                                try { start() } catch (e: Exception) {}
-                            } else if (_isAutoplayEnabled.value) {
-                                nextTrack()
-                            } else {
-                                pause()
+        synchronized(audioEngineLock) {
+            // Double guarantee that online WebView player is stopped
+            sendCommand("stopVideo()")
+            sendCommand("setPlaybackState(false)")
+
+            isOfflineModeActive = true
+            val dur = if (initialDuration > 0f) initialDuration else 180f
+            _durationSeconds.value = dur
+            val ctx = appContext
+            if (ctx != null) {
+                try {
+                    val f = java.io.File(ctx.filesDir, "downloads/${track.id}.m4a")
+                    if (f.exists() && f.length() > 500) {
+                        offlineMediaPlayer = android.media.MediaPlayer().apply {
+                            setDataSource(f.absolutePath)
+                            isLooping = _isLoopEnabled.value
+                            setOnCompletionListener {
+                                if (_isLoopEnabled.value) {
+                                    this@PlaybackController.seekTo(0f)
+                                    try { start() } catch (e: Exception) {}
+                                } else if (_isAutoplayEnabled.value) {
+                                    nextTrack()
+                                } else {
+                                    pause()
+                                }
                             }
+                            prepare()
+                            start()
                         }
-                        prepare()
-                        start()
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
+            resumeOfflineTicker()
         }
-        resumeOfflineTicker()
     }
 
     private fun resumeOfflineTicker() {
         offlineTickerJob?.cancel()
         offlineTickerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-            while (isActive && _isPlaying.value) {
+            while (isActive && _isPlaying.value && isOfflineModeActive) {
                 kotlinx.coroutines.delay(500)
                 val mp = offlineMediaPlayer
                 if (mp != null && try { mp.isPlaying } catch (e: Exception) { false }) {
@@ -284,14 +348,19 @@ object PlaybackController {
     }
 
     fun stopOfflinePlayback() {
-        isOfflineModeActive = false
-        offlineTickerJob?.cancel()
-        offlineTickerJob = null
-        try {
-            offlineMediaPlayer?.stop()
-            offlineMediaPlayer?.release()
-        } catch (e: Exception) {}
-        offlineMediaPlayer = null
+        synchronized(audioEngineLock) {
+            isOfflineModeActive = false
+            offlineTickerJob?.cancel()
+            offlineTickerJob = null
+            try {
+                offlineMediaPlayer?.apply {
+                    if (isPlaying) stop()
+                    reset()
+                    release()
+                }
+            } catch (e: Exception) {}
+            offlineMediaPlayer = null
+        }
     }
 
     fun isSongFinished(): Boolean {
@@ -343,9 +412,10 @@ object PlaybackController {
         if (isOfflineModeActive) {
             try { offlineMediaPlayer?.pause() } catch (e: Exception) {}
             offlineTickerJob?.cancel()
-        } else {
-            sendCommand("setPlaybackState(false)")
         }
+        // Always tell WebView to pause as well to guarantee no rogue online audio
+        sendCommand("pauseVideo()")
+        sendCommand("setPlaybackState(false)")
         startOrUpdateService()
     }
 
@@ -359,6 +429,28 @@ object PlaybackController {
 
     fun updateProgress(current: Float, duration: Float) {
         if (isOfflineModeActive) return // Managed by offline ticker
+
+        // Debounce stale progress updates during seeking
+        val pending = pendingSeekTarget
+        if (pending != null) {
+            val elapsedSeek = System.currentTimeMillis() - lastSeekTimestampMs
+            if (elapsedSeek < 1800L) {
+                // If reported position has not reached within 2 seconds of target, discard stale pre-seek time
+                if (kotlin.math.abs(current - pending) > 2.0f) {
+                    return
+                }
+                pendingSeekTarget = null
+            } else {
+                pendingSeekTarget = null
+            }
+        }
+
+        // Debounce stale progress updates immediately following a track change
+        val elapsedTrackChange = System.currentTimeMillis() - lastTrackChangeTimeMs
+        if (elapsedTrackChange < 1800L && current > 4.0f) {
+            return
+        }
+
         val safeCurrent = current.coerceAtLeast(0f)
         _currentTimeSeconds.value = safeCurrent
         if (duration > 0f) {
@@ -372,7 +464,11 @@ object PlaybackController {
         val dur = _durationSeconds.value
         val maxSafeTarget = if (dur > 2f) (dur - 1.0f) else dur
         val target = if (dur > 0f) seconds.coerceIn(0f, maxSafeTarget) else seconds.coerceAtLeast(0f)
+        
+        pendingSeekTarget = target
+        lastSeekTimestampMs = System.currentTimeMillis()
         _currentTimeSeconds.value = target
+
         if (isOfflineModeActive) {
             try {
                 offlineMediaPlayer?.seekTo((target * 1000).toInt())
@@ -388,7 +484,11 @@ object PlaybackController {
         val rawNew = _currentTimeSeconds.value + seconds
         val maxSafeTarget = if (dur > 2f) (dur - 1.0f) else dur
         val newTime = if (dur > 0f) rawNew.coerceIn(0f, maxSafeTarget) else rawNew.coerceAtLeast(0f)
+        
+        pendingSeekTarget = newTime
+        lastSeekTimestampMs = System.currentTimeMillis()
         _currentTimeSeconds.value = newTime
+
         if (isOfflineModeActive) {
             try {
                 offlineMediaPlayer?.seekTo((newTime * 1000).toInt())
@@ -399,27 +499,103 @@ object PlaybackController {
         syncServiceProgress(force = true)
     }
 
-    private var isFetchingSimilar = false
+    /**
+     * Continuous and Unlimited Playback Queue Replenishment
+     * Automatically enqueues fresh recommendations when approaching the end of the Up Next queue.
+     * Prevents looping or abrupt stops.
+     */
+    fun replenishQueueIfNeeded(currentTrack: VideoItem) {
+        if (isReplenishingQueue) return
+        val currentQueue = _playbackQueue.value
+        val idx = currentQueue.indexOfFirst { it.id == currentTrack.id }
+        if (idx < 0 || idx >= currentQueue.size - 3 || currentQueue.size <= 3) {
+            triggerQueueReplenishment(currentTrack)
+        }
+    }
 
-    fun checkAndFetchSimilarTracks(track: VideoItem) {
-        if (isFetchingSimilar || isOfflineModeActive) return
-        isFetchingSimilar = true
+    private fun triggerQueueReplenishment(
+        seedTrack: VideoItem,
+        onComplete: ((List<VideoItem>) -> Unit)? = null
+    ) {
+        if (isReplenishingQueue) return
+        isReplenishingQueue = true
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             try {
-                val similar = com.videoguard.app.data.YouTubeSearchEngine.getRelatedVideos(track, isMusicOnly = true)
                 val currentQueue = _playbackQueue.value.toMutableList()
-                val existingIds = currentQueue.map { it.id }.toSet()
-                val newUnique = similar.filter { it.id !in existingIds }
-                if (newUnique.isNotEmpty()) {
-                    currentQueue.addAll(newUnique)
+                val existingIds = currentQueue.map { it.id }.toMutableSet()
+                existingIds.addAll(recentPlayedTrackIds)
+
+                val candidates = mutableListOf<VideoItem>()
+
+                if (!isOfflineModeActive) {
+                    // Tier 1: YouTube related videos (music-only)
+                    try {
+                        val related = com.videoguard.app.data.YouTubeSearchEngine.getRelatedVideos(seedTrack, isMusicOnly = true)
+                        candidates.addAll(related.filter { it.id !in existingIds })
+                    } catch (e: Exception) {}
+
+                    // Tier 2: Recommendation Engine Personalized Feed
+                    if (candidates.size < 6) {
+                        try {
+                            val feed = com.videoguard.app.recommendation.RecommendationEngine.feedState.value
+                            val feedTracks = (feed.recommendedForYou + feed.madeForYou + feed.discoverWeekly)
+                                .filter { it.id !in existingIds }
+                            candidates.addAll(feedTracks)
+                        } catch (e: Exception) {}
+                    }
+
+                    // Tier 3: Artist Radio Search
+                    val artist = seedTrack.artist.ifBlank { seedTrack.channelName }
+                    if (candidates.size < 6 && artist.isNotBlank() && artist != "YouTube Channel") {
+                        try {
+                            val artistSongs = com.videoguard.app.data.YouTubeSearchEngine.searchVideos(
+                                "$artist songs",
+                                isMusic = true
+                            ).filter { it.id !in existingIds }
+                            candidates.addAll(artistSongs)
+                        } catch (e: Exception) {}
+                    }
+
+                    // Tier 4: Curated Music Pool
+                    if (candidates.size < 4) {
+                        val musicTracks = VideoRepository.getMusicTracks().filter { it.id !in existingIds }
+                        candidates.addAll(musicTracks)
+                    }
+                }
+
+                // Tier 5: Local Offline Tracks Fallback (or if network failed)
+                if (candidates.isEmpty()) {
+                    val offline = com.videoguard.app.data.UserDataRepository.offlineTracks.value
+                    val unplayedOffline = offline.filter { it.id !in existingIds && it.id != seedTrack.id }
+                    if (unplayedOffline.isNotEmpty()) {
+                        candidates.addAll(unplayedOffline)
+                    } else if (offline.size > 1) {
+                        candidates.addAll(offline.filter { it.id != seedTrack.id }.shuffled())
+                    }
+                }
+
+                // Tier 6: Failsafe fallback across sample catalogue
+                if (candidates.isEmpty()) {
+                    val samplePool = VideoRepository.sampleVideos.filter { it.id != seedTrack.id }
+                    candidates.addAll(samplePool)
+                }
+
+                val distinctNew = candidates.distinctBy { it.id }.take(10)
+                if (distinctNew.isNotEmpty()) {
+                    currentQueue.addAll(distinctNew)
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         _playbackQueue.value = currentQueue
+                        onComplete?.invoke(currentQueue)
+                    }
+                } else {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        onComplete?.invoke(currentQueue)
                     }
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
-                isFetchingSimilar = false
+                isReplenishingQueue = false
             }
         }
     }
@@ -432,63 +608,60 @@ object PlaybackController {
         } else {
             com.videoguard.app.recommendation.ListeningHistoryManager.onTrackSkipped(current)
         }
+        markTrackPlayed(current.id)
 
-        if (isOfflineModeActive) {
-            val offlineList = com.videoguard.app.data.UserDataRepository.offlineTracks.value
-            if (offlineList.isNotEmpty()) {
-                val idx = offlineList.indexOfFirst { it.id == current.id }
-                val nextIdx = if (idx in 0 until offlineList.lastIndex) idx + 1 else 0
-                playTrack(offlineList[nextIdx], offlineList)
-            } else {
-                seekTo(0f)
-            }
-            return
+        val queue = _playbackQueue.value.ifEmpty {
+            if (isOfflineModeActive) com.videoguard.app.data.UserDataRepository.offlineTracks.value else VideoRepository.getMusicTracks()
         }
-
-        val queue = _playbackQueue.value.ifEmpty { VideoRepository.sampleVideos }
         val idx = queue.indexOfFirst { it.id == current.id }
-        if (idx >= queue.size - 2 || queue.size <= 2) {
-            checkAndFetchSimilarTracks(current)
+
+        if (idx in 0 until queue.lastIndex) {
+            val nextTrack = queue[idx + 1]
+            playTrack(nextTrack, queue)
+            // If nearing end of queue, replenish in advance
+            if (idx + 1 >= queue.size - 3) {
+                replenishQueueIfNeeded(nextTrack)
+            }
+        } else {
+            // Reached the end of queue! Immediately replenish so music never halts!
+            triggerQueueReplenishment(current) { updatedQueue ->
+                val newIdx = updatedQueue.indexOfFirst { it.id == current.id }
+                if (newIdx in 0 until updatedQueue.lastIndex) {
+                    playTrack(updatedQueue[newIdx + 1], updatedQueue)
+                } else if (updatedQueue.isNotEmpty()) {
+                    val fallback = updatedQueue.firstOrNull { it.id != current.id } ?: updatedQueue.first()
+                    playTrack(fallback, updatedQueue)
+                }
+            }
         }
-        val nextIdx = if (idx in 0 until queue.lastIndex) idx + 1 else 0
-        playTrack(queue[nextIdx], queue)
     }
 
     fun prevTrack() {
         val current = _currentTrack.value ?: return
 
-        if (_currentTimeSeconds.value < 4.0f) {
-            com.videoguard.app.recommendation.ListeningHistoryManager.onTrackSkipped(current)
-        }
-
-        if (isOfflineModeActive) {
-            if (_currentTimeSeconds.value > 3.0f) {
-                seekTo(0f)
-                return
-            }
-            val offlineList = com.videoguard.app.data.UserDataRepository.offlineTracks.value
-            if (offlineList.isNotEmpty()) {
-                val idx = offlineList.indexOfFirst { it.id == current.id }
-                val prevIdx = if (idx > 0) idx - 1 else offlineList.lastIndex
-                playTrack(offlineList[prevIdx], offlineList)
-            } else {
-                seekTo(0f)
-            }
+        if (_currentTimeSeconds.value > 3.0f) {
+            seekTo(0f)
             return
         }
 
-        val queue = _playbackQueue.value.ifEmpty { VideoRepository.sampleVideos }
+        com.videoguard.app.recommendation.ListeningHistoryManager.onTrackSkipped(current)
+
+        val queue = _playbackQueue.value.ifEmpty {
+            if (isOfflineModeActive) com.videoguard.app.data.UserDataRepository.offlineTracks.value else VideoRepository.getMusicTracks()
+        }
         val idx = queue.indexOfFirst { it.id == current.id }
         val prevIdx = if (idx > 0) idx - 1 else queue.lastIndex
-        playTrack(queue[prevIdx], queue)
+        if (prevIdx in queue.indices) {
+            playTrack(queue[prevIdx], queue)
+        }
     }
 
     fun stop() {
+        stopAllAudioSources()
         _isPlaying.value = false
         _currentTrack.value = null
         _currentTimeSeconds.value = 0f
         _durationSeconds.value = 0f
-        sendCommand("setPlaybackState(false)")
         stopService()
     }
 

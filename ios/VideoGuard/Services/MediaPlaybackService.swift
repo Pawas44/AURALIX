@@ -54,6 +54,8 @@ class MediaPlaybackService: ObservableObject {
     private var commandListener: ((String) -> Void)?
     private var sleepTimerWorkItem: DispatchWorkItem?
     private var lastTrackChangeTime: Date = .distantPast
+    private var pendingSeekTarget: Double? = nil
+    private var lastSeekTimestamp: Date = .distantPast
     private var cachedArtworkImage: UIImage?
     private var cachedArtworkVideoId: String?
     private var silentAudioPlayer: AVAudioPlayer?
@@ -248,9 +250,20 @@ class MediaPlaybackService: ObservableObject {
         playTrack(track, queue: queue)
     }
 
+    func stopAllAudioSources() {
+        sendCommand("stopVideo()")
+        sendCommand("setPlaybackState(false)")
+        stopOfflinePlayback()
+    }
+
     func playTrack(_ track: VideoItem, queue: [VideoItem] = []) {
         DispatchQueue.main.async {
+            // Guarantee previous audio source is 100% stopped and released before new track starts
+            self.stopAllAudioSources()
+
             self.lastTrackChangeTime = Date()
+            self.pendingSeekTarget = nil
+            self.lastSeekTimestamp = .distantPast
             self.currentTrack = track
             self.isPlaying = true
             self.currentTimeSeconds = 0
@@ -293,6 +306,10 @@ class MediaPlaybackService: ObservableObject {
 
     private func startOfflinePlayback(for track: VideoItem) {
         stopOfflinePlayback()
+        // Double guarantee online player is silenced
+        sendCommand("stopVideo()")
+        sendCommand("setPlaybackState(false)")
+
         isOfflineModeActive = true
         let dur = durationSeconds > 0 ? durationSeconds : Double(parseDuration(track.duration)) / 1000.0
         durationSeconds = dur > 0 ? dur : 180.0
@@ -420,6 +437,25 @@ class MediaPlaybackService: ObservableObject {
     func updateProgress(current: Double, duration: Double) {
         if isOfflineModeActive { return } // Managed by offline timer
         DispatchQueue.main.async {
+            // Debounce stale progress updates during seeking
+            if let pending = self.pendingSeekTarget {
+                let elapsed = Date().timeIntervalSince(self.lastSeekTimestamp)
+                if elapsed < 1.8 {
+                    if abs(current - pending) > 2.0 {
+                        return
+                    }
+                    self.pendingSeekTarget = nil
+                } else {
+                    self.pendingSeekTarget = nil
+                }
+            }
+
+            // Debounce stale progress immediately after track change
+            let elapsedTrack = Date().timeIntervalSince(self.lastTrackChangeTime)
+            if elapsedTrack < 1.8 && current > 4.0 {
+                return
+            }
+
             self.currentTimeSeconds = current
             if duration > 0 {
                 self.durationSeconds = duration
@@ -433,6 +469,8 @@ class MediaPlaybackService: ObservableObject {
             let dur = self.durationSeconds
             let maxSafe = dur > 2.0 ? (dur - 1.0) : dur
             let target = dur > 0 ? min(max(0, seconds), maxSafe) : max(0, seconds)
+            self.pendingSeekTarget = target
+            self.lastSeekTimestamp = Date()
             self.currentTimeSeconds = target
             if self.isOfflineModeActive {
                 self.offlineAudioPlayer?.currentTime = target
