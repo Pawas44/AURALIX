@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.videoguard.app.BuildConfig
+import com.videoguard.app.data.AppUpdateManager
 
 // ========================================================
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
@@ -59,6 +61,7 @@ fun SupportScreen(
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
+    val isCheckingUpdates by AppUpdateManager.isChecking.collectAsState()
 
     var selectedAmount by remember { mutableStateOf("100") }
     var customAmount by remember { mutableStateOf("") }
@@ -438,7 +441,77 @@ fun SupportScreen(
         }
 
         // ========================================================
-        // 3. Why Support AURALIX Card
+        // 3. App Version & Updates Card
+        // ========================================================
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color.White.copy(alpha = 0.04f))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = "AURALIX v${BuildConfig.APP_VERSION_NAME}",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Build ${BuildConfig.VERSION_CODE} • Auto-Updates Active",
+                        color = Color(0xFF9E9EAF),
+                        fontSize = 11.5.sp
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        AppUpdateManager.checkForUpdates(context, isManualCheck = true)
+                    },
+                    enabled = !isCheckingUpdates,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MintAccent.copy(alpha = 0.15f),
+                        contentColor = MintAccent
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+                ) {
+                    if (isCheckingUpdates) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = MintAccent,
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = "Check for Updates",
+                                modifier = Modifier.size(16.dp),
+                                tint = MintAccent
+                            )
+                            Text(
+                                text = "Update",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ========================================================
+        // 4. Why Support AURALIX Card
         // ========================================================
         Box(
             modifier = Modifier

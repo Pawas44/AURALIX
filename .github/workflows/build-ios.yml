@@ -33,7 +33,7 @@ jobs:
       - name: Build Android Debug APK
         run: |
           cd android
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleDebug -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }} --stacktrace
 
       - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
@@ -124,10 +124,13 @@ jobs:
           TAG="v1.0.${{ github.run_number }}"
           {
             echo "### 🚀 What's New in AURALIX $TAG"
+            echo "- **⚡ Seamless In-Place APK Upgrades**: Built with permanent cryptographic keystore signing and monotonically increasing version codes. No more 'App not installed' errors when upgrading!"
+            echo "- **🔄 Auto In-App Update Engine**: Automatic update prompt with one-click background download, real-time progress indicator, and in-place package installation."
+            echo "- **☕ Authentic Buy Me a Coffee & UPI Support**: Official coral orange BMC widget button and native UPI app chooser with direct deep links."
+            echo "- **📱 Smooth Swipe-Down Player Gesture**: High-priority vertical drag gesture to seamlessly minimize the full-screen music player."
             echo "- **🧠 Spotify-Level Intelligent Music Recommendation Engine**: Integrated local-first adaptive recommendation system including **Made For You**, **Discover Weekly** (~30 songs, 40% familiar + 60% discovery, weekly auto-refresh), **Daily Mixes (Mix 1-5)**, **Because You Listened To**, **Your Most Played**, **Continue Listening**, and **Hidden Gems** with cross-section deduplication."
             echo "- **📊 Dynamic Music Taste Profile**: Real-time behavioral tracking (completed songs, replays, skips, likes, playlist additions) with weighted scoring formulas and local persistence."
             echo "- **🔍 Music Discovery Interactions**: Interactive 'Why am I seeing this song?' transparent explanation sheet, 'Start radio (More like this)', and 'Not interested / Hide this song' dynamic filtering."
-            echo "- **💳 Native UPI & Razorpay Support**: Native branded UPI integration supporting Google Pay, PhonePe, Paytm, and BHIM via \`https://razorpay.me/@pawas\` along with Buy Me a Coffee direct browser launch."
             echo "- **🟢 Spotify Link-Only Music Importer**: Clean, instant Spotify playlist link importer that enriches user taste profile."
             echo "- **🏷️ Clean Song Metadata for Downloads**: YouTube oEmbed auto-healing resolves real song titles and artist names, eliminating 'YouTube Video (videoId)' placeholders."
             echo "- **⬇️ Resilient Download Engine**: Multi-client InnerTube pipeline (ANDROID format 18 + IOS AAC m4a) with full CDN streaming headers."

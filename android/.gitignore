@@ -59,6 +59,7 @@ __pycache__/
 
 # OS / Keystore
 *.keystore
+!app/auralix.keystore
 *.jks
 .DS_Store
 Thumbs.db

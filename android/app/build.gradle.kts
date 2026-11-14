@@ -8,18 +8,39 @@ android {
     namespace = "com.videoguard.app"
     compileSdk = 35
 
+    val vCode = (project.findProperty("versionCode") as? String)?.toIntOrNull()
+        ?: System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+        ?: 89
+    val vName = (project.findProperty("versionName") as? String)
+        ?: "1.0.${vCode}"
+
     defaultConfig {
         applicationId = "com.videoguard.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = vCode
+        versionName = vName
+        buildConfigField("String", "APP_VERSION_NAME", "\"$vName\"")
+        buildConfigField("int", "APP_VERSION_CODE", "$vCode")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = file("auralix.keystore")
+            storePassword = "android"
+            keyAlias = "auralix"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("release")
+        }
         release {
+            signingConfig = signingConfigs.getByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -36,6 +57,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
