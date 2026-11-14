@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -23,23 +24,32 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.videoguard.app.ui.theme.LiquidGlassDefaults
 
+// ========================================================
+// SUPPORT CONFIGURATION (Pawas Payment Handles)
+// ========================================================
+// Put your exact UPI VPA here (e.g. pawas@oksbi, pawas@paytm, etc.)
+const val PAWAS_UPI_ID = "pawas@upi"
+const val PAWAS_NAME = "Pawas"
 private const val RAZORPAY_URL = "https://razorpay.me/@pawas"
 private const val BMC_PROFILE_URL = "https://buymeacoffee.com/FINDEX"
 
 private val CoffeeGold = Color(0xFFFFDD00)
-private val CoffeeDark = Color(0xFF261D02)
+private val CoffeeDark = Color(0xFF231B05)
 private val RazorpayAccent = Color(0xFF3395FF)
 private val RazorpayDark = Color(0xFF0C2038)
 private val MintAccent = Color(0xFF40DCA5)
+private val UpiOrange = Color(0xFFF47920)
+private val UpiGreen = Color(0xFF00A859)
 
 @Composable
 fun SupportScreen(
@@ -53,6 +63,7 @@ fun SupportScreen(
     var customAmount by remember { mutableStateOf("") }
 
     val presetAmounts = listOf("50", "100", "250", "500")
+    val effectiveAmount = customAmount.ifBlank { selectedAmount }.ifBlank { "100" }
 
     Column(
         modifier = modifier
@@ -103,9 +114,9 @@ fun SupportScreen(
             }
         }
 
-        // ==========================================
-        // 1. UPI & Razorpay Card (Native App Trigger)
-        // ==========================================
+        // ========================================================
+        // 1. UPI Payment Card (Direct Native UPI App Launch)
+        // ========================================================
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -120,9 +131,7 @@ fun SupportScreen(
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                val effectiveAmount = customAmount.ifBlank { selectedAmount }.ifBlank { "100" }
-
-                // Header inside card - Clickable to launch UPI directly
+                // Header with Authentic NPCI UPI Logo
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -138,29 +147,17 @@ fun SupportScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(RazorpayAccent.copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Payment,
-                                contentDescription = "Pay with UPI",
-                                tint = RazorpayAccent,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
+                        OfficialUpiBadge()
+
                         Column {
                             Text(
-                                text = "Pay via UPI App / Razorpay",
+                                text = "Pay with UPI",
                                 color = Color.White,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "GPay, PhonePe, Paytm, BHIM (@pawas)",
+                                text = "GPay, PhonePe, Paytm, BHIM, Cred",
                                 color = Color(0xFFA0AEC0),
                                 fontSize = 11.sp
                             )
@@ -169,19 +166,58 @@ fun SupportScreen(
 
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(RazorpayAccent.copy(alpha = 0.15f))
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color.White.copy(alpha = 0.08f))
                             .clickable {
-                                clipboardManager.setText(AnnotatedString(RAZORPAY_URL))
-                                Toast.makeText(context, "Copied payment link to clipboard", Toast.LENGTH_SHORT).show()
+                                clipboardManager.setText(AnnotatedString(PAWAS_UPI_ID))
+                                Toast.makeText(context, "UPI ID copied: $PAWAS_UPI_ID", Toast.LENGTH_SHORT).show()
                             }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .padding(horizontal = 8.dp, vertical = 5.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.ContentCopy,
-                            contentDescription = "Copy link",
-                            tint = RazorpayAccent,
-                            modifier = Modifier.size(16.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.ContentCopy,
+                                contentDescription = "Copy UPI ID",
+                                tint = RazorpayAccent,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Copy",
+                                color = RazorpayAccent,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                // UPI ID Details Pill
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.White.copy(alpha = 0.05f))
+                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "UPI ID: $PAWAS_UPI_ID",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Tap button to pay",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp
                         )
                     }
                 }
@@ -249,7 +285,7 @@ fun SupportScreen(
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                // Action 1: Open UPI App Directly
+                // Action 1: Open Installed UPI App Directly
                 Button(
                     onClick = {
                         openUpiPayment(context, effectiveAmount)
@@ -258,28 +294,25 @@ fun SupportScreen(
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
+                        .height(50.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.ElectricBolt,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    OfficialUpiArrows(modifier = Modifier.size(width = 24.dp, height = 16.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Pay ₹$effectiveAmount via Any UPI App",
+                        text = "Pay ₹$effectiveAmount via UPI App",
                         color = Color.White,
-                        fontSize = 14.sp,
+                        fontSize = 14.5.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                // Action 2: Open in Browser via Razorpay
+                // Action 2: Web Payment Gateway Fallback
                 OutlinedButton(
                     onClick = {
                         try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(RAZORPAY_URL)))
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(RAZORPAY_URL)).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
                         } catch (_: Exception) {
                             Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
                         }
@@ -307,9 +340,9 @@ fun SupportScreen(
             }
         }
 
-        // ==========================================
+        // ========================================================
         // 2. Buy Me a Coffee Card (Opens in Browser)
-        // ==========================================
+        // ========================================================
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -324,6 +357,7 @@ fun SupportScreen(
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                // Header with Official Buy Me a Coffee Brand
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -334,29 +368,13 @@ fun SupportScreen(
                             .weight(1f)
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
-                                try {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BMC_PROFILE_URL)))
-                                } catch (_: Exception) {
-                                    Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
-                                }
+                                openBrowserUrl(context, BMC_PROFILE_URL)
                             },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(CoffeeGold.copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Coffee,
-                                contentDescription = "Buy Me a Coffee",
-                                tint = CoffeeGold,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
+                        OfficialBmcBadge()
+
                         Column {
                             Text(
                                 text = "Buy Me a Coffee",
@@ -365,7 +383,7 @@ fun SupportScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "buymeacoffee.com/FINDEX",
+                                text = "International cards, PayPal & Apple Pay",
                                 color = Color(0xFFA0AEC0),
                                 fontSize = 11.sp
                             )
@@ -374,65 +392,72 @@ fun SupportScreen(
 
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
+                            .clip(RoundedCornerShape(10.dp))
                             .background(CoffeeGold.copy(alpha = 0.15f))
                             .clickable {
                                 clipboardManager.setText(AnnotatedString(BMC_PROFILE_URL))
-                                Toast.makeText(context, "Copied BMC link to clipboard", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Copied BMC link", Toast.LENGTH_SHORT).show()
                             }
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                            .padding(horizontal = 8.dp, vertical = 5.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.ContentCopy,
-                            contentDescription = "Copy link",
-                            tint = CoffeeGold,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.ContentCopy,
+                                contentDescription = "Copy link",
+                                tint = CoffeeGold,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Copy",
+                                color = CoffeeGold,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
 
                 Text(
-                    text = "Ideal for international supporters via Credit/Debit Cards, PayPal, and Apple Pay.",
+                    text = "Support AURALIX from anywhere in the world using your preferred international payment method.",
                     color = Color(0xFFCBD5E1),
                     fontSize = 12.sp,
                     lineHeight = 16.sp
                 )
 
-                // Direct Open in Browser button
+                // Direct Open in Browser button with BMC yellow branding
                 Button(
                     onClick = {
-                        try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BMC_PROFILE_URL)))
-                        } catch (_: Exception) {
-                            Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
-                        }
+                        openBrowserUrl(context, BMC_PROFILE_URL)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = CoffeeGold),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
+                        .height(50.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Coffee,
                         contentDescription = null,
                         tint = Color(0xFF1E1702),
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = "Open Buy Me a Coffee in Browser ↗",
                         color = Color(0xFF1E1702),
-                        fontSize = 13.5.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
         }
 
-        // ==========================================
+        // ========================================================
         // 3. Why Support AURALIX Card
-        // ==========================================
+        // ========================================================
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -461,32 +486,126 @@ fun SupportScreen(
     }
 }
 
+// ========================================================
+// AUTHENTIC BRAND ICONS (UPI & BMC)
+// ========================================================
+
 /**
- * Triggers installed Indian UPI apps (Google Pay, PhonePe, Paytm, BHIM)
- * or falls back to the Razorpay web payment page.
+ * Authentic NPCI UPI Logo Badge with orange & green directional chevrons
+ * and bold italic typography.
+ */
+@Composable
+fun OfficialUpiBadge(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color.White.copy(alpha = 0.08f))
+            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            OfficialUpiArrows(modifier = Modifier.size(width = 20.dp, height = 15.dp))
+            Text(
+                text = "UPI",
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Black,
+                fontStyle = FontStyle.Italic,
+                letterSpacing = 0.5.sp
+            )
+        }
+    }
+}
+
+/**
+ * NPCI UPI Dual Slanted Chevrons drawn via Compose Canvas.
+ */
+@Composable
+fun OfficialUpiArrows(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        // Left / Orange Chevron (45° slant)
+        val orangePath = Path().apply {
+            moveTo(0f, h)
+            lineTo(w * 0.28f, h)
+            lineTo(w * 0.55f, 0f)
+            lineTo(w * 0.27f, 0f)
+            close()
+        }
+        drawPath(orangePath, color = UpiOrange)
+
+        // Right / Green Chevron (parallel slant)
+        val greenPath = Path().apply {
+            moveTo(w * 0.38f, h)
+            lineTo(w * 0.66f, h)
+            lineTo(w * 0.93f, 0f)
+            lineTo(w * 0.65f, 0f)
+            close()
+        }
+        drawPath(greenPath, color = UpiGreen)
+    }
+}
+
+/**
+ * Authentic Buy Me A Coffee Logo Badge with iconic yellow background.
+ */
+@Composable
+fun OfficialBmcBadge(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(CoffeeGold),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Coffee,
+            contentDescription = "Buy Me a Coffee",
+            tint = Color(0xFF1E1702),
+            modifier = Modifier.size(22.dp)
+        )
+    }
+}
+
+// ========================================================
+// PAYMENT & BROWSER HELPERS
+// ========================================================
+
+/**
+ * Launches installed UPI apps (Google Pay, PhonePe, Paytm, BHIM, Cred)
+ * with pre-filled payee name and amount. Falls back to Razorpay if no UPI apps exist.
  */
 private fun openUpiPayment(context: Context, amount: String) {
     val upiUri = Uri.parse(
-        "upi://pay?pa=pawas@razorpay&pn=Pawas&am=$amount&cu=INR&tn=Support%20AURALIX"
+        "upi://pay?pa=$PAWAS_UPI_ID&pn=$PAWAS_NAME&am=$amount&cu=INR&tn=Support%20AURALIX"
     )
     val upiIntent = Intent(Intent.ACTION_VIEW, upiUri).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
     try {
-        val packageManager = context.packageManager
-        val activities = packageManager.queryIntentActivities(upiIntent, 0)
-        if (activities.isNotEmpty()) {
-            context.startActivity(Intent.createChooser(upiIntent, "Pay ₹$amount using UPI"))
-        } else {
-            // Fallback directly to the Razorpay page which handles UPI QR and Web UPI
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(RAZORPAY_URL)))
-        }
+        val chooser = Intent.createChooser(upiIntent, "Pay ₹$amount using UPI App")
+        chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(chooser)
     } catch (_: Exception) {
-        try {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(RAZORPAY_URL)))
-        } catch (_: Exception) {
-            Toast.makeText(context, "Could not open UPI or browser", Toast.LENGTH_SHORT).show()
+        // Fallback to Razorpay web page
+        openBrowserUrl(context, RAZORPAY_URL)
+    }
+}
+
+private fun openBrowserUrl(context: Context, url: String) {
+    try {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
     }
 }
