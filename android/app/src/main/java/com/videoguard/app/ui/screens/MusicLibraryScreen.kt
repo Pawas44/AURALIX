@@ -4,12 +4,6 @@ package com.videoguard.app.ui.screens
 
 import android.content.Intent
 import android.net.Uri
-import android.webkit.CookieManager
-import android.webkit.JavascriptInterface
-import android.webkit.WebResourceRequest
-import android.webkit.WebSettings
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -75,18 +69,12 @@ fun MusicLibraryScreen(
     var newPlaylistTitle by remember { mutableStateOf("") }
     var selectedPlaylistForOptions by remember { mutableStateOf<UserPlaylist?>(null) }
 
-    // Service Import State
+    // Service Import State (Spotify Link Importer)
     var selectedImportService by remember { mutableStateOf<String?>(null) }
-    var showInAppWebSheet by remember { mutableStateOf(false) }
-    var webSheetCurrentUrl by remember { mutableStateOf("") }
     var importUrlInput by remember { mutableStateOf("") }
     var importProgress by remember { mutableStateOf<ImportProgress?>(null) }
     var isImporting by remember { mutableStateOf(false) }
     var importedPlaylistResult by remember { mutableStateOf<UserPlaylist?>(null) }
-    val isSpotifyConnected by com.videoguard.app.data.SpotifyOAuthEngine.isConnected.collectAsState()
-    val spotifyUserName by com.videoguard.app.data.SpotifyOAuthEngine.userDisplayName.collectAsState()
-    val spotifyPlaylists by com.videoguard.app.data.SpotifyOAuthEngine.userPlaylists.collectAsState()
-    var selectedPlaylistIds by remember { mutableStateOf(setOf<String>()) }
     val clipboardManager = LocalClipboardManager.current
 
     val likedPlaylist = playlists.find { it.id == "liked_videos" }
@@ -231,7 +219,7 @@ fun MusicLibraryScreen(
                             Spacer(modifier = Modifier.height(10.dp))
 
                             Text(
-                                text = "Sign in to Spotify to auto-sync your playlists with 100+ songs, or paste any Spotify link.",
+                                text = "Paste any Spotify playlist link to import all tracks directly into your AURALIX library.",
                                 color = Color(0xFF888B9E),
                                 fontSize = 11.sp,
                                 lineHeight = 15.sp
@@ -818,138 +806,13 @@ fun MusicLibraryScreen(
             },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    if (isSpotifyConnected) {
-                        // Connected Header
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(brandColor.copy(alpha = 0.12f))
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = brandColor, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Signed in as ${spotifyUserName ?: "User"}",
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                            TextButton(
-                                onClick = {
-                                    com.videoguard.app.data.SpotifyOAuthEngine.disconnect()
-                                },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text("Disconnect", color = Color.Gray, fontSize = 11.sp)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        if (spotifyPlaylists.isNotEmpty()) {
-                            Text(
-                                text = "Your Playlists (${spotifyPlaylists.size}):",
-                                color = Color(0xFFCCCCCC),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 200.dp)
-                            ) {
-                                items(spotifyPlaylists, key = { it.id }) { pl ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        AsyncImage(
-                                            model = pl.coverUrl,
-                                            contentDescription = pl.title,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(RoundedCornerShape(4.dp))
-                                                .background(Color(0xFF222222))
-                                        )
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(pl.title, color = Color.White, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text("${pl.trackCount} tracks", color = Color.Gray, fontSize = 11.sp)
-                                        }
-                                        Button(
-                                            onClick = {
-                                                isImporting = true
-                                                importProgress = ImportProgress("Connecting...", 0, pl.trackCount)
-                                                scope.launch {
-                                                    val res = MusicImportEngine.importRemotePlaylist(pl) { prog ->
-                                                        importProgress = prog
-                                                    }
-                                                    isImporting = false
-                                                    res.onSuccess { finalPl ->
-                                                        importedPlaylistResult = finalPl
-                                                        selectedImportService = null
-                                                        onPlaylistClick(finalPl)
-                                                    }.onFailure { err ->
-                                                        importProgress = ImportProgress("Error", 0, 0, error = err.message ?: "Failed")
-                                                    }
-                                                }
-                                            },
-                                            enabled = !isImporting,
-                                            shape = RoundedCornerShape(14.dp),
-                                            colors = ButtonDefaults.buttonColors(containerColor = brandColor),
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                                        ) {
-                                            Text("Import", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // Sign in with Spotify button
-                        Button(
-                            onClick = {
-                                webSheetCurrentUrl = com.videoguard.app.data.SpotifyOAuthEngine.createAuthUrl()
-                                showInAppWebSheet = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = brandColor),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(42.dp)
-                        ) {
-                            Icon(Icons.Default.Language, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Sign In with Spotify", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Sign in to automatically fetch all your Spotify playlists with 100+ songs.",
-                            color = Color.Gray,
-                            fontSize = 11.sp
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(14.dp))
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-                    Spacer(modifier = Modifier.height(10.dp))
-
                     Text(
-                        text = "Or paste Spotify link or song titles:",
+                        text = "Paste any Spotify playlist link or track names below to import all songs directly into your library:",
                         color = Color(0xFFCCCCCC),
                         fontSize = 12.sp
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     OutlinedTextField(
                         value = importUrlInput,
@@ -957,7 +820,7 @@ fun MusicLibraryScreen(
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = {
                             Text(
-                                text = "https://open.spotify.com/playlist/... or song names",
+                                text = "https://open.spotify.com/playlist/...",
                                 fontSize = 12.sp,
                                 color = Color(0xFF666666)
                             )
@@ -976,20 +839,9 @@ fun MusicLibraryScreen(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TextButton(
-                            onClick = {
-                                webSheetCurrentUrl = if (importUrlInput.startsWith("http")) importUrlInput else com.videoguard.app.data.SpotifyOAuthEngine.createAuthUrl()
-                                showInAppWebSheet = true
-                            }
-                        ) {
-                            Icon(Icons.Default.Language, contentDescription = null, tint = brandColor, modifier = Modifier.size(15.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Web Importer", color = brandColor, fontSize = 12.sp)
-                        }
-
                         TextButton(
                             onClick = {
                                 clipboardManager.getText()?.text?.let { importUrlInput = it }
@@ -997,7 +849,7 @@ fun MusicLibraryScreen(
                         ) {
                             Icon(Icons.Default.ContentPaste, contentDescription = null, tint = brandColor, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Paste Clipboard", color = brandColor, fontSize = 12.sp)
+                            Text("Paste from Clipboard", color = brandColor, fontSize = 12.sp)
                         }
                     }
 
@@ -1109,219 +961,6 @@ fun MusicLibraryScreen(
             },
             containerColor = Color(0xFF1B1D28)
         )
-    }
-
-    // In-App Web Importer BottomSheet (Full WebView with auto-scroll '⚡ Import This Playlist' button)
-    if (showInAppWebSheet) {
-        var webViewInstance by remember { mutableStateOf<WebView?>(null) }
-        var isExtracting by remember { mutableStateOf(false) }
-
-        ModalBottomSheet(
-            onDismissRequest = { showInAppWebSheet = false },
-            containerColor = Color(0xFF14151E),
-            modifier = Modifier.fillMaxHeight(0.92f)
-        ) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Top header
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { webViewInstance?.goBack() },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Web Importer",
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Button(
-                        onClick = {
-                            val wv = webViewInstance ?: return@Button
-                            isExtracting = true
-                            val js = """
-                                (function() {
-                                    var tracks = [];
-                                    var seen = {};
-
-                                    function add(title, artist) {
-                                        title = (title || '').trim().replace(/^[\d\.\s\-]+/, '');
-                                        artist = (artist || '').trim().replace(/Explicit Content/gi, '').trim();
-                                        if (title.length > 1 && !title.includes('Amazon') && !title.includes('Playlist') && !title.includes('Library') && !title.includes('Add to') && !title.includes('Settings')) {
-                                            var key = (title + '|' + artist).toLowerCase();
-                                            if (!seen[key]) {
-                                                seen[key] = true;
-                                                tracks.push(artist ? (title + ' - ' + artist) : title);
-                                            }
-                                        }
-                                    }
-
-                                    function harvest() {
-                                        // 1. Amazon Music button labels
-                                        document.querySelectorAll('button[aria-label]').forEach(function(b) {
-                                            var label = b.getAttribute('aria-label') || '';
-                                            if (label.includes(',') && !label.includes('Play') && !label.includes('Add to') && !label.includes('Menu') && !label.includes('Share')) {
-                                                var parts = label.split(',');
-                                                if (parts.length >= 2) add(parts[0], parts[1]);
-                                            }
-                                        });
-
-                                        // 2. Amazon Music track links & rows
-                                        document.querySelectorAll('a[href*="trackAsin"], music-text-row, music-image-row, [data-test-id="primary-text"]').forEach(function(el) {
-                                            var t = el.innerText || '';
-                                            var lns = t.split('\n').map(function(s){return s.trim();}).filter(Boolean);
-                                            if (lns.length >= 2) add(lns[0], lns[1]);
-                                            else if (lns.length === 1 && lns[0].length < 80) add(lns[0], '');
-                                        });
-
-                                        // 3. Spotify tracklist rows
-                                        document.querySelectorAll('[data-testid="tracklist-row"], [role="row"], li[role="listitem"]').forEach(function(row) {
-                                            var tEl = row.querySelector('div[dir="auto"], [data-encore-id="text"], .track-name, a[href*="/track/"]');
-                                            var aEl = row.querySelector('a[href*="/artist/"], .artist-name');
-                                            if (tEl) {
-                                                add(tEl.innerText, aEl ? aEl.innerText : '');
-                                            } else {
-                                                var txt = row.innerText || '';
-                                                var lns = txt.split('\n').map(function(s){return s.trim();}).filter(Boolean);
-                                                if (lns.length >= 2 && lns[0].length < 80 && lns[1].length < 60) {
-                                                    add(lns[0], lns[1]);
-                                                }
-                                            }
-                                        });
-
-                                        // 4. Apple Music rows
-                                        document.querySelectorAll('.songs-list-row, .song-name, [data-testid="track-title"]').forEach(function(el) {
-                                            var title = el.querySelector('.song-name, [data-testid="track-title"]')?.innerText || el.innerText;
-                                            var art = el.closest('.songs-list-row')?.querySelector('.by-line, .artist-name')?.innerText || '';
-                                            if (title) add(title, art);
-                                        });
-
-                                        // 5. TuneMyMusic & generic table rows
-                                        document.querySelectorAll('.song-row, .track-title, tr').forEach(function(r) {
-                                            var titleEl = r.querySelector('.track-title, .title, td:nth-child(2)');
-                                            var artEl = r.querySelector('.track-artist, .artist, td:nth-child(3)');
-                                            if (titleEl) add(titleEl.innerText, artEl ? artEl.innerText : '');
-                                        });
-                                    }
-
-                                    harvest();
-
-                                    // Auto-scroll loop to load virtual items (115+ tracks)
-                                    var scrollTarget = document.querySelector('.main-view-container, [data-overlayscrollbars-viewport], .os-viewport, #main') || window;
-                                    var step = 0;
-                                    var maxSteps = 12;
-                                    var interval = setInterval(function() {
-                                        step++;
-                                        if (scrollTarget === window) {
-                                            window.scrollBy(0, 1000);
-                                        } else {
-                                            scrollTarget.scrollTop += 1000;
-                                        }
-                                        harvest();
-                                        if (step >= maxSteps) {
-                                            clearInterval(interval);
-                                            var docTitle = (document.querySelector('h1') ? document.querySelector('h1').innerText.trim() : document.title)
-                                                .replace(/Playlist on Amazon Music.*/i, '')
-                                                .replace(/\| Spotify/i, '')
-                                                .replace(/Amazon Music/i, '')
-                                                .replace(/Apple Music/i, '')
-                                                .trim();
-                                            var payload = JSON.stringify({ title: docTitle || 'Imported Playlist', tracks: tracks });
-                                            if (window.ImportBridge && window.ImportBridge.onExtracted) {
-                                                window.ImportBridge.onExtracted(payload);
-                                            }
-                                        }
-                                    }, 150);
-                                })()
-                            """.trimIndent()
-
-                            wv.evaluateJavascript(js, null)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
-                        enabled = !isExtracting
-                    ) {
-                        Text(if (isExtracting) "Extracting 115+ Songs..." else "⚡ Import This Playlist", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    }
-                }
-
-                AndroidView(
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            layoutParams = android.view.ViewGroup.LayoutParams(
-                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            settings.apply {
-                                javaScriptEnabled = true
-                                domStorageEnabled = true
-                                databaseEnabled = true
-                                allowFileAccess = true
-                                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                                userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-                            }
-                            val cookieManager = CookieManager.getInstance()
-                            cookieManager.setAcceptCookie(true)
-                            cookieManager.setAcceptThirdPartyCookies(this, true)
-
-                            addJavascriptInterface(object : Any() {
-                                @JavascriptInterface
-                                fun onExtracted(json: String) {
-                                    post {
-                                        isExtracting = false
-                                        showInAppWebSheet = false
-                                        isImporting = true
-                                        importProgress = ImportProgress("Importing from web session...", 0, 0)
-                                        scope.launch {
-                                            val res = MusicImportEngine.importPlaylistFromUrl(json) { p ->
-                                                importProgress = p
-                                            }
-                                            isImporting = false
-                                            res.onSuccess { pl ->
-                                                importedPlaylistResult = pl
-                                                selectedImportService = null
-                                                onPlaylistClick(pl)
-                                            }.onFailure { err ->
-                                                importProgress = ImportProgress("Error", 0, 0, error = err.message ?: "Failed to import tracks")
-                                            }
-                                        }
-                                    }
-                                }
-                            }, "ImportBridge")
-
-                            webViewClient = object : WebViewClient() {
-                                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                    val url = request?.url?.toString() ?: ""
-                                    if (com.videoguard.app.data.SpotifyOAuthEngine.handleAuthCallback(url)) {
-                                        scope.launch {
-                                            com.videoguard.app.data.SpotifyOAuthEngine.fetchUserPlaylists()
-                                        }
-                                        showInAppWebSheet = false
-                                        return true
-                                    }
-                                    return false
-                                }
-                            }
-                            loadUrl(webSheetCurrentUrl)
-                            webViewInstance = this
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                )
-            }
-        }
     }
 
     // Playlist 3-Dots Options BottomSheet (Delete & Clear All Songs)

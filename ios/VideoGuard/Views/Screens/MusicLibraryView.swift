@@ -20,10 +20,6 @@ struct MusicLibraryView: View {
     @State private var importProgress: ImportProgress? = nil
     @State private var isImporting = false
     @State private var importedPlaylistResult: UserPlaylist? = nil
-    @State private var isSpotifyConnected: Bool = SpotifyImportEngine.shared.isConnected
-    @State private var spotifyUserName: String? = SpotifyImportEngine.shared.userDisplayName
-    @State private var spotifyPlaylists: [RemotePlaylistSummary] = SpotifyImportEngine.shared.userPlaylists
-    @State private var selectedPlaylistIds: Set<String> = []
 
     @Environment(\.openURL) var openURL
 
@@ -104,7 +100,7 @@ struct MusicLibraryView: View {
                                 .stroke(Color.white.opacity(0.07), lineWidth: 1)
                         )
 
-                        Text("Sign in to Spotify to auto-sync your playlists with 100+ songs, or paste any Spotify link.")
+                        Text("Paste any Spotify playlist link to import all tracks directly into your AURALIX library.")
                             .font(.system(size: 11))
                             .foregroundColor(Color(hex: 0x888B9E))
                             .lineSpacing(4)
