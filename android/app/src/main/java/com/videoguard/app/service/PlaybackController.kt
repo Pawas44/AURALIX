@@ -198,14 +198,24 @@ object PlaybackController {
             if (queue.size <= 2) {
                 checkAndFetchSimilarTracks(track)
             }
-        } else if (_playbackQueue.value.none { it.id == track.id }) {
-            _playbackQueue.value = listOf(track)
-            checkAndFetchSimilarTracks(track)
+        val isDownloaded = com.videoguard.app.data.UserDataRepository.isDownloaded(track.id)
+        if (!isDownloaded) {
+            if (!queue.isEmpty()) {
+                if (queue.size <= 2) {
+                    checkAndFetchSimilarTracks(track)
+                }
+            } else if (_playbackQueue.value.none { it.id == track.id }) {
+                _playbackQueue.value = listOf(track)
+                checkAndFetchSimilarTracks(track)
+            }
+        } else {
+            if (_playbackQueue.value.none { it.id == track.id }) {
+                _playbackQueue.value = listOf(track)
+            }
         }
 
         startOrUpdateService()
 
-        val isDownloaded = com.videoguard.app.data.UserDataRepository.isDownloaded(track.id)
         if (isDownloaded) {
             startOfflinePlayback(track, initialDurationSec)
         } else {
@@ -353,7 +363,8 @@ object PlaybackController {
 
     fun seekTo(seconds: Float) {
         val dur = _durationSeconds.value
-        val target = if (dur > 0f) seconds.coerceIn(0f, dur) else seconds.coerceAtLeast(0f)
+        val maxSafeTarget = if (dur > 2f) (dur - 1.0f) else dur
+        val target = if (dur > 0f) seconds.coerceIn(0f, maxSafeTarget) else seconds.coerceAtLeast(0f)
         _currentTimeSeconds.value = target
         if (isOfflineModeActive) {
             try {
@@ -368,16 +379,23 @@ object PlaybackController {
     fun seekBy(seconds: Int) {
         val dur = _durationSeconds.value
         val rawNew = _currentTimeSeconds.value + seconds
-        val newTime = if (dur > 0f) rawNew.coerceIn(0f, dur) else rawNew.coerceAtLeast(0f)
+        val maxSafeTarget = if (dur > 2f) (dur - 1.0f) else dur
+        val newTime = if (dur > 0f) rawNew.coerceIn(0f, maxSafeTarget) else rawNew.coerceAtLeast(0f)
         _currentTimeSeconds.value = newTime
-        sendCommand("seekBy($seconds)")
+        if (isOfflineModeActive) {
+            try {
+                offlineMediaPlayer?.seekTo((newTime * 1000).toInt())
+            } catch (e: Exception) {}
+        } else {
+            sendCommand("seekBy($seconds)")
+        }
         syncServiceProgress(force = true)
     }
 
     private var isFetchingSimilar = false
 
     fun checkAndFetchSimilarTracks(track: VideoItem) {
-        if (isFetchingSimilar) return
+        if (isFetchingSimilar || isOfflineModeActive) return
         isFetchingSimilar = true
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
             try {
@@ -401,6 +419,19 @@ object PlaybackController {
 
     fun nextTrack() {
         val current = _currentTrack.value ?: return
+
+        if (isOfflineModeActive) {
+            val offlineList = com.videoguard.app.data.UserDataRepository.offlineTracks.value
+            if (offlineList.isNotEmpty()) {
+                val idx = offlineList.indexOfFirst { it.id == current.id }
+                val nextIdx = if (idx in 0 until offlineList.lastIndex) idx + 1 else 0
+                playTrack(offlineList[nextIdx], offlineList)
+            } else {
+                seekTo(0f)
+            }
+            return
+        }
+
         val queue = _playbackQueue.value.ifEmpty { VideoRepository.sampleVideos }
         val idx = queue.indexOfFirst { it.id == current.id }
         if (idx >= queue.size - 2 || queue.size <= 2) {
@@ -412,6 +443,23 @@ object PlaybackController {
 
     fun prevTrack() {
         val current = _currentTrack.value ?: return
+
+        if (isOfflineModeActive) {
+            if (_currentTimeSeconds.value > 3.0f) {
+                seekTo(0f)
+                return
+            }
+            val offlineList = com.videoguard.app.data.UserDataRepository.offlineTracks.value
+            if (offlineList.isNotEmpty()) {
+                val idx = offlineList.indexOfFirst { it.id == current.id }
+                val prevIdx = if (idx > 0) idx - 1 else offlineList.lastIndex
+                playTrack(offlineList[prevIdx], offlineList)
+            } else {
+                seekTo(0f)
+            }
+            return
+        }
+
         val queue = _playbackQueue.value.ifEmpty { VideoRepository.sampleVideos }
         val idx = queue.indexOfFirst { it.id == current.id }
         val prevIdx = if (idx > 0) idx - 1 else queue.lastIndex

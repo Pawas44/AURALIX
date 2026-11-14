@@ -255,19 +255,28 @@ class MediaPlaybackService: ObservableObject {
 
             UserDataRepository.shared.addToHistory(track)
 
-            if !queue.isEmpty {
-                self.playbackQueue = queue
-                if queue.count <= 2 {
+            let isDownloaded = UserDataRepository.shared.isDownloaded(id: track.id)
+
+            if !isDownloaded {
+                if !queue.isEmpty {
+                    self.playbackQueue = queue
+                    if queue.count <= 2 {
+                        self.checkAndFetchSimilarTracks(for: track)
+                    }
+                } else if !self.playbackQueue.contains(where: { $0.id == track.id }) {
+                    self.playbackQueue = [track]
                     self.checkAndFetchSimilarTracks(for: track)
                 }
-            } else if !self.playbackQueue.contains(where: { $0.id == track.id }) {
-                self.playbackQueue = [track]
-                self.checkAndFetchSimilarTracks(for: track)
+            } else {
+                if !queue.isEmpty {
+                    self.playbackQueue = queue
+                } else if !self.playbackQueue.contains(where: { $0.id == track.id }) {
+                    self.playbackQueue = [track]
+                }
             }
 
             self.updateSilentAnchor()
 
-            let isDownloaded = UserDataRepository.shared.isDownloaded(id: track.id)
             if isDownloaded {
                 self.startOfflinePlayback(for: track)
             } else {
@@ -406,7 +415,8 @@ class MediaPlaybackService: ObservableObject {
     func seekTo(seconds: Double) {
         DispatchQueue.main.async {
             let dur = self.durationSeconds
-            let target = dur > 0 ? min(max(0, seconds), dur) : max(0, seconds)
+            let maxSafe = dur > 2.0 ? (dur - 1.0) : dur
+            let target = dur > 0 ? min(max(0, seconds), maxSafe) : max(0, seconds)
             self.currentTimeSeconds = target
             if self.isOfflineModeActive {
                 self.offlineAudioPlayer?.currentTime = target
@@ -422,10 +432,17 @@ class MediaPlaybackService: ObservableObject {
     }
 
     func seekBy(seconds: Int) {
-        let newTime = max(0, currentTimeSeconds + Double(seconds))
+        let dur = self.durationSeconds
+        let maxSafe = dur > 2.0 ? (dur - 1.0) : dur
+        let rawNew = currentTimeSeconds + Double(seconds)
+        let newTime = dur > 0 ? min(max(0, rawNew), maxSafe) : max(0, rawNew)
         DispatchQueue.main.async {
             self.currentTimeSeconds = newTime
-            self.sendCommand("seekBy(\(seconds))")
+            if self.isOfflineModeActive {
+                self.offlineAudioPlayer?.currentTime = newTime
+            } else {
+                self.sendCommand("seekBy(\(seconds))")
+            }
             self.updateNowPlayingInfo(force: true)
         }
     }
@@ -436,7 +453,7 @@ class MediaPlaybackService: ObservableObject {
     private var isFetchingSimilar = false
 
     func checkAndFetchSimilarTracks(for track: VideoItem) {
-        guard !isFetchingSimilar else { return }
+        guard !isFetchingSimilar && !isOfflineModeActive else { return }
         isFetchingSimilar = true
         Task {
             let similar = await YouTubeSearchEngine.getRelatedVideos(video: track, isMusicOnly: true)
@@ -453,6 +470,19 @@ class MediaPlaybackService: ObservableObject {
 
     func nextTrack() {
         guard let current = currentTrack else { return }
+
+        if isOfflineModeActive {
+            let offlineList = UserDataRepository.shared.offlineTracks
+            if !offlineList.isEmpty {
+                let idx = offlineList.firstIndex(where: { $0.id == current.id }) ?? -1
+                let nextIdx = (idx >= 0 && idx < offlineList.count - 1) ? idx + 1 : 0
+                playTrack(offlineList[nextIdx], queue: offlineList)
+            } else {
+                seekTo(seconds: 0)
+            }
+            return
+        }
+
         let queue = playbackQueue.isEmpty ? VideoRepository.sampleVideos : playbackQueue
         guard !queue.isEmpty else { return }
         if isShuffled && queue.count > 1 {
@@ -472,6 +502,23 @@ class MediaPlaybackService: ObservableObject {
 
     func prevTrack() {
         guard let current = currentTrack else { return }
+
+        if isOfflineModeActive {
+            if currentTimeSeconds > 3.0 {
+                seekTo(seconds: 0)
+                return
+            }
+            let offlineList = UserDataRepository.shared.offlineTracks
+            if !offlineList.isEmpty {
+                let idx = offlineList.firstIndex(where: { $0.id == current.id }) ?? 0
+                let prevIdx = idx > 0 ? idx - 1 : offlineList.count - 1
+                playTrack(offlineList[prevIdx], queue: offlineList)
+            } else {
+                seekTo(seconds: 0)
+            }
+            return
+        }
+
         if currentTimeSeconds > 3.0 {
             seekTo(seconds: 0)
             return

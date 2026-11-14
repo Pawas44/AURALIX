@@ -43,12 +43,20 @@ object MusicImportEngine {
         try {
             onProgress(ImportProgress("Analyzing link...", 0, 0))
 
-            val (playlistName, trackMetas) = when {
+            var (playlistName, trackMetas) = when {
                 trimmed.startsWith("{") && trimmed.contains("\"tracks\"") -> parseDomTracksJson(trimmed)
                 trimmed.contains("spotify.com") -> parseSpotify(trimmed, onProgress)
                 trimmed.contains("music.amazon.") || (trimmed.contains("amazon.") && trimmed.contains("music")) || trimmed.contains("amzn.to") -> parseAmazonMusic(trimmed, onProgress)
                 trimmed.contains("music.apple.com") || trimmed.contains("apple.com") -> parseAppleMusic(trimmed, onProgress)
                 else -> parsePlainTextList(trimmed)
+            }
+
+            if (trackMetas.isEmpty() && (trimmed.contains("\n") || trimmed.contains(" - ") || trimmed.contains("\t"))) {
+                val plainFallback = parsePlainTextList(trimmed)
+                if (plainFallback.second.isNotEmpty()) {
+                    playlistName = plainFallback.first
+                    trackMetas = plainFallback.second
+                }
             }
 
             if (trackMetas.isEmpty()) {
@@ -259,7 +267,8 @@ object MusicImportEngine {
         return Pair(playlistTitle, tracks)
     }
 
-    private suspend fun parseAmazonMusic(url: String, onProgress: (ImportProgress) -> Unit): Pair<String, List<ImportTrackMeta>> {
+    private suspend fun parseAmazonMusic(rawUrl: String, onProgress: (ImportProgress) -> Unit): Pair<String, List<ImportTrackMeta>> {
+        val url = resolveRedirectUrl(rawUrl)
         val html = httpGet(url)
         var title = "Amazon Music Playlist"
 
@@ -355,22 +364,35 @@ object MusicImportEngine {
             }
         }
 
-        // 5. Intelligent URL slug fallback (if Amazon Web Client gates unauthenticated HTML)
+        // 5. Intelligent ASIN & URL slug resolution (bypasses Amazon SPA / Bot Protection)
         if (tracks.isEmpty()) {
+            val asinMatcher = Pattern.compile("(B0[A-Z0-9]{7,12})").matcher(url)
+            val asin = if (asinMatcher.find()) asinMatcher.group(1) else ""
+
             val pathPart = url.substringBefore("?").trimEnd('/')
             val lastSegment = pathPart.substringAfterLast("/")
             val cleanSlug = lastSegment.replace(Regex("^B0[A-Z0-9]+-?"), "").replace("-", " ").replace("_", " ").trim()
-            val candidateTitle = if (title != "Amazon Music Playlist" && title.isNotBlank() && !title.equals("Amazon Music", ignoreCase = true)) {
+
+            var candidateTitle = if (title != "Amazon Music Playlist" && title.isNotBlank() && !title.equals("Amazon Music", ignoreCase = true)) {
                 title
             } else if (cleanSlug.isNotBlank() && cleanSlug.length > 2 && !cleanSlug.startsWith("B0")) {
                 cleanSlug
             } else ""
 
+            if (candidateTitle.isBlank() && !asin.isNullOrBlank()) {
+                onProgress(ImportProgress("Resolving Amazon Music playlist...", 0, 0))
+                val resolved = resolveAmazonAsinTitle(asin)
+                if (!resolved.isNullOrBlank()) {
+                    candidateTitle = resolved
+                }
+            }
+
             if (candidateTitle.isNotBlank()) {
                 title = candidateTitle
+                onProgress(ImportProgress("Searching tracks for $candidateTitle...", 0, 0))
                 try {
                     val searchItems = YouTubeSearchEngine.searchVideos("$candidateTitle songs", isMusicOnly = true)
-                    for (item in searchItems.take(25)) {
+                    for (item in searchItems.take(30)) {
                         tracks.add(ImportTrackMeta(item.title, item.artist.ifBlank { item.channelName }))
                     }
                 } catch (e: Exception) {}
@@ -405,6 +427,64 @@ object MusicImportEngine {
         }
 
         return Pair(title, filteredTracks)
+    }
+
+    private fun resolveRedirectUrl(urlStr: String): String {
+        return try {
+            var curUrl = urlStr
+            var hops = 0
+            while (hops < 5) {
+                val url = URL(curUrl)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "HEAD"
+                    connectTimeout = 6000
+                    readTimeout = 6000
+                    instanceFollowRedirects = false
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                }
+                val code = conn.responseCode
+                if (code in 300..399) {
+                    val loc = conn.getHeaderField("Location")
+                    if (!loc.isNullOrBlank()) {
+                        curUrl = if (loc.startsWith("http")) loc else URL(url, loc).toString()
+                        hops++
+                        continue
+                    }
+                }
+                break
+            }
+            curUrl
+        } catch (e: Exception) {
+            urlStr
+        }
+    }
+
+    private fun resolveAmazonAsinTitle(asin: String): String? {
+        if (asin.isBlank()) return null
+        return try {
+            val query = "site:music.amazon.com $asin"
+            val ddgUrl = "https://html.duckduckgo.com/html/?q=" + URLEncoder.encode(query, "UTF-8")
+            val html = httpGet(ddgUrl)
+            if (html.isBlank()) return null
+            val pattern = Pattern.compile("<a[^>]*class=\"result__a\"[^>]*>(.*?)</a>", Pattern.CASE_INSENSITIVE or Pattern.DOTALL)
+            val matcher = pattern.matcher(html)
+            while (matcher.find()) {
+                val raw = matcher.group(1)?.replace(Regex("<[^>]+>"), "")?.trim() ?: continue
+                val decoded = raw.replace("&#x27;", "'").replace("&amp;", "&").replace("&quot;", "\"")
+                val name = decoded
+                    .replace(Regex("(?i) on Amazon Music.*"), "")
+                    .replace(Regex("(?i) - music\\.amazon\\..*"), "")
+                    .replace(Regex("(?i) \\| Amazon\\..*"), "")
+                    .replace(Regex("(?i)\\bPlaylist\\b"), "")
+                    .trim()
+                if (name.length > 2 && !name.contains("Amazon", ignoreCase = true)) {
+                    return name
+                }
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun parseDomTracksJson(jsonStr: String): Pair<String, List<ImportTrackMeta>> {
@@ -557,18 +637,32 @@ object MusicImportEngine {
 
     private fun httpGet(urlStr: String): String {
         return try {
-            val url = URL(urlStr)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 10000
-                readTimeout = 10000
-                instanceFollowRedirects = true
-                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
-                setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+            var curUrl = urlStr
+            var hops = 0
+            while (hops < 5) {
+                val url = URL(curUrl)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                    instanceFollowRedirects = false
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                    setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                    setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                }
+                val code = conn.responseCode
+                if (code in 300..399) {
+                    val loc = conn.getHeaderField("Location")
+                    if (!loc.isNullOrBlank()) {
+                        curUrl = if (loc.startsWith("http")) loc else URL(url, loc).toString()
+                        hops++
+                        continue
+                    }
+                }
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream ?: return ""
+                return stream.bufferedReader().use { it.readText() }
             }
-            val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream ?: return ""
-            stream.bufferedReader().use { it.readText() }
+            ""
         } catch (e: Exception) {
             ""
         }

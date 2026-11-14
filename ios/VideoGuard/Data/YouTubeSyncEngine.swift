@@ -1661,7 +1661,7 @@ final class SpotifyImportEngine {
 
         onProgress(ImportProgress(stage: "Analyzing link...", current: 0, total: 0))
 
-        let parsed: (title: String, tracks: [ImportTrackMeta])
+        var parsed: (title: String, tracks: [ImportTrackMeta])
         if trimmed.hasPrefix("{") && trimmed.contains("\"tracks\"") {
             parsed = parseDomTracksJson(jsonStr: trimmed)
         } else if trimmed.contains("spotify.com") {
@@ -1674,8 +1674,15 @@ final class SpotifyImportEngine {
             parsed = parsePlainText(trimmed)
         }
 
+        if parsed.tracks.isEmpty && (trimmed.contains("\n") || trimmed.contains(" - ") || trimmed.contains("\t")) {
+            let plainFallback = parsePlainText(trimmed)
+            if !plainFallback.tracks.isEmpty {
+                parsed = plainFallback
+            }
+        }
+
         guard !parsed.tracks.isEmpty else {
-            return .failure(NSError(domain: "SpotifyImport", code: 404, userInfo: [NSLocalizedDescriptionKey: "No tracks found from link"]))
+            return .failure(NSError(domain: "SpotifyImport", code: 404, userInfo: [NSLocalizedDescriptionKey: "No tracks found from link or tracklist"]))
         }
 
         let total = parsed.tracks.count
@@ -1828,10 +1835,11 @@ final class SpotifyImportEngine {
     }
 
     private func parseAmazonMusic(url: String) async -> (title: String, tracks: [ImportTrackMeta]) {
-        guard let u = URL(string: url) else { return ("Amazon Music Playlist", []) }
+        let finalUrl = await resolveRedirectUrl(url)
+        guard let u = URL(string: finalUrl) else { return ("Amazon Music Playlist", []) }
         var req = URLRequest(url: u)
-        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
-        req.setValue("text/html,application/json,*/*", forHTTPHeaderField: "Accept")
+        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        req.setValue("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
         req.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
 
         guard let (data, _) = try? await URLSession.shared.data(for: req),
@@ -1951,9 +1959,9 @@ final class SpotifyImportEngine {
             }
         }
 
-        // 5. Intelligent URL slug & title fallback
+        // 5. Intelligent ASIN & URL slug resolution (bypasses Amazon SPA / Bot Protection)
         if tracks.isEmpty {
-            let pathPart = url.components(separatedBy: "?").first ?? url
+            let pathPart = finalUrl.components(separatedBy: "?").first ?? finalUrl
             let lastSegment = pathPart.components(separatedBy: "/").last ?? ""
             let cleanSlug = lastSegment
                 .replacingOccurrences(of: "^B0[A-Z0-9]+-?", with: "", options: .regularExpression)
@@ -1961,7 +1969,7 @@ final class SpotifyImportEngine {
                 .replacingOccurrences(of: "_", with: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
-            let candidateTitle: String
+            var candidateTitle: String
             if title != "Amazon Music Playlist" && !title.isEmpty && !title.lowercased().contains("amazon music") {
                 candidateTitle = title
             } else if !cleanSlug.isEmpty && cleanSlug.count > 2 && !cleanSlug.hasPrefix("B0") {
@@ -1970,10 +1978,24 @@ final class SpotifyImportEngine {
                 candidateTitle = ""
             }
 
+            var asin = ""
+            if let asinRegex = try? NSRegularExpression(pattern: "(B0[A-Z0-9]{7,12})") {
+                let nsUrl = finalUrl as NSString
+                if let m = asinRegex.firstMatch(in: finalUrl, range: NSRange(location: 0, length: nsUrl.length)), m.numberOfRanges > 1 {
+                    asin = nsUrl.substring(with: m.range(at: 1))
+                }
+            }
+
+            if candidateTitle.isEmpty && !asin.isEmpty {
+                if let resolved = await resolveAmazonAsinTitle(asin) {
+                    candidateTitle = resolved
+                }
+            }
+
             if !candidateTitle.isEmpty {
                 title = candidateTitle
                 let searchItems = await YouTubeSearchEngine.searchVideos(query: "\(candidateTitle) songs", isMusicOnly: true)
-                for item in searchItems.prefix(25) {
+                for item in searchItems.prefix(30) {
                     tracks.append(ImportTrackMeta(title: item.title, artist: item.artist.isEmpty ? item.channelName : item.artist))
                 }
             }
@@ -1996,6 +2018,68 @@ final class SpotifyImportEngine {
                    !lower.contains("amazon music help") &&
                    !lower.contains("customer service") &&
                    !lower.contains("sign in") &&
+                   !lower.contains("log in") &&
+                   lower != "library" &&
+                   lower != "browse" &&
+                   lower != "home"
+        }
+
+        return (title, filteredTracks)
+    }
+
+    private func resolveRedirectUrl(_ urlStr: String) async -> String {
+        guard let url = URL(string: urlStr) else { return urlStr }
+        var currentUrl = url
+        for _ in 0..<5 {
+            var req = URLRequest(url: currentUrl)
+            req.httpMethod = "HEAD"
+            req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+            guard let (_, response) = try? await URLSession.shared.data(for: req),
+                  let http = response as? HTTPURLResponse else { break }
+            if (300...399).contains(http.statusCode),
+               let loc = http.value(forHTTPHeaderField: "Location"),
+               let next = URL(string: loc, relativeTo: currentUrl) {
+                currentUrl = next
+            } else {
+                break
+            }
+        }
+        return currentUrl.absoluteString
+    }
+
+    private func resolveAmazonAsinTitle(_ asin: String) async -> String? {
+        guard !asin.isEmpty,
+              let enc = "site:music.amazon.com \(asin)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://html.duckduckgo.com/html/?q=\(enc)") else { return nil }
+        var req = URLRequest(url: url)
+        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let html = String(data: data, encoding: .utf8) else { return nil }
+        let pattern = "<a[^>]*class=\"result__a\"[^>]*>(.*?)</a>"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else { return nil }
+        let nsHtml = html as NSString
+        let matches = regex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
+        for m in matches {
+            guard m.numberOfRanges > 1 else { continue }
+            var raw = nsHtml.substring(with: m.range(at: 1))
+            if let tagRegex = try? NSRegularExpression(pattern: "<[^>]+>") {
+                raw = tagRegex.stringByReplacingMatches(in: raw, range: NSRange(location: 0, length: (raw as NSString).length), withTemplate: "")
+            }
+            let decoded = raw
+                .replacingOccurrences(of: "&#x27;", with: "'")
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&quot;", with: "\"")
+            var name = decoded
+            if let r = try? NSRegularExpression(pattern: "(?i) on Amazon Music.*| - music\\.amazon\\..*| \\| Amazon\\..*|\\bPlaylist\\b") {
+                name = r.stringByReplacingMatches(in: name, range: NSRange(location: 0, length: (name as NSString).length), withTemplate: "")
+            }
+            name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            if name.count > 2 && !name.lowercased().contains("amazon") {
+                return name
+            }
+        }
+        return nil
+    }
                    !lower.contains("log in") &&
                    lower != "library" &&
                    lower != "browse" &&

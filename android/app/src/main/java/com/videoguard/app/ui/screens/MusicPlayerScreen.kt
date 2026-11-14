@@ -459,7 +459,7 @@ fun MusicPlayerScreen(
                 .padding(horizontal = 24.dp, vertical = 2.dp)
         ) {
             Slider(
-                value = currentSeconds.coerceIn(0f, maxSeconds),
+                value = (if (isUserScrubbing) scrubPosition else currentSeconds).coerceIn(0f, maxSeconds),
                 onValueChange = { newVal ->
                     isUserScrubbing = true
                     scrubPosition = newVal
