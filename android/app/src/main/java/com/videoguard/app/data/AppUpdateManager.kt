@@ -3,6 +3,7 @@ package com.videoguard.app.data
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import android.widget.Toast
 import androidx.core.content.FileProvider
@@ -105,20 +106,20 @@ object AppUpdateManager {
                         withContext(Dispatchers.Main) {
                             Toast.makeText(
                                 context,
-                                "AURALIX is up to date (${BuildConfig.APP_VERSION_NAME}) ✓",
+                                "AURALIX is up to date! (Installed: v${BuildConfig.APP_VERSION_NAME} | Latest: $tagName) ✓",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
                     }
                 } else if (isManualCheck) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Could not check for updates (HTTP ${conn.responseCode})", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "GitHub check returned HTTP ${conn.responseCode}", Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (e: Exception) {
                 if (isManualCheck) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Update check failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Update check failed: ${e.localizedMessage ?: e.message}", Toast.LENGTH_SHORT).show()
                     }
                 }
             } finally {
@@ -128,20 +129,34 @@ object AppUpdateManager {
     }
 
     /**
-     * Compares remote tag (e.g. "v1.0.89") with current build code/name.
+     * Compares remote tag (e.g. "v1.0.90") with current build code/name.
      */
     private fun isNewerVersion(remoteTag: String): Boolean {
-        val cleanRemote = remoteTag.removePrefix("v").trim()
-        val currentName = BuildConfig.APP_VERSION_NAME.removePrefix("v").trim()
+        try {
+            val cleanRemote = remoteTag.removePrefix("v").trim()
+            val currentName = BuildConfig.APP_VERSION_NAME.removePrefix("v").trim()
 
-        // Extract run numbers if in 1.0.XX format
-        val remoteRun = cleanRemote.split(".").lastOrNull()?.toIntOrNull()
-        val currentRun = currentName.split(".").lastOrNull()?.toIntOrNull()
+            // 1. Check build numbers if in 1.0.XX format
+            val remoteRun = cleanRemote.split(".").lastOrNull()?.toIntOrNull()
+            val currentRun = currentName.split(".").lastOrNull()?.toIntOrNull()
 
-        return if (remoteRun != null && currentRun != null) {
-            remoteRun > currentRun
-        } else {
-            cleanRemote != currentName
+            if (remoteRun != null && currentRun != null) {
+                return remoteRun > currentRun
+            }
+
+            // 2. Semver fallback comparison
+            val remoteParts = cleanRemote.split(".").mapNotNull { it.toIntOrNull() }
+            val currentParts = currentName.split(".").mapNotNull { it.toIntOrNull() }
+            val maxLen = maxOf(remoteParts.size, currentParts.size)
+            for (i in 0 until maxLen) {
+                val r = remoteParts.getOrElse(i) { 0 }
+                val c = currentParts.getOrElse(i) { 0 }
+                if (r > c) return true
+                if (r < c) return false
+            }
+            return false
+        } catch (_: Exception) {
+            return false
         }
     }
 
@@ -163,23 +178,31 @@ object AppUpdateManager {
                 val targetFile = File(targetDir, "AURALIX_update.apk")
                 if (targetFile.exists()) targetFile.delete()
 
-                val url = URL(release.apkUrl)
-                val conn = url.openConnection() as HttpURLConnection
-                conn.connectTimeout = 15000
-                conn.readTimeout = 30000
-                conn.instanceFollowRedirects = true
-                conn.setRequestProperty("User-Agent", "AURALIX-Android")
+                var currentUrl = release.apkUrl
+                var conn: HttpURLConnection
+                var redirectCount = 0
 
-                val code = conn.responseCode
-                if (code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_MOVED_TEMP || code == 307 || code == 308) {
-                    val redirectUrl = conn.getHeaderField("Location")
-                    val redirectConn = URL(redirectUrl).openConnection() as HttpURLConnection
-                    redirectConn.connectTimeout = 15000
-                    redirectConn.readTimeout = 30000
-                    downloadStream(context, redirectConn, targetFile)
-                } else {
-                    downloadStream(context, conn, targetFile)
+                while (true) {
+                    val urlObj = URL(currentUrl)
+                    conn = urlObj.openConnection() as HttpURLConnection
+                    conn.connectTimeout = 20000
+                    conn.readTimeout = 60000
+                    conn.instanceFollowRedirects = true
+                    conn.setRequestProperty("User-Agent", "AURALIX-Android")
+
+                    val code = conn.responseCode
+                    if ((code in 300..399) && redirectCount < 5) {
+                        val newLocation = conn.getHeaderField("Location")
+                        if (!newLocation.isNullOrBlank()) {
+                            currentUrl = newLocation
+                            redirectCount++
+                            continue
+                        }
+                    }
+                    break
                 }
+
+                downloadStream(context, conn, targetFile)
 
                 // Download completed, launch Android Package Installer
                 _isDownloading.value = false
@@ -205,7 +228,7 @@ object AppUpdateManager {
 
         conn.inputStream.use { input ->
             FileOutputStream(targetFile).use { output ->
-                val buffer = ByteArray(8192)
+                val buffer = ByteArray(16384)
                 var bytesRead: Int
                 var lastUpdate = 0L
 
@@ -235,6 +258,20 @@ object AppUpdateManager {
 
     private fun launchPackageInstaller(context: Context, apkFile: File) {
         try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    Toast.makeText(context, "Please allow 'Install unknown apps' for AURALIX to update", Toast.LENGTH_LONG).show()
+                    val permissionIntent = Intent(
+                        android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:${context.packageName}")
+                    ).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(permissionIntent)
+                    return
+                }
+            }
+
             val apkUri: Uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
