@@ -38,7 +38,7 @@ import androidx.compose.ui.unit.sp
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
 // ========================================================
 // Put your exact UPI VPA here (e.g. pawas@oksbi, pawas@paytm, etc.)
-const val PAWAS_UPI_ID = "pawas@upi"
+const val PAWAS_UPI_ID = "findex13@nyes"
 const val PAWAS_NAME = "Pawas"
 private const val RAZORPAY_URL = "https://razorpay.me/@pawas"
 private const val BMC_PROFILE_URL = "https://buymeacoffee.com/FINDEX"
