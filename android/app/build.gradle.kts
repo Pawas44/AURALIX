@@ -10,7 +10,7 @@ android {
 
     val vCode = (project.findProperty("versionCode") as? String)?.toIntOrNull()
         ?: System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
-        ?: 90
+        ?: 95
     val vName = (project.findProperty("versionName") as? String)
         ?: "1.0.${vCode}"
 

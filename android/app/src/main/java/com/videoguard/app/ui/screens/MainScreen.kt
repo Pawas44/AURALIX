@@ -91,7 +91,7 @@ fun MainScreen() {
             if (shouldDismiss) {
                 playerDragOffsetY.animateTo(
                     targetValue = 2200f,
-                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
                 )
                 isPlayerExpanded = false
                 playerDragOffsetY.snapTo(0f)
@@ -107,13 +107,34 @@ fun MainScreen() {
         }
     }
 
-    val swipeToMinimizeModifier = Modifier.pointerInput(isPlayerExpanded, isFullscreen) {
+    val collapsePlayerWithAnimation: () -> Unit = {
+        coroutineScope.launch {
+            playerDragOffsetY.animateTo(
+                targetValue = 2200f,
+                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+            )
+            isPlayerExpanded = false
+            playerDragOffsetY.snapTo(0f)
+        }
+    }
+
+    val stationarySwipeToMinimizeModifier = Modifier.pointerInput(isPlayerExpanded, isFullscreen, appMode) {
         if (!isPlayerExpanded || isFullscreen) return@pointerInput
         awaitEachGesture {
             val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+
+            // Calculate swipe initiation zone:
+            // YouTube Video: 16:9 video player area (0..320dp)
+            // YouTube Music: Top bar, drag handle, album cover, and title area (0..520dp)
+            val maxYStart = with(density) {
+                if (appMode == AppMode.YOUTUBE) 320.dp.toPx() else 520.dp.toPx()
+            }
+            if (down.position.y > maxYStart) return@awaitEachGesture
+
             var isDraggingDown = false
-            var accumulatedY = 0f
-            var accumulatedX = 0f
+            val startY = down.position.y
+            val startX = down.position.x
+            var lastY = down.position.y
             var lastTime = down.uptimeMillis
             var velocityY = 0f
 
@@ -122,18 +143,21 @@ fun MainScreen() {
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 if (!change.pressed) break
 
-                val deltaY = change.position.y - change.previousPosition.y
-                val deltaX = change.position.x - change.previousPosition.x
+                val currentY = change.position.y
+                val currentX = change.position.x
+                val deltaY = currentY - lastY
+                val totalY = currentY - startY
+                val totalX = currentX - startX
                 val dt = (change.uptimeMillis - lastTime).coerceAtLeast(1)
                 velocityY = deltaY / dt * 1000f
+                lastY = currentY
                 lastTime = change.uptimeMillis
 
                 if (!isDraggingDown) {
-                    accumulatedY += deltaY
-                    accumulatedX += deltaX
-                    if (accumulatedY > 14f && accumulatedY > kotlin.math.abs(accumulatedX) * 1.2f) {
+                    if (totalY > 16f && totalY > kotlin.math.abs(totalX) * 1.3f) {
                         isDraggingDown = true
-                        onDragDelta(accumulatedY)
+                        change.consume()
+                        onDragDelta(totalY)
                     }
                 } else {
                     change.consume()
@@ -225,7 +249,54 @@ fun MainScreen() {
         modifier = Modifier
             .fillMaxSize()
             .background(bgBrush)
+            .then(stationarySwipeToMinimizeModifier)
     ) {
+        // Floating In-App Update Banner Pill
+        val updateInfo by com.videoguard.app.data.AppUpdateManager.updateInfo.collectAsState()
+        val showUpdateDialog by com.videoguard.app.data.AppUpdateManager.showUpdateDialog.collectAsState()
+        val isDownloadingUpdate by com.videoguard.app.data.AppUpdateManager.isDownloading.collectAsState()
+
+        AnimatedVisibility(
+            visible = updateInfo != null && !showUpdateDialog && !isPlayerExpanded,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 10.dp, start = 16.dp, end = 16.dp)
+                .zIndex(99f)
+        ) {
+            Surface(
+                onClick = { com.videoguard.app.data.AppUpdateManager.showDialogAgain() },
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF141624),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.2.dp,
+                    androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF3395FF), Color(0xFF40DCA5)))
+                ),
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.SystemUpdate,
+                        contentDescription = "Update Available",
+                        tint = Color(0xFF40DCA5),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = if (isDownloadingUpdate) "Downloading update..." else "⚡ Update Available (${updateInfo?.tagName}) • Tap to install",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
         val showVideoInYT = isPlayerExpanded && appMode == AppMode.YOUTUBE
 
         // Persistent Audio & Video Player Engine (Stays alive across all navigations & backgrounding!)
@@ -273,13 +344,11 @@ fun MainScreen() {
                             if (isFullscreen) {
                                 isFullscreen = false
                             } else {
-                                isPlayerExpanded = false
+                                collapsePlayerWithAnimation()
                             }
                         },
                         isFullscreen = isFullscreen,
-                        onToggleFullscreen = { isFullscreen = !isFullscreen },
-                        onSwipeDownDelta = onDragDelta,
-                        onSwipeDownRelease = onDragEnd
+                        onToggleFullscreen = { isFullscreen = !isFullscreen }
                     )
                 }
             }
@@ -592,7 +661,6 @@ fun MainScreen() {
                     scaleX = 1f - (progress * 0.04f)
                     scaleY = 1f - (progress * 0.04f)
                 }
-                .then(swipeToMinimizeModifier)
         ) {
             currentVideo?.let { video ->
                 when (appMode) {
@@ -601,7 +669,7 @@ fun MainScreen() {
                             video = video,
                             isPlaying = isPlaying,
                             onPlayPauseToggle = { PlaybackController.togglePlayPause() },
-                            onCollapse = { isPlayerExpanded = false },
+                            onCollapse = { collapsePlayerWithAnimation() },
                             onSwitchToMusicMode = {
                                 appMode = AppMode.YOUTUBE_MUSIC
                             },
@@ -626,7 +694,7 @@ fun MainScreen() {
                             track = video,
                             isPlaying = isPlaying,
                             onPlayPauseToggle = { PlaybackController.togglePlayPause() },
-                            onCollapse = { isPlayerExpanded = false },
+                            onCollapse = { collapsePlayerWithAnimation() },
                             onNextTrack = { PlaybackController.nextTrack() },
                             onPrevTrack = { PlaybackController.prevTrack() },
                             onTrackSelected = { newTrack ->

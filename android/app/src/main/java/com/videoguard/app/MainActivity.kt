@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             com.videoguard.app.data.YouTubeSyncEngine.syncAllUserData()
             com.videoguard.app.data.AppUpdateManager.checkForUpdates(this@MainActivity)
+            com.videoguard.app.data.AppUpdateManager.startPeriodicChecks(this@MainActivity)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -57,5 +58,6 @@ class MainActivity : ComponentActivity() {
                 com.videoguard.app.data.YouTubeSyncEngine.syncAllUserData()
             }
         }
+        com.videoguard.app.data.AppUpdateManager.checkForUpdates(this)
     }
 }

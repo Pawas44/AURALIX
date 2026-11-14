@@ -414,7 +414,7 @@ fun SupportScreen(
 
                 Button(
                     onClick = {
-                        AppUpdateManager.checkForUpdates(context, isManualCheck = true)
+                        AppUpdateManager.checkForUpdates(context, isManualCheck = true, forceShowIfSame = true)
                     },
                     enabled = !isCheckingUpdates,
                     colors = ButtonDefaults.buttonColors(

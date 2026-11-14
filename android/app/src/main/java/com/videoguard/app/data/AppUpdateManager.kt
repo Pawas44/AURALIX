@@ -53,10 +53,33 @@ object AppUpdateManager {
         _showUpdateDialog.value = false
     }
 
+    fun showDialogAgain() {
+        if (_updateInfo.value != null) {
+            _showUpdateDialog.value = true
+        }
+    }
+
+    private var isPeriodicCheckStarted = false
+
+    fun startPeriodicChecks(context: Context) {
+        if (isPeriodicCheckStarted) return
+        isPeriodicCheckStarted = true
+        scope.launch {
+            while (true) {
+                checkForUpdates(context, isManualCheck = false)
+                kotlinx.coroutines.delay(10 * 60 * 1000L) // Silent check every 10 minutes
+            }
+        }
+    }
+
     /**
      * Checks GitHub API for the latest published release.
      */
-    fun checkForUpdates(context: Context, isManualCheck: Boolean = false) {
+    fun checkForUpdates(
+        context: Context,
+        isManualCheck: Boolean = false,
+        forceShowIfSame: Boolean = false
+    ) {
         if (_isChecking.value || _isDownloading.value) return
 
         scope.launch {
@@ -92,7 +115,8 @@ object AppUpdateManager {
                         }
                     }
 
-                    if (apkUrl != null && isNewerVersion(tagName)) {
+                    val isNewer = isNewerVersion(tagName)
+                    if (apkUrl != null && (isNewer || forceShowIfSame)) {
                         val release = AppReleaseInfo(
                             tagName = tagName,
                             releaseTitle = title,

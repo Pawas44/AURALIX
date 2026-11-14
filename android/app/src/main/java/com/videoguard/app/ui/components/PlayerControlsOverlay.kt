@@ -58,49 +58,6 @@ fun PlayerControlsOverlay(
     var doubleTapSide by remember { mutableStateOf<String?>(null) }
     var doubleTapTimestamp by remember { mutableLongStateOf(0L) }
 
-    val swipeModifier = if (onSwipeDownDelta != null && onSwipeDownRelease != null && !isFullscreen) {
-        Modifier.pointerInput(Unit) {
-            awaitEachGesture {
-                val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
-                var isDraggingDown = false
-                var accumulatedY = 0f
-                var accumulatedX = 0f
-                var lastTime = down.uptimeMillis
-                var velocityY = 0f
-
-                while (true) {
-                    val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                    if (!change.pressed) break
-
-                    val deltaY = change.position.y - change.previousPosition.y
-                    val deltaX = change.position.x - change.previousPosition.x
-                    val dt = (change.uptimeMillis - lastTime).coerceAtLeast(1)
-                    velocityY = deltaY / dt * 1000f
-                    lastTime = change.uptimeMillis
-
-                    if (!isDraggingDown) {
-                        accumulatedY += deltaY
-                        accumulatedX += deltaX
-                        if (accumulatedY > 14f && accumulatedY > kotlin.math.abs(accumulatedX) * 1.2f) {
-                            isDraggingDown = true
-                            onSwipeDownDelta(accumulatedY)
-                        }
-                    } else {
-                        change.consume()
-                        if (deltaY != 0f) {
-                            onSwipeDownDelta(deltaY)
-                        }
-                    }
-                }
-
-                if (isDraggingDown) {
-                    onSwipeDownRelease(velocityY)
-                }
-            }
-        }
-    } else Modifier
-
     // Clear double-tap indicator after 650ms
     LaunchedEffect(doubleTapTimestamp) {
         if (doubleTapTimestamp > 0L) {
@@ -120,7 +77,6 @@ fun PlayerControlsOverlay(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .then(swipeModifier)
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {
