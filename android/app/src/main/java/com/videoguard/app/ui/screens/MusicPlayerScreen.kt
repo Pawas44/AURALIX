@@ -153,8 +153,14 @@ fun MusicPlayerScreen(
         }
     }
 
+    val peekSheetHeight = 54.dp + navBarBottom
+    val expandedSheetHeight = 580.dp + navBarBottom
     val sheetHeight by animateDpAsState(
-        targetValue = (if (isSheetExpanded) 360.dp else 180.dp) + navBarBottom,
+        targetValue = if (isSheetExpanded) expandedSheetHeight else peekSheetHeight,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
         label = "sheetHeight"
     )
 
@@ -293,12 +299,18 @@ fun MusicPlayerScreen(
         )
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(ambientGradient)
             .statusBarsPadding()
     ) {
+        // Main Player UI (Fixed height, generous spacing, never squashed!)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(bottom = peekSheetHeight)
+        ) {
         // Top Drag Handle & Bar Area with Vertical Drag Gesture
         Column(
             modifier = Modifier
@@ -765,16 +777,34 @@ fun MusicPlayerScreen(
                     modifier = Modifier.size(24.dp)
                 )
             }
+        } // End of Playback Controls Row
+        } // End of Main Player Column
+
+        // Darkened Scrim behind bottom sheet when expanded (tap to collapse)
+        AnimatedVisibility(
+            visible = isSheetExpanded,
+            enter = fadeIn(tween(180)),
+            exit = fadeOut(tween(180)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .clickable { isSheetExpanded = false }
+            )
         }
 
-        // Bottom Sheet Tabs: [ UP NEXT | LYRICS | RELATED ] - Liquid Glass Dock
+        // Bottom Sheet Tabs: [ UP NEXT | LYRICS | RELATED ] - Liquid Glass Dock Overlay (Slides UP over controls!)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(sheetHeight)
+                .align(Alignment.BottomCenter)
+                .shadow(elevation = 20.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
                 .border(1.dp, LiquidGlassDefaults.BorderSpecular, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xF2161726))
+            colors = CardDefaults.cardColors(containerColor = Color(0xF8141524))
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // Sleek handle bar
@@ -804,7 +834,10 @@ fun MusicPlayerScreen(
                         TabPill(
                             title = "UP NEXT",
                             isActive = activeTab == MusicSheetTab.UP_NEXT,
-                            onClick = { activeTab = MusicSheetTab.UP_NEXT }
+                            onClick = {
+                                activeTab = MusicSheetTab.UP_NEXT
+                                isSheetExpanded = true
+                            }
                         )
                         TabPill(
                             title = "LYRICS",
@@ -836,6 +869,8 @@ fun MusicPlayerScreen(
                         )
                     }
                 }
+
+                if (isSheetExpanded) {
 
                 HorizontalDivider(color = Color(0xFF333333), thickness = 1.dp)
 
@@ -1004,6 +1039,7 @@ fun MusicPlayerScreen(
                 }
             }
         }
+    }
     }
 
     if (showSettingsSheet) {
