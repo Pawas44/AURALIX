@@ -849,6 +849,7 @@ object UserDataRepository {
                 videos.removeAll { it.id == video.id }
             } else {
                 videos.add(0, video)
+                com.videoguard.app.recommendation.ListeningHistoryManager.onTrackLiked(video)
             }
             current[index] = playlist.copy(videos = videos)
             _playlists.value = current
@@ -904,6 +905,7 @@ object UserDataRepository {
                 current[index] = playlist.copy(videos = videos)
                 _playlists.value = current
                 savePlaylists()
+                com.videoguard.app.recommendation.ListeningHistoryManager.onTrackAddedToPlaylist(video)
             }
         }
     }
@@ -993,7 +995,7 @@ object UserDataRepository {
     }
 
     // --- JSON Helpers ---
-    private fun videoToJson(v: VideoItem): JSONObject = JSONObject().apply {
+    fun videoToJson(v: VideoItem): JSONObject = JSONObject().apply {
         put("id", v.id)
         put("title", v.title)
         put("channelName", v.channelName)
@@ -1013,7 +1015,7 @@ object UserDataRepository {
         put("mood", v.mood)
     }
 
-    private fun jsonToVideo(obj: JSONObject): VideoItem = VideoItem(
+    fun jsonToVideo(obj: JSONObject): VideoItem = VideoItem(
         id = obj.optString("id", ""),
         title = obj.optString("title", ""),
         channelName = obj.optString("channelName", ""),

@@ -155,6 +155,7 @@ object PlaybackController {
         com.videoguard.app.data.UserDataRepository.init(context)
         com.videoguard.app.data.AccountRepository.init(context)
         com.videoguard.app.data.SpotifyOAuthEngine.init(context)
+        com.videoguard.app.recommendation.RecommendationEngine.init(context)
         registerNoisyReceiver()
     }
 
@@ -192,6 +193,7 @@ object PlaybackController {
 
         // Automatically record to User History
         com.videoguard.app.data.UserDataRepository.addToHistory(track)
+        com.videoguard.app.recommendation.ListeningHistoryManager.onTrackStarted(track, initialDurationSec)
 
         if (queue.isNotEmpty()) {
             _playbackQueue.value = queue
@@ -362,6 +364,7 @@ object PlaybackController {
         if (duration > 0f) {
             _durationSeconds.value = duration
         }
+        com.videoguard.app.recommendation.ListeningHistoryManager.onProgressUpdate(safeCurrent, duration)
         syncServiceProgress(force = false)
     }
 
@@ -424,6 +427,12 @@ object PlaybackController {
     fun nextTrack() {
         val current = _currentTrack.value ?: return
 
+        if (isSongFinished()) {
+            com.videoguard.app.recommendation.ListeningHistoryManager.onTrackCompleted(current)
+        } else {
+            com.videoguard.app.recommendation.ListeningHistoryManager.onTrackSkipped(current)
+        }
+
         if (isOfflineModeActive) {
             val offlineList = com.videoguard.app.data.UserDataRepository.offlineTracks.value
             if (offlineList.isNotEmpty()) {
@@ -447,6 +456,10 @@ object PlaybackController {
 
     fun prevTrack() {
         val current = _currentTrack.value ?: return
+
+        if (_currentTimeSeconds.value < 4.0f) {
+            com.videoguard.app.recommendation.ListeningHistoryManager.onTrackSkipped(current)
+        }
 
         if (isOfflineModeActive) {
             if (_currentTimeSeconds.value > 3.0f) {

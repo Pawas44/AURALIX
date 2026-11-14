@@ -80,8 +80,10 @@ object MusicImportEngine {
                 customCoverUrl = matchedVideos.firstOrNull()?.thumbnailUrl
             )
 
-            // Auto-save into UserDataRepository
+            // Auto-save into UserDataRepository & Enrich User Taste Profile
             UserDataRepository.savePlaylist(finalPlaylist)
+            com.videoguard.app.recommendation.UserTasteProfile.get().enrichFromImportedTracks(matchedVideos)
+            com.videoguard.app.recommendation.UserTasteProfile.get().enrichFromImportedTracks(matchedVideos)
             onProgress(ImportProgress("Complete!", trackMetas.size, trackMetas.size, isComplete = true))
 
             Result.success(finalPlaylist)
@@ -120,6 +122,7 @@ object MusicImportEngine {
                 customCoverUrl = summary.coverUrl ?: matchedVideos.firstOrNull()?.thumbnailUrl
             )
             UserDataRepository.savePlaylist(finalPlaylist)
+            com.videoguard.app.recommendation.UserTasteProfile.get().enrichFromImportedTracks(matchedVideos)
             onProgress(ImportProgress("Complete!", tracks.size, tracks.size, isComplete = true))
             Result.success(finalPlaylist)
         } catch (e: Exception) {
