@@ -8,9 +8,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.graphicsLayer
@@ -172,14 +175,45 @@ fun MusicPlayerScreen(
     val dragOffsetY = remember { Animatable(0f) }
 
     val swipeToCollapseModifier = Modifier.pointerInput(Unit) {
-        detectVerticalDragGestures(
-            onDragStart = { },
-            onDragEnd = {
+        awaitEachGesture {
+            val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+            var isDraggingDown = false
+            val initialY = down.position.y
+            val initialX = down.position.x
+
+            while (true) {
+                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                if (!change.pressed) {
+                    break
+                }
+
+                val currentY = change.position.y
+                val currentX = change.position.x
+                val dy = currentY - initialY
+                val dx = currentX - initialX
+
+                if (!isDraggingDown) {
+                    if (dy > 18f && dy > kotlin.math.abs(dx) * 1.1f) {
+                        isDraggingDown = true
+                    }
+                }
+
+                if (isDraggingDown) {
+                    change.consume()
+                    val targetOffset = (dy - 18f).coerceAtLeast(0f)
+                    coroutineScope.launch {
+                        dragOffsetY.snapTo(targetOffset)
+                    }
+                }
+            }
+
+            if (isDraggingDown) {
                 coroutineScope.launch {
                     val threshold = 90.dp.toPx()
                     if (dragOffsetY.value > threshold) {
                         dragOffsetY.animateTo(
-                            targetValue = 1200f,
+                            targetValue = 1500f,
                             animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
                         )
                         onCollapse()
@@ -194,22 +228,8 @@ fun MusicPlayerScreen(
                         )
                     }
                 }
-            },
-            onDragCancel = {
-                coroutineScope.launch {
-                    dragOffsetY.animateTo(0f)
-                }
-            },
-            onVerticalDrag = { change, dragAmount ->
-                if (dragAmount > 0 || dragOffsetY.value > 0) {
-                    change.consume()
-                    coroutineScope.launch {
-                        val next = (dragOffsetY.value + dragAmount).coerceAtLeast(0f)
-                        dragOffsetY.snapTo(next)
-                    }
-                }
             }
-        )
+        }
     }
 
     Column(

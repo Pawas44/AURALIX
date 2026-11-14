@@ -6,12 +6,13 @@ import SwiftUI
 private let pawasUpiId = "findex13@nyes"
 private let pawasName = "Pawas"
 private let razorpayURL = URL(string: "https://razorpay.me/@pawas")!
-private let bmcProfileURL = URL(string: "https://buymeacoffee.com/FINDEX")!
+private let bmcProfileURL = URL(string: "https://buymeacoffee.com/findex")!
 
 private let mintAccent = Color(hex: 0x40DCA5)
 private let razorpayAccent = Color(hex: 0x3395FF)
 private let razorpayDark = Color(hex: 0x0C2038)
 private let coffeeGold = Color(hex: 0xFFFFDD00)
+private let bmcOrange = Color(hex: 0xFF813F)
 private let coffeeDark = Color(hex: 0xFF231B05)
 private let upiOrange = Color(hex: 0xF47920)
 private let upiGreen = Color(hex: 0x00A859)
@@ -238,21 +239,9 @@ struct SupportView: View {
                         .foregroundColor(Color(hex: 0xCBD5E1))
                         .lineSpacing(3)
 
-                    // Button to open Safari directly
-                    Button(action: {
+                    // Official Buy Me a Coffee Widget Button matching user screenshot
+                    OfficialBmcWidgetButton {
                         UIApplication.shared.open(bmcProfileURL)
-                    }) {
-                        HStack(spacing: 10) {
-                            Image(systemName: "cup.and.saucer.fill")
-                                .font(.system(size: 18))
-                            Text("Open Buy Me a Coffee in Safari ↗")
-                                .font(.system(size: 14, weight: .bold))
-                        }
-                        .foregroundColor(Color(hex: 0x1E1702))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(coffeeGold)
-                        .cornerRadius(14)
                     }
                 }
                 .padding(18)
@@ -391,18 +380,53 @@ struct OfficialUpiArrowsView: View {
 }
 
 /**
- * Authentic Buy Me A Coffee Logo Badge with signature yellow background.
+ * Official Buy Me a Coffee Widget Button matching user screenshot
+ */
+struct OfficialBmcWidgetButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                BmcCupWidgetIcon()
+                    .frame(width: 28, height: 32)
+
+                Text("Buy me a coffee")
+                    .font(.system(size: 20, weight: .bold, design: .serif))
+                    .foregroundColor(.white)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(bmcOrange)
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.3), radius: 6, x: 0, y: 3)
+        }
+    }
+}
+
+struct BmcCupWidgetIcon: View {
+    var body: some View {
+        ZStack {
+            Image(systemName: "cup.and.saucer.fill")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundColor(Color(hex: 0xFFFFDD00))
+        }
+    }
+}
+
+/**
+ * Authentic Buy Me A Coffee Logo Badge with iconic orange background.
  */
 struct OfficialBmcBadge: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 10)
-                .fill(coffeeGold)
+                .fill(bmcOrange)
                 .frame(width: 38, height: 38)
 
             Image(systemName: "cup.and.saucer.fill")
                 .font(.system(size: 18, weight: .bold))
-                .foregroundColor(Color(hex: 0x1E1702))
+                .foregroundColor(.white)
         }
     }
 }

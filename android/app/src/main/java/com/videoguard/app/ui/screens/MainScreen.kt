@@ -481,9 +481,6 @@ fun MainScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(10f)
-                .pointerInput(Unit) {
-                    detectTapGestures { /* Absorb background touches */ }
-                }
         ) {
             currentVideo?.let { video ->
                 when (appMode) {

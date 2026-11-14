@@ -41,9 +41,10 @@ import androidx.compose.ui.unit.sp
 const val PAWAS_UPI_ID = "findex13@nyes"
 const val PAWAS_NAME = "Pawas"
 private const val RAZORPAY_URL = "https://razorpay.me/@pawas"
-private const val BMC_PROFILE_URL = "https://buymeacoffee.com/FINDEX"
+private const val BMC_PROFILE_URL = "https://buymeacoffee.com/findex"
 
 private val CoffeeGold = Color(0xFFFFDD00)
+private val BmcOrange = Color(0xFFFF813F)
 private val CoffeeDark = Color(0xFF231B05)
 private val RazorpayAccent = Color(0xFF3395FF)
 private val RazorpayDark = Color(0xFF0C2038)
@@ -427,31 +428,12 @@ fun SupportScreen(
                     lineHeight = 16.sp
                 )
 
-                // Direct Open in Browser button with BMC yellow branding
-                Button(
+                // Official Buy Me a Coffee Widget Button (matching screenshot)
+                OfficialBmcWidgetButton(
                     onClick = {
                         openBrowserUrl(context, BMC_PROFILE_URL)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = CoffeeGold),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Coffee,
-                        contentDescription = null,
-                        tint = Color(0xFF1E1702),
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Open Buy Me a Coffee in Browser ↗",
-                        color = Color(0xFF1E1702),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                    }
+                )
             }
         }
 
@@ -553,7 +535,107 @@ fun OfficialUpiArrows(modifier: Modifier = Modifier) {
 }
 
 /**
- * Authentic Buy Me A Coffee Logo Badge with iconic yellow background.
+ * Official Buy Me a Coffee Widget Button matching the exact orange badge,
+ * takeaway coffee cup icon with sparkles, and script lettering.
+ */
+@Composable
+fun OfficialBmcWidgetButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = BmcOrange,
+        shadowElevation = 8.dp,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(54.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            BmcCupWidgetIcon(modifier = Modifier.size(width = 28.dp, height = 32.dp))
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Text(
+                text = "Buy me a coffee",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Cursive,
+                letterSpacing = 0.5.sp
+            )
+        }
+    }
+}
+
+/**
+ * Buy Me a Coffee Takeaway Cup Icon with yellow body, white sleeve, white lid & sparkles.
+ */
+@Composable
+fun BmcCupWidgetIcon(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+
+        // White Sparkles
+        drawCircle(color = Color.White, radius = w * 0.06f, center = androidx.compose.ui.geometry.Offset(w * 0.88f, h * 0.22f))
+        drawCircle(color = Color.White, radius = w * 0.045f, center = androidx.compose.ui.geometry.Offset(w * 0.12f, h * 0.38f))
+
+        // Yellow Cup Body
+        val cupPath = Path().apply {
+            moveTo(w * 0.25f, h * 0.22f)
+            lineTo(w * 0.75f, h * 0.22f)
+            lineTo(w * 0.68f, h * 0.95f)
+            lineTo(w * 0.32f, h * 0.95f)
+            close()
+        }
+        drawPath(cupPath, color = Color(0xFFFFDD00))
+        drawPath(cupPath, color = Color(0xFF1E1E1E), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f))
+
+        // White Sleeve
+        val sleevePath = Path().apply {
+            moveTo(w * 0.22f, h * 0.40f)
+            lineTo(w * 0.78f, h * 0.40f)
+            lineTo(w * 0.73f, h * 0.68f)
+            lineTo(w * 0.27f, h * 0.68f)
+            close()
+        }
+        drawPath(sleevePath, color = Color.White)
+        drawPath(sleevePath, color = Color(0xFF1E1E1E), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f))
+
+        // White Lid
+        val lidPath = Path().apply {
+            moveTo(w * 0.20f, h * 0.22f)
+            lineTo(w * 0.80f, h * 0.22f)
+            lineTo(w * 0.75f, h * 0.10f)
+            lineTo(w * 0.25f, h * 0.10f)
+            close()
+        }
+        drawPath(lidPath, color = Color.White)
+        drawPath(lidPath, color = Color(0xFF1E1E1E), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.5f))
+
+        // Lid Cap
+        val capPath = Path().apply {
+            moveTo(w * 0.35f, h * 0.10f)
+            lineTo(w * 0.65f, h * 0.10f)
+            lineTo(w * 0.62f, h * 0.05f)
+            lineTo(w * 0.38f, h * 0.05f)
+            close()
+        }
+        drawPath(capPath, color = Color.White)
+        drawPath(capPath, color = Color(0xFF1E1E1E), style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f))
+    }
+}
+
+/**
+ * Authentic Buy Me A Coffee Logo Badge with iconic orange background.
  */
 @Composable
 fun OfficialBmcBadge(modifier: Modifier = Modifier) {
@@ -561,15 +643,10 @@ fun OfficialBmcBadge(modifier: Modifier = Modifier) {
         modifier = modifier
             .size(40.dp)
             .clip(RoundedCornerShape(10.dp))
-            .background(CoffeeGold),
+            .background(BmcOrange),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            imageVector = Icons.Filled.Coffee,
-            contentDescription = "Buy Me a Coffee",
-            tint = Color(0xFF1E1702),
-            modifier = Modifier.size(22.dp)
-        )
+        BmcCupWidgetIcon(modifier = Modifier.size(width = 22.dp, height = 26.dp))
     }
 }
 
