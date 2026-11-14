@@ -81,42 +81,20 @@ struct MusicLibraryView: View {
                             Text("Import your music")
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundColor(.white)
-                            Text("Select a service below to move your library and playlists to AURALIX")
+                            Text("Move your Spotify library and playlists seamlessly to AURALIX")
                                 .font(.system(size: 12))
                                 .foregroundColor(Color(hex: 0xAAAAAA))
                         }
 
-                        // Services list (matching reference screenshot)
+                        // Services list
                         VStack(spacing: 0) {
-                            // 1. Spotify
+                            // Spotify
                             importServiceRow(
                                 title: "Spotify",
                                 brandColor: Color(hex: 0x1DB954),
                                 iconName: "music.note"
                             ) {
                                 openServiceImport(service: "Spotify")
-                            }
-
-                            Divider().background(Color.white.opacity(0.08))
-
-                            // 2. Amazon Music
-                            importServiceRow(
-                                title: "Amazon Music",
-                                brandColor: Color(hex: 0x00A8E1),
-                                iconName: "music.note"
-                            ) {
-                                openServiceImport(service: "Amazon Music")
-                            }
-
-                            Divider().background(Color.white.opacity(0.08))
-
-                            // 3. Apple Music
-                            importServiceRow(
-                                title: "Apple Music",
-                                brandColor: Color(hex: 0xFC3C44),
-                                iconName: "music.note"
-                            ) {
-                                openServiceImport(service: "Apple Music")
                             }
                         }
                         .background(Color(hex: 0x141622))
@@ -126,7 +104,7 @@ struct MusicLibraryView: View {
                                 .stroke(Color.white.opacity(0.07), lineWidth: 1)
                         )
 
-                        Text("Select Spotify, Amazon Music, or Apple Music to sign in and auto-sync or paste any playlist link.")
+                        Text("Sign in to Spotify to auto-sync your playlists with 100+ songs, or paste any Spotify link.")
                             .font(.system(size: 11))
                             .foregroundColor(Color(hex: 0x888B9E))
                             .lineSpacing(4)
@@ -386,7 +364,7 @@ struct MusicLibraryView: View {
                                 Text("No playlists yet")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundColor(.white)
-                                Text("Create a new playlist or import from Spotify / Amazon Music")
+                                Text("Create a new playlist or import from Spotify")
                                     .font(.system(size: 12))
                                     .foregroundColor(.gray)
                                     .multilineTextAlignment(.center)
@@ -545,16 +523,16 @@ struct MusicLibraryView: View {
 
     @ViewBuilder
     private func serviceImportSheetView(service: String) -> some View {
-        let brandColor: Color = service == "Spotify" ? Color(hex: 0x1DB954) : (service == "Amazon Music" ? Color(hex: 0x00A8E1) : Color(hex: 0xFC3C44))
+        let brandColor: Color = Color(hex: 0x1DB954)
 
         NavigationView {
             VStack(alignment: .leading, spacing: 16) {
-                Text(service == "Spotify" ? "Paste any Spotify playlist or album link to import all tracks directly into AURALIX:" : (service == "Amazon Music" ? "Paste Amazon Music share link, or paste song titles directly:" : "Paste Apple Music share link, or paste song titles directly:"))
+                Text("Paste any Spotify playlist or album link to import all tracks directly into AURALIX:")
                     .font(.system(size: 13))
                     .foregroundColor(Color(hex: 0xCCCCCC))
 
                 HStack {
-                    TextField(service == "Spotify" ? "https://open.spotify.com/playlist/..." : (service == "Amazon Music" ? "https://music.amazon.com/playlists/... or song names" : "https://music.apple.com/playlist/... or song names"), text: $importUrlInput)
+                    TextField("https://open.spotify.com/playlist/... or song names", text: $importUrlInput)
                         .font(.system(size: 13))
                         .foregroundColor(.white)
                         .autocapitalization(.none)

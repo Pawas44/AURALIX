@@ -172,6 +172,20 @@ object SpotifyOAuthEngine {
         list
     }
 
+    suspend fun fetchPlaylistTitle(playlistId: String): String = withContext(Dispatchers.IO) {
+        val token = getAccessToken() ?: return@withContext "Spotify Playlist"
+        try {
+            val jsonStr = httpGetWithAuth("https://api.spotify.com/v1/playlists/$playlistId?fields=name", token)
+            if (jsonStr.isNotBlank() && jsonStr.startsWith("{")) {
+                val name = JSONObject(jsonStr).optString("name", "Spotify Playlist")
+                if (name.isNotBlank()) return@withContext name
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        "Spotify Playlist"
+    }
+
     suspend fun fetchPlaylistTracks(playlistId: String): List<ImportTrackMeta> = withContext(Dispatchers.IO) {
         val token = getAccessToken()
         val tracks = mutableListOf<ImportTrackMeta>()

@@ -38,7 +38,7 @@ object MusicImportEngine {
     ): Result<UserPlaylist> = withContext(Dispatchers.IO) {
         val trimmed = inputUrlOrText.trim()
         if (trimmed.isEmpty()) {
-            return@withContext Result.failure(IllegalArgumentException("Please enter a valid Spotify/Amazon Music link or song titles"))
+            return@withContext Result.failure(IllegalArgumentException("Please enter a valid Spotify link or song titles"))
         }
 
         try {
@@ -200,11 +200,13 @@ object MusicImportEngine {
             val token = SpotifyOAuthEngine.getAccessToken()
             if (!token.isNullOrBlank()) {
                 try {
-                    val oauthTracks = kotlinx.coroutines.runBlocking {
-                        SpotifyOAuthEngine.fetchPlaylistTracks(id)
+                    val (pTitle, oauthTracks) = kotlinx.coroutines.runBlocking {
+                        val title = SpotifyOAuthEngine.fetchPlaylistTitle(id)
+                        val tracks = SpotifyOAuthEngine.fetchPlaylistTracks(id)
+                        Pair(title, tracks)
                     }
                     if (oauthTracks.isNotEmpty()) {
-                        return Pair("Spotify Playlist", oauthTracks)
+                        return Pair(pTitle, oauthTracks)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -447,7 +449,7 @@ object MusicImportEngine {
                     connectTimeout = 6000
                     readTimeout = 6000
                     instanceFollowRedirects = false
-                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 }
                 val code = conn.responseCode
                 if (code in 300..399) {
@@ -625,7 +627,7 @@ object MusicImportEngine {
                     connectTimeout = 10000
                     readTimeout = 10000
                     instanceFollowRedirects = false
-                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                     setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                     setRequestProperty("Accept-Language", "en-US,en;q=0.9")
                 }

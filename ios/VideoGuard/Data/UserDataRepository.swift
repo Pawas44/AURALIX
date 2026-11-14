@@ -126,11 +126,14 @@ class UserDataRepository: ObservableObject {
             if let streamUrl = await self.fetchRealYouTubeAudioUrl(videoId: video.id) {
                 let userAgent = "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)"
 
-                // Strategy 1: Direct full stream download using native URLSession download
+                // Strategy 1: Direct stream download
                 var streamReq = URLRequest(url: streamUrl)
                 streamReq.timeoutInterval = 30
                 streamReq.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                streamReq.setValue("https://www.youtube.com/", forHTTPHeaderField: "Referer")
+                streamReq.setValue("https://www.youtube.com", forHTTPHeaderField: "Origin")
                 streamReq.setValue("*/*", forHTTPHeaderField: "Accept")
+                streamReq.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
 
                 if let (tempUrl, response) = try? await URLSession.shared.download(for: streamReq),
                    let httpResp = response as? HTTPURLResponse,
@@ -241,25 +244,22 @@ class UserDataRepository: ObservableObject {
 
     private func fetchRealYouTubeAudioUrl(videoId: String) async -> URL? {
         guard let url = URL(string: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false") else { return nil }
-        
-        // 1. Primary: ANDROID_VR 1.65.10 (Direct audio streams without PO-token restriction)
-        var vrRequest = URLRequest(url: url)
-        vrRequest.httpMethod = "POST"
-        vrRequest.timeoutInterval = 8
-        vrRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        vrRequest.setValue("com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip", forHTTPHeaderField: "User-Agent")
 
-        let vrBody: [String: Any] = [
+        // 1. Primary: ANDROID client (21.03.38) — provides unthrottled format 18 and audio streams
+        var androidReq = URLRequest(url: url)
+        androidReq.httpMethod = "POST"
+        androidReq.timeoutInterval = 8
+        androidReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        androidReq.setValue("com.google.android.youtube/21.03.38 (Linux; U; Android 14) gzip", forHTTPHeaderField: "User-Agent")
+
+        let androidBody: [String: Any] = [
             "context": [
                 "client": [
-                    "clientName": "ANDROID_VR",
-                    "clientVersion": "1.65.10",
-                    "clientId": "28",
+                    "clientName": "ANDROID",
+                    "clientVersion": "21.03.38",
+                    "clientId": "3",
                     "osName": "Android",
-                    "osVersion": "12L",
-                    "deviceMake": "Oculus",
-                    "deviceModel": "Quest 3",
-                    "androidSdkVersion": "32",
+                    "osVersion": "14",
                     "hl": "en",
                     "gl": "US"
                 ]
@@ -267,26 +267,36 @@ class UserDataRepository: ObservableObject {
             "videoId": videoId
         ]
 
-        if let httpBody = try? JSONSerialization.data(withJSONObject: vrBody) {
-            vrRequest.httpBody = httpBody
-            if let (data, response) = try? await URLSession.shared.data(for: vrRequest),
+        if let httpBody = try? JSONSerialization.data(withJSONObject: androidBody) {
+            androidReq.httpBody = httpBody
+            if let (data, response) = try? await URLSession.shared.data(for: androidReq),
                let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let streamingData = json["streamingData"] as? [String: Any],
-               let adaptiveFormats = streamingData["adaptiveFormats"] as? [[String: Any]] {
-                for fmt in adaptiveFormats {
-                    let mime = fmt["mimeType"] as? String ?? ""
-                    let audioUrl = fmt["url"] as? String ?? ""
-                    if mime.hasPrefix("audio/") && !audioUrl.isEmpty {
-                        if let streamUrl = URL(string: audioUrl) {
-                            return streamUrl
+               let streamingData = json["streamingData"] as? [String: Any] {
+                // Check formats for format 18 (unthrottled mp4 with AAC audio)
+                if let formats = streamingData["formats"] as? [[String: Any]] {
+                    for fmt in formats {
+                        let itag = fmt["itag"] as? Int ?? 0
+                        let streamUrl = fmt["url"] as? String ?? ""
+                        if (itag == 18 || itag == 22) && !streamUrl.isEmpty {
+                            if let u = URL(string: streamUrl) { return u }
+                        }
+                    }
+                }
+                // Check adaptiveFormats
+                if let adaptiveFormats = streamingData["adaptiveFormats"] as? [[String: Any]] {
+                    for fmt in adaptiveFormats {
+                        let mime = fmt["mimeType"] as? String ?? ""
+                        let audioUrl = fmt["url"] as? String ?? ""
+                        if mime.hasPrefix("audio/") && !audioUrl.isEmpty {
+                            if let u = URL(string: audioUrl) { return u }
                         }
                     }
                 }
             }
         }
-
-        // 2. Secondary: IOS 21.03.3
+        
+        // 2. Secondary: IOS 21.03.3 (iPad)
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = 8
@@ -332,6 +342,50 @@ class UserDataRepository: ObservableObject {
                 }
                 if let bestAudioUrl, let streamUrl = URL(string: bestAudioUrl) {
                     return streamUrl
+                }
+            }
+        }
+
+        // 3. Fallback: ANDROID_VR 1.65.10
+        var vrRequest = URLRequest(url: url)
+        vrRequest.httpMethod = "POST"
+        vrRequest.timeoutInterval = 8
+        vrRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        vrRequest.setValue("com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip", forHTTPHeaderField: "User-Agent")
+
+        let vrBody: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "ANDROID_VR",
+                    "clientVersion": "1.65.10",
+                    "clientId": "28",
+                    "osName": "Android",
+                    "osVersion": "12L",
+                    "deviceMake": "Oculus",
+                    "deviceModel": "Quest 3",
+                    "androidSdkVersion": "32",
+                    "hl": "en",
+                    "gl": "US"
+                ]
+            ],
+            "videoId": videoId
+        ]
+
+        if let httpBody = try? JSONSerialization.data(withJSONObject: vrBody) {
+            vrRequest.httpBody = httpBody
+            if let (data, response) = try? await URLSession.shared.data(for: vrRequest),
+               let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode),
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let streamingData = json["streamingData"] as? [String: Any],
+               let adaptiveFormats = streamingData["adaptiveFormats"] as? [[String: Any]] {
+                for fmt in adaptiveFormats {
+                    let mime = fmt["mimeType"] as? String ?? ""
+                    let audioUrl = fmt["url"] as? String ?? ""
+                    if mime.hasPrefix("audio/") && !audioUrl.isEmpty {
+                        if let streamUrl = URL(string: audioUrl) {
+                            return streamUrl
+                        }
+                    }
                 }
             }
         }
