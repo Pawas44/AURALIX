@@ -78,18 +78,21 @@ fun MainScreen() {
     var showGoogleAuthDialog by remember { mutableStateOf(false) }
 
     val coroutineScope = rememberCoroutineScope()
-    val playerDragOffsetY = remember { Animatable(0f) }
+    var playerDragOffsetY by remember { mutableFloatStateOf(0f) }
     val density = androidx.compose.ui.platform.LocalDensity.current
 
     val collapsePlayerWithAnimation: () -> Unit = {
         coroutineScope.launch {
             val targetY = with(density) { 1400.dp.toPx() }
-            playerDragOffsetY.animateTo(
+            val anim = Animatable(playerDragOffsetY)
+            anim.animateTo(
                 targetValue = targetY,
                 animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
-            )
+            ) {
+                playerDragOffsetY = value
+            }
             isPlayerExpanded = false
-            playerDragOffsetY.snapTo(0f)
+            playerDragOffsetY = 0f
         }
     }
 
@@ -97,7 +100,7 @@ fun MainScreen() {
         awaitEachGesture {
             val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
             var isDragging = false
-            val startScreenY = down.position.y + playerDragOffsetY.value
+            val startScreenY = down.position.y + playerDragOffsetY
             val startScreenX = down.position.x
             var lastScreenY = startScreenY
             var lastTime = down.uptimeMillis
@@ -108,7 +111,7 @@ fun MainScreen() {
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 if (!change.pressed) break
 
-                val currentScreenY = change.position.y + playerDragOffsetY.value
+                val currentScreenY = change.position.y + playerDragOffsetY
                 val currentScreenX = change.position.x
                 val deltaY = currentScreenY - lastScreenY
                 val totalY = currentScreenY - startScreenY
@@ -122,41 +125,48 @@ fun MainScreen() {
                     if (totalY > 16f && totalY > kotlin.math.abs(totalX) * 1.3f) {
                         isDragging = true
                         change.consume()
-                        val newOffset = (playerDragOffsetY.value + totalY).coerceAtLeast(0f)
-                        playerDragOffsetY.snapTo(newOffset)
-                        lastScreenY = change.position.y + playerDragOffsetY.value
+                        playerDragOffsetY = (playerDragOffsetY + totalY).coerceAtLeast(0f)
+                        lastScreenY = change.position.y + playerDragOffsetY
                     }
                 } else {
                     change.consume()
                     if (deltaY != 0f) {
-                        val newOffset = (playerDragOffsetY.value + deltaY).coerceAtLeast(0f)
-                        playerDragOffsetY.snapTo(newOffset)
-                        lastScreenY = change.position.y + playerDragOffsetY.value
+                        playerDragOffsetY = (playerDragOffsetY + deltaY).coerceAtLeast(0f)
+                        lastScreenY = change.position.y + playerDragOffsetY
                     }
                 }
             }
 
             if (isDragging) {
                 val threshold = with(density) { 90.dp.toPx() }
-                val shouldDismiss = playerDragOffsetY.value > threshold || velocityY > 750f
-                if (shouldDismiss) {
-                    val targetY = with(density) { 1400.dp.toPx() }
-                    playerDragOffsetY.animateTo(
-                        targetValue = targetY,
-                        initialVelocity = velocityY,
-                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
-                    )
-                    isPlayerExpanded = false
-                    playerDragOffsetY.snapTo(0f)
-                } else {
-                    playerDragOffsetY.animateTo(
-                        targetValue = 0f,
-                        initialVelocity = velocityY,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioLowBouncy,
-                            stiffness = Spring.StiffnessMedium
-                        )
-                    )
+                val currentVal = playerDragOffsetY
+                val shouldDismiss = currentVal > threshold || velocityY > 750f
+                coroutineScope.launch {
+                    if (shouldDismiss) {
+                        val targetY = with(density) { 1400.dp.toPx() }
+                        val anim = Animatable(currentVal)
+                        anim.animateTo(
+                            targetValue = targetY,
+                            initialVelocity = velocityY,
+                            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                        ) {
+                            playerDragOffsetY = value
+                        }
+                        isPlayerExpanded = false
+                        playerDragOffsetY = 0f
+                    } else {
+                        val anim = Animatable(currentVal)
+                        anim.animateTo(
+                            targetValue = 0f,
+                            initialVelocity = velocityY,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            )
+                        ) {
+                            playerDragOffsetY = value
+                        }
+                    }
                 }
             }
         }
@@ -299,9 +309,9 @@ fun MainScreen() {
                     .statusBarsPadding()
                     .aspectRatio(16f / 9f)
                     .zIndex(15f)
-                    .offset { IntOffset(0, playerDragOffsetY.value.roundToInt().coerceAtLeast(0)) }
+                    .offset { IntOffset(0, playerDragOffsetY.roundToInt().coerceAtLeast(0)) }
                     .graphicsLayer {
-                        val progress = (playerDragOffsetY.value / 1200f).coerceIn(0f, 1f)
+                        val progress = (playerDragOffsetY / 1200f).coerceIn(0f, 1f)
                         alpha = 1f - (progress * 0.25f)
                         scaleX = 1f - (progress * 0.04f)
                         scaleY = 1f - (progress * 0.04f)
@@ -639,9 +649,9 @@ fun MainScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(10f)
-                .offset { IntOffset(0, playerDragOffsetY.value.roundToInt().coerceAtLeast(0)) }
+                .offset { IntOffset(0, playerDragOffsetY.roundToInt().coerceAtLeast(0)) }
                 .graphicsLayer {
-                    val progress = (playerDragOffsetY.value / 1200f).coerceIn(0f, 1f)
+                    val progress = (playerDragOffsetY / 1200f).coerceIn(0f, 1f)
                     alpha = 1f - (progress * 0.25f)
                     scaleX = 1f - (progress * 0.04f)
                     scaleY = 1f - (progress * 0.04f)
