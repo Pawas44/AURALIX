@@ -109,6 +109,7 @@ fun VideoDetailScreen(
     }
 
     var showAddToPlaylistSheet by remember { mutableStateOf(false) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
     val offlineTracks by com.videoguard.app.data.UserDataRepository.offlineTracks.collectAsState()
     val isTrackDownloaded = offlineTracks.any { it.id == video.id }
     val currentDownload by com.videoguard.app.data.UserDataRepository.currentDownload.collectAsState()
@@ -614,6 +615,12 @@ fun VideoDetailScreen(
         AddToPlaylistSheet(
             video = video,
             onDismiss = { showAddToPlaylistSheet = false }
+        )
+    }
+
+    if (showSettingsSheet) {
+        com.videoguard.app.ui.components.PlayerSettingsBottomSheet(
+            onDismiss = { showSettingsSheet = false }
         )
     }
 }

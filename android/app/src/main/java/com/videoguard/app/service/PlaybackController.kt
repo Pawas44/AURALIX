@@ -153,7 +153,7 @@ object PlaybackController {
             _sleepTimerMinutes.value = (remain + 59) / 60
             sleepTimerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
                 var currentSec = remain
-                while (kotlinx.coroutines.isActive && currentSec > 0) {
+                while (isActive && currentSec > 0) {
                     kotlinx.coroutines.delay(1000L)
                     currentSec--
                     _sleepTimerRemainingSeconds.value = currentSec
@@ -173,7 +173,7 @@ object PlaybackController {
             _sleepTimerRemainingSeconds.value = totalSeconds
             sleepTimerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
                 var currentSec = totalSeconds
-                while (kotlinx.coroutines.isActive && currentSec > 0) {
+                while (isActive && currentSec > 0) {
                     kotlinx.coroutines.delay(1000L)
                     currentSec--
                     _sleepTimerRemainingSeconds.value = currentSec
