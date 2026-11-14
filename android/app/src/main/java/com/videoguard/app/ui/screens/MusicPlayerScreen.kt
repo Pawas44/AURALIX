@@ -171,78 +171,9 @@ fun MusicPlayerScreen(
         isLoadingLyrics = false
     }
 
-    val coroutineScope = rememberCoroutineScope()
-    val dragOffsetY = remember { Animatable(0f) }
-
-    val swipeToCollapseModifier = Modifier.pointerInput(Unit) {
-        awaitEachGesture {
-            val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
-            var isDraggingDown = false
-            val initialY = down.position.y
-            val initialX = down.position.x
-
-            while (true) {
-                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if (!change.pressed) {
-                    break
-                }
-
-                val currentY = change.position.y
-                val currentX = change.position.x
-                val dy = currentY - initialY
-                val dx = currentX - initialX
-
-                if (!isDraggingDown) {
-                    if (dy > 18f && dy > kotlin.math.abs(dx) * 1.1f) {
-                        isDraggingDown = true
-                    }
-                }
-
-                if (isDraggingDown) {
-                    change.consume()
-                    val targetOffset = (dy - 18f).coerceAtLeast(0f)
-                    coroutineScope.launch {
-                        dragOffsetY.snapTo(targetOffset)
-                    }
-                }
-            }
-
-            if (isDraggingDown) {
-                coroutineScope.launch {
-                    val threshold = 90.dp.toPx()
-                    if (dragOffsetY.value > threshold) {
-                        dragOffsetY.animateTo(
-                            targetValue = 1500f,
-                            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
-                        )
-                        onCollapse()
-                        dragOffsetY.snapTo(0f)
-                    } else {
-                        dragOffsetY.animateTo(
-                            targetValue = 0f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioLowBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            )
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
-            .offset { IntOffset(0, dragOffsetY.value.roundToInt().coerceAtLeast(0)) }
-            .graphicsLayer {
-                val progress = (dragOffsetY.value / 1200f).coerceIn(0f, 1f)
-                alpha = 1f - (progress * 0.3f)
-                scaleX = 1f - (progress * 0.04f)
-                scaleY = 1f - (progress * 0.04f)
-            }
-            .then(swipeToCollapseModifier)
             .background(
                 Brush.verticalGradient(
                     colors = listOf(

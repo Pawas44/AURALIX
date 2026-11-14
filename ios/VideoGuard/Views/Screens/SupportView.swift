@@ -82,25 +82,6 @@ struct SupportView: View {
                                 }
                             }
                         }
-
-                        Spacer()
-
-                        Button(action: {
-                            UIPasteboard.general.string = pawasUpiId
-                            triggerToast("UPI ID copied: \(pawasUpiId)")
-                        }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.system(size: 11))
-                                Text("Copy")
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                            .foregroundColor(razorpayAccent)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(razorpayAccent.opacity(0.15))
-                            .cornerRadius(10)
-                        }
                     }
 
                     // UPI ID details pill
@@ -212,25 +193,6 @@ struct SupportView: View {
                                         .foregroundColor(Color(hex: 0xA0AEC0))
                                 }
                             }
-                        }
-
-                        Spacer()
-
-                        Button(action: {
-                            UIPasteboard.general.string = bmcProfileURL.absoluteString
-                            triggerToast("BMC link copied to clipboard")
-                        }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.system(size: 11))
-                                Text("Copy")
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                            .foregroundColor(coffeeGold)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(coffeeGold.opacity(0.15))
-                            .cornerRadius(10)
                         }
                     }
 

@@ -167,35 +167,6 @@ fun SupportScreen(
                             )
                         }
                     }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color.White.copy(alpha = 0.08f))
-                            .clickable {
-                                clipboardManager.setText(AnnotatedString(PAWAS_UPI_ID))
-                                Toast.makeText(context, "UPI ID copied: $PAWAS_UPI_ID", Toast.LENGTH_SHORT).show()
-                            }
-                            .padding(horizontal = 8.dp, vertical = 5.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.ContentCopy,
-                                contentDescription = "Copy UPI ID",
-                                tint = RazorpayAccent,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = "Copy",
-                                color = RazorpayAccent,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
                 }
 
                 // UPI ID Details Pill
@@ -390,35 +361,6 @@ fun SupportScreen(
                                 text = "International cards, PayPal & Apple Pay",
                                 color = Color(0xFFA0AEC0),
                                 fontSize = 11.sp
-                            )
-                        }
-                    }
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(CoffeeGold.copy(alpha = 0.15f))
-                            .clickable {
-                                clipboardManager.setText(AnnotatedString(BMC_PROFILE_URL))
-                                Toast.makeText(context, "Copied BMC link", Toast.LENGTH_SHORT).show()
-                            }
-                            .padding(horizontal = 8.dp, vertical = 5.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.ContentCopy,
-                                contentDescription = "Copy link",
-                                tint = CoffeeGold,
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Text(
-                                text = "Copy",
-                                color = CoffeeGold,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }

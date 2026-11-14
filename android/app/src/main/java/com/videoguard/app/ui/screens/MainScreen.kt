@@ -2,13 +2,20 @@ package com.videoguard.app.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -65,6 +72,74 @@ fun MainScreen() {
     var isLibraryActive by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
     var showGoogleAuthDialog by remember { mutableStateOf(false) }
+
+    val coroutineScope = rememberCoroutineScope()
+    val playerDragOffsetY = remember { Animatable(0f) }
+
+    val swipeToMinimizeModifier = Modifier.pointerInput(isPlayerExpanded, isFullscreen) {
+        if (!isPlayerExpanded || isFullscreen) return@pointerInput
+        awaitEachGesture {
+            val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+            var isDraggingDown = false
+            val initialY = down.position.y
+            val initialX = down.position.x
+            var lastY = initialY
+            var lastTime = down.uptimeMillis
+            var velocityY = 0f
+
+            while (true) {
+                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                if (!change.pressed) break
+
+                val currentY = change.position.y
+                val currentX = change.position.x
+                val dy = currentY - initialY
+                val dx = currentX - initialX
+                val dt = (change.uptimeMillis - lastTime).coerceAtLeast(1)
+                velocityY = (currentY - lastY) / dt * 1000f
+                lastY = currentY
+                lastTime = change.uptimeMillis
+
+                if (!isDraggingDown) {
+                    if (dy > 14f && dy > kotlin.math.abs(dx) * 1.15f) {
+                        isDraggingDown = true
+                    }
+                }
+
+                if (isDraggingDown) {
+                    change.consume()
+                    val targetOffset = (dy - 14f).coerceAtLeast(0f)
+                    coroutineScope.launch {
+                        playerDragOffsetY.snapTo(targetOffset)
+                    }
+                }
+            }
+
+            if (isDraggingDown) {
+                coroutineScope.launch {
+                    val threshold = 95.dp.toPx()
+                    val shouldDismiss = playerDragOffsetY.value > threshold || velocityY > 1000f
+                    if (shouldDismiss) {
+                        playerDragOffsetY.animateTo(
+                            targetValue = 2000f,
+                            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                        )
+                        isPlayerExpanded = false
+                        playerDragOffsetY.snapTo(0f)
+                    } else {
+                        playerDragOffsetY.animateTo(
+                            targetValue = 0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            )
+                        )
+                    }
+                }
+            }
+        }
+    }
 
     // Synchronize window system bars & screen orientation with isFullscreen
     DisposableEffect(isFullscreen) {
@@ -157,6 +232,14 @@ fun MainScreen() {
                     .statusBarsPadding()
                     .aspectRatio(16f / 9f)
                     .zIndex(15f)
+                    .offset { IntOffset(0, playerDragOffsetY.value.roundToInt().coerceAtLeast(0)) }
+                    .graphicsLayer {
+                        val progress = (playerDragOffsetY.value / 1200f).coerceIn(0f, 1f)
+                        alpha = 1f - (progress * 0.25f)
+                        scaleX = 1f - (progress * 0.04f)
+                        scaleY = 1f - (progress * 0.04f)
+                    }
+                    .then(swipeToMinimizeModifier)
                 else -> Modifier
                     .size(1.dp)
                     .alpha(0.01f)
@@ -473,14 +556,34 @@ fun MainScreen() {
             }
         }
 
-        // Full Screen Player Overlay (Animated Slide/Fade)
+        // Full Screen Player Overlay (Animated Slide/Fade with Fluid Gesture Settle)
         AnimatedVisibility(
             visible = isPlayerExpanded && currentVideo != null,
-            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            enter = slideInVertically(
+                initialOffsetY = { it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            ) + fadeIn(animationSpec = tween(220)),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            ) + fadeOut(animationSpec = tween(180)),
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(10f)
+                .offset { IntOffset(0, playerDragOffsetY.value.roundToInt().coerceAtLeast(0)) }
+                .graphicsLayer {
+                    val progress = (playerDragOffsetY.value / 1200f).coerceIn(0f, 1f)
+                    alpha = 1f - (progress * 0.25f)
+                    scaleX = 1f - (progress * 0.04f)
+                    scaleY = 1f - (progress * 0.04f)
+                }
+                .then(swipeToMinimizeModifier)
         ) {
             currentVideo?.let { video ->
                 when (appMode) {

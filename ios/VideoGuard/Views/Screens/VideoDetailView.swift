@@ -17,6 +17,7 @@ struct VideoDetailView: View {
     @State private var isDescriptionExpanded = false
     @State private var dynamicRelated: [VideoItem] = []
     @State private var isLoadingRelated = false
+    @State private var dragOffset: CGFloat = 0
 
     private var displayVideos: [VideoItem] {
         let queue = playbackService.playbackQueue
@@ -235,6 +236,27 @@ struct VideoDetailView: View {
             }
         }
         .background(LiquidGlassDefaults.liquidCanvas.ignoresSafeArea())
+        .offset(y: max(0, dragOffset))
+        .gesture(
+            DragGesture(minimumDistance: 10)
+                .onChanged { value in
+                    if value.translation.height > 0 {
+                        dragOffset = value.translation.height
+                    }
+                }
+                .onEnded { value in
+                    if value.translation.height > 80 || value.predictedEndTranslation.height > 150 {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+                            onCollapse()
+                        }
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            dragOffset = 0
+                        }
+                    }
+                }
+        )
+        .onDisappear { dragOffset = 0 }
         .task(id: video.id) {
             if playbackService.playbackQueue.count <= 1 {
                 isLoadingRelated = true
