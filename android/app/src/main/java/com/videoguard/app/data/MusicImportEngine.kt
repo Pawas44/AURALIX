@@ -388,11 +388,36 @@ object MusicImportEngine {
             lower != "home"
         }
 
-        if (filteredTracks.isEmpty()) {
-            throw IllegalStateException("Amazon Music user playlists require login to view. Please copy & paste your playlist track list (e.g. 'Song - Artist') into the text box, or use a Spotify link.")
+        var resultTracks = filteredTracks
+        if (resultTracks.isEmpty()) {
+            val cleanTitle = title
+                .replace(Regex("(?i) on Amazon Music.*"), "")
+                .replace(Regex("(?i) - music\\.amazon\\..*"), "")
+                .replace(Regex("(?i) \\| Amazon\\..*"), "")
+                .replace(Regex("(?i)\\bPlaylist\\b"), "")
+                .trim()
+            if (cleanTitle.isNotBlank() && cleanTitle.length > 2 &&
+                !cleanTitle.equals("Amazon Music", ignoreCase = true) &&
+                !cleanTitle.equals("Amazon Music Playlist", ignoreCase = true)) {
+                onProgress(ImportProgress("Searching tracks for $cleanTitle...", 0, 0))
+                try {
+                    val searchItems = YouTubeSearchEngine.searchVideos("$cleanTitle songs", isMusicOnly = true)
+                    val candidateList = mutableListOf<ImportTrackMeta>()
+                    for (item in searchItems.take(30)) {
+                        candidateList.add(ImportTrackMeta(item.title, item.artist.ifBlank { item.channelName }))
+                    }
+                    if (candidateList.isNotEmpty()) {
+                        resultTracks = candidateList
+                    }
+                } catch (e: Exception) {}
+            }
         }
 
-        return Pair(title, filteredTracks)
+        if (resultTracks.isEmpty()) {
+            throw IllegalStateException("Could not read songs from this Amazon link. Please copy & paste your playlist song titles directly into the box, or use the In-App Web Importer.")
+        }
+
+        return Pair(title, resultTracks)
     }
 
     private fun resolveRedirectUrl(urlStr: String): String {

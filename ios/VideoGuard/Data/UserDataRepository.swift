@@ -136,14 +136,14 @@ class UserDataRepository: ObservableObject {
                    let httpResp = response as? HTTPURLResponse,
                    (200...299).contains(httpResp.statusCode) {
                     if let attrs = try? FileManager.default.attributesOfItem(atPath: tempUrl.path),
-                       let size = attrs[.size] as? Int64, size > 1_200_000 {
+                       let size = attrs[.size] as? Int64, size > 400_000 {
                         try? FileManager.default.removeItem(at: fileUrl)
                         try? FileManager.default.moveItem(at: tempUrl, to: fileUrl)
                         isRealStreamDownloaded = true
                     }
                 }
 
-                // Strategy 2: Chunked resumed range download if direct download returned < 1.2MB
+                // Strategy 2: Chunked resumed range download if direct download returned < 400KB
                 if !isRealStreamDownloaded {
                     let chunkSize: Int64 = 512 * 1024
                     var downloaded: Int64 = 0
@@ -195,7 +195,7 @@ class UserDataRepository: ObservableObject {
                         }
                     }
 
-                    if fileData.count > 1_200_000 {
+                    if fileData.count > 400_000 {
                         try? FileManager.default.removeItem(at: fileUrl)
                         try? fileData.write(to: fileUrl)
                         isRealStreamDownloaded = true
@@ -205,7 +205,7 @@ class UserDataRepository: ObservableObject {
 
             if FileManager.default.fileExists(atPath: fileUrl.path),
                let attrs = try? FileManager.default.attributesOfItem(atPath: fileUrl.path),
-               let size = attrs[.size] as? Int64, size > 1_200_000 {
+               let size = attrs[.size] as? Int64, size > 400_000 {
                 isRealStreamDownloaded = true
             }
 

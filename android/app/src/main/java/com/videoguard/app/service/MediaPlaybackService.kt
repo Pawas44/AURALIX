@@ -98,13 +98,23 @@ class MediaPlaybackService : Service() {
 
     private var audioManager: AudioManager? = null
     private var audioFocusRequest: AudioFocusRequest? = null
+    private var telephonyManager: android.telephony.TelephonyManager? = null
+
+    @Suppress("DEPRECATION")
+    private val phoneStateListener = object : android.telephony.PhoneStateListener() {
+        override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+            if (state == android.telephony.TelephonyManager.CALL_STATE_RINGING ||
+                state == android.telephony.TelephonyManager.CALL_STATE_OFFHOOK) {
+                // Incoming phone call -> auto-pause playback
+                PlaybackController.pause()
+            }
+        }
+    }
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // Incoming phone call or other app requested audio focus: auto-pause
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                // Another audio app requested permanent playback focus (e.g. Spotify, YouTube app)
                 PlaybackController.pause()
             }
         }
@@ -204,6 +214,14 @@ class MediaPlaybackService : Service() {
         activeInstance = this
         createNotificationChannel()
         registerNoisyReceiver()
+
+        try {
+            telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+            @Suppress("DEPRECATION")
+            telephonyManager?.listen(phoneStateListener, android.telephony.PhoneStateListener.LISTEN_CALL_STATE)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
@@ -520,6 +538,10 @@ class MediaPlaybackService : Service() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+        try {
+            @Suppress("DEPRECATION")
+            telephonyManager?.listen(phoneStateListener, android.telephony.PhoneStateListener.LISTEN_NONE)
+        } catch (e: Exception) {}
         abandonAudioFocus()
         releaseWakeLock()
         super.onDestroy()

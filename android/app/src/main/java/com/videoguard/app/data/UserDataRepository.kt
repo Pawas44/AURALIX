@@ -221,7 +221,7 @@ object UserDataRepository {
 
             if (audioFormat != null && audioFormat.url.isNotBlank()) {
                 val streamUrl = audioFormat.url
-                val userAgent = "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)"
+                val userAgent = audioFormat.userAgent
                 var totalBytes = if (audioFormat.contentLength > 0) audioFormat.contentLength else 0L
 
                 // Clean old corrupted/partial file to guarantee clean full download
@@ -230,98 +230,99 @@ object UserDataRepository {
                 }
 
                 var downloaded = 0L
-                var retries = 0
-                val minValidBytes = 1_200_000L // Complete song must be at least 1.2 MB
+                val minValidBytes = 400_000L // Complete audio file must be at least 400 KB
 
-                while (retries < 15) {
-                    if (totalBytes > 0L && downloaded >= (totalBytes * 0.98).toLong()) {
-                        break
+                // Attempt 1: Direct full stream reading without Range
+                try {
+                    val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 15000
+                        readTimeout = 30000
+                        setRequestProperty("User-Agent", userAgent)
+                        setRequestProperty("Accept", "*/*")
                     }
+                    val code = conn.responseCode
+                    if (code in 200..299) {
+                        val cl = conn.contentLengthLong
+                        if (cl > 0L) totalBytes = cl
 
-                    try {
-                        val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
-                            connectTimeout = 15000
-                            readTimeout = 25000
-                            setRequestProperty("User-Agent", userAgent)
-                            if (downloaded > 0L) {
-                                if (totalBytes > downloaded) {
-                                    setRequestProperty("Range", "bytes=$downloaded-${totalBytes - 1}")
-                                } else {
-                                    setRequestProperty("Range", "bytes=$downloaded-")
-                                }
-                            }
-                            setRequestProperty("Accept", "*/*")
-                        }
+                        conn.inputStream.use { input ->
+                            java.io.FileOutputStream(targetFile).use { output ->
+                                val buffer = ByteArray(64 * 1024)
+                                var bytesRead: Int
+                                var lastNotifUpdate = 0L
+                                while (input.read(buffer).also { bytesRead = it } != -1) {
+                                    output.write(buffer, 0, bytesRead)
+                                    downloaded += bytesRead
 
-                        val code = conn.responseCode
-                        if (code in 200..299) {
-                            if (totalBytes <= 0L) {
-                                val cl = conn.contentLengthLong
-                                if (cl > 0L) {
-                                    totalBytes = if (downloaded > 0L) downloaded + cl else cl
-                                }
-                            }
+                                    val currentTotal = if (totalBytes > 0L) totalBytes else 4_500_000L
+                                    val percent = ((downloaded * 100) / currentTotal).toInt().coerceIn(1, 99)
+                                    val mbNow = String.format(java.util.Locale.US, "%.1f", downloaded / (1024f * 1024f))
+                                    val mbTotal = String.format(java.util.Locale.US, "%.1f", currentTotal / (1024f * 1024f))
 
-                            conn.inputStream.use { input ->
-                                java.io.FileOutputStream(targetFile, downloaded > 0L).use { output ->
-                                    val buffer = ByteArray(64 * 1024)
-                                    var bytesRead: Int
-                                    var lastNotifUpdate = 0L
-                                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                                        output.write(buffer, 0, bytesRead)
-                                        downloaded += bytesRead
-                                        retries = 0
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastNotifUpdate > 500) {
+                                        lastNotifUpdate = now
+                                        _currentDownload.value = DownloadTask(
+                                            videoId = video.id,
+                                            title = video.title,
+                                            progress = percent,
+                                            bytesText = "$mbNow MB / $mbTotal MB",
+                                            isComplete = false
+                                        )
 
-                                        val currentTotal = if (totalBytes > 0L) totalBytes else 4_500_000L
-                                        val percent = ((downloaded * 100) / currentTotal).toInt().coerceIn(1, 99)
-                                        val mbNow = String.format(java.util.Locale.US, "%.1f", downloaded / (1024f * 1024f))
-                                        val mbTotal = String.format(java.util.Locale.US, "%.1f", currentTotal / (1024f * 1024f))
-
-                                        val now = System.currentTimeMillis()
-                                        if (now - lastNotifUpdate > 500) {
-                                            lastNotifUpdate = now
-                                            _currentDownload.value = DownloadTask(
-                                                videoId = video.id,
-                                                title = video.title,
-                                                progress = percent,
-                                                bytesText = "$mbNow MB / $mbTotal MB",
-                                                isComplete = false
-                                            )
-
-                                            try {
-                                                val notif = androidx.core.app.NotificationCompat.Builder(context, channelId)
-                                                    .setContentTitle("Downloading: ${video.title}")
-                                                    .setContentText("$percent% ($mbNow MB / $mbTotal MB)")
-                                                    .setSmallIcon(android.R.drawable.stat_sys_download)
-                                                    .setProgress(100, percent, false)
-                                                    .setOngoing(true)
-                                                    .setOnlyAlertOnce(true)
-                                                    .build()
-                                                notifManager?.notify(notifId, notif)
-                                            } catch (e: Exception) {}
-                                        }
+                                        try {
+                                            val notif = androidx.core.app.NotificationCompat.Builder(context, channelId)
+                                                .setContentTitle("Downloading: ${video.title}")
+                                                .setContentText("$percent% ($mbNow MB / $mbTotal MB)")
+                                                .setSmallIcon(android.R.drawable.stat_sys_download)
+                                                .setProgress(100, percent, false)
+                                                .setOngoing(true)
+                                                .setOnlyAlertOnce(true)
+                                                .build()
+                                            notifManager?.notify(notifId, notif)
+                                        } catch (e: Exception) {}
                                     }
                                 }
                             }
-
-                            if (totalBytes > 0L && downloaded >= (totalBytes * 0.98).toLong()) {
-                                break
-                            }
-                        } else if (code == 416) {
-                            // Reached end of stream
-                            break
-                        } else {
-                            retries++
-                            kotlinx.coroutines.delay(600)
                         }
-                    } catch (e: Exception) {
-                        retries++
-                        kotlinx.coroutines.delay(600)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                // Attempt 2: If stream was interrupted early, resume using Range requests
+                if (totalBytes > 0L && downloaded < (totalBytes * 0.95).toLong() && targetFile.exists() && downloaded > 0L) {
+                    var retries = 0
+                    while (retries < 5 && downloaded < (totalBytes * 0.95).toLong()) {
+                        try {
+                            val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
+                                connectTimeout = 12000
+                                readTimeout = 20000
+                                setRequestProperty("User-Agent", userAgent)
+                                setRequestProperty("Range", "bytes=$downloaded-${totalBytes - 1}")
+                                setRequestProperty("Accept", "*/*")
+                            }
+                            if (conn.responseCode in 200..299) {
+                                conn.inputStream.use { input ->
+                                    java.io.FileOutputStream(targetFile, true).use { output ->
+                                        val buffer = ByteArray(64 * 1024)
+                                        var bytesRead: Int
+                                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                                            output.write(buffer, 0, bytesRead)
+                                            downloaded += bytesRead
+                                        }
+                                    }
+                                }
+                            } else {
+                                retries++
+                            }
+                        } catch (e: Exception) {
+                            retries++
+                        }
                     }
                 }
 
-                val expectedThreshold = if (totalBytes > 0L) (totalBytes * 0.94).toLong() else minValidBytes
-                if (targetFile.exists() && targetFile.length() >= expectedThreshold && targetFile.length() >= minValidBytes) {
+                if (targetFile.exists() && targetFile.length() >= minValidBytes) {
                     isRealStreamDownloaded = true
                 }
             }
@@ -342,7 +343,7 @@ object UserDataRepository {
                                 input.copyTo(output)
                             }
                         }
-                        if (targetFile.exists() && targetFile.length() >= 1_200_000L) {
+                        if (targetFile.exists() && targetFile.length() >= 400_000L) {
                             isRealStreamDownloaded = true
                         }
                     }
@@ -399,7 +400,8 @@ object UserDataRepository {
         val url: String,
         val contentLength: Long,
         val mimeType: String,
-        val bitrate: Int
+        val bitrate: Int,
+        val userAgent: String = "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)"
     )
 
     private suspend fun fetchRealYouTubeAudioFormat(videoId: String): AudioStreamFormat? = withContext(Dispatchers.IO) {
@@ -562,7 +564,13 @@ object UserDataRepository {
                         val bitrate = fmt.optInt("bitrate", 0)
                         val clen = fmt.optLong("contentLength", 0L)
                         if (mime.startsWith("audio/") && audioUrl.isNotBlank()) {
-                            return@withContext AudioStreamFormat(audioUrl, clen, mime, bitrate)
+                            return@withContext AudioStreamFormat(
+                                audioUrl,
+                                clen,
+                                mime,
+                                bitrate,
+                                "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+                            )
                         }
                     }
                 }

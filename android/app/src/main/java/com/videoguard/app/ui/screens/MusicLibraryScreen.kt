@@ -871,7 +871,22 @@ fun MusicLibraryScreen(
 
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = {
+                                webSheetCurrentUrl = if (currentService == "Spotify") "https://open.spotify.com" else "https://music.amazon.com"
+                                showInAppWebSheet = true
+                            }
+                        ) {
+                            Icon(Icons.Default.Language, contentDescription = null, tint = brandColor, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Web Importer", color = brandColor, fontSize = 12.sp)
+                        }
+
                         TextButton(
                             onClick = {
                                 clipboardManager.getText()?.text?.let { importUrlInput = it }
@@ -879,7 +894,7 @@ fun MusicLibraryScreen(
                         ) {
                             Icon(Icons.Default.ContentPaste, contentDescription = null, tint = brandColor, modifier = Modifier.size(15.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Paste from Clipboard", color = brandColor, fontSize = 12.sp)
+                            Text("Paste Clipboard", color = brandColor, fontSize = 12.sp)
                         }
                     }
 
@@ -986,6 +1001,134 @@ fun MusicLibraryScreen(
             },
             containerColor = Color(0xFF1B1D28)
         )
+    }
+
+    // In-App Web Importer BottomSheet (Full WebView with '⚡ Import This Playlist' button)
+    if (showInAppWebSheet) {
+        var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+        var isExtracting by remember { mutableStateOf(false) }
+
+        ModalBottomSheet(
+            onDismissRequest = { showInAppWebSheet = false },
+            containerColor = Color(0xFF14151E),
+            modifier = Modifier.fillMaxHeight(0.92f)
+        ) {
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Top header
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Sign In & Open Playlist",
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Button(
+                        onClick = {
+                            val wv = webViewInstance ?: return@Button
+                            isExtracting = true
+                            val js = """
+                                (function() {
+                                    var tracks = [];
+                                    document.querySelectorAll('a[href*="/albums/"]').forEach(function(a) {
+                                        var t = a.innerText.trim();
+                                        if (t.length > 0 && !t.includes('Amazon') && !t.includes('Playlist')) {
+                                            var container = a.parentElement;
+                                            var artist = '';
+                                            for (var i = 0; i < 5 && container; i++) {
+                                                var artistA = container.querySelector('a[href*="/artists/"]');
+                                                if (artistA && artistA !== a) { artist = artistA.innerText.trim(); break; }
+                                                container = container.parentElement;
+                                            }
+                                            tracks.push(t + (artist ? ' - ' + artist : ''));
+                                        }
+                                    });
+                                    if (tracks.length === 0) {
+                                        document.querySelectorAll('button[aria-label]').forEach(function(b) {
+                                            var label = b.getAttribute('aria-label') || '';
+                                            if (label.includes(',') && !label.includes('Play') && !label.includes('Add')) {
+                                                var p = label.split(',');
+                                                if (p.length >= 2) tracks.push(p[0].trim() + ' - ' + p[1].trim());
+                                            }
+                                        });
+                                    }
+                                    if (tracks.length === 0) {
+                                        document.querySelectorAll('[data-testid="tracklist-row"]').forEach(function(r) {
+                                            var t = r.querySelector('[data-encore-id="text"]');
+                                            var a = r.querySelector('a[href*="/artist/"]');
+                                            if (t) tracks.push(t.innerText.trim() + ' - ' + (a ? a.innerText.trim() : ''));
+                                        });
+                                    }
+                                    var h1 = document.querySelector('h1');
+                                    var title = h1 ? h1.innerText.trim() : document.title;
+                                    return JSON.stringify({ title: title, tracks: tracks });
+                                })()
+                            """.trimIndent()
+
+                            wv.evaluateJavascript(js) { resultJson ->
+                                isExtracting = false
+                                if (!resultJson.isNullOrBlank() && resultJson != "null") {
+                                    val unquoted = if (resultJson.startsWith("\"") && resultJson.endsWith("\"")) {
+                                        try {
+                                            org.json.JSONTokener(resultJson).nextValue().toString()
+                                        } catch (e: Exception) {
+                                            resultJson.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
+                                        }
+                                    } else resultJson
+
+                                    showInAppWebSheet = false
+                                    isImporting = true
+                                    importProgress = ImportProgress("Importing from web session...", 0, 0)
+                                    scope.launch {
+                                        val res = MusicImportEngine.importPlaylistFromUrl(unquoted) { p ->
+                                            importProgress = p
+                                        }
+                                        isImporting = false
+                                        res.onSuccess { pl ->
+                                            importedPlaylistResult = pl
+                                        }.onFailure { err ->
+                                            importProgress = ImportProgress("Error", 0, 0, error = err.message ?: "Failed to import tracks")
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE91E63)),
+                        enabled = !isExtracting
+                    ) {
+                        Text(if (isExtracting) "Extracting..." else "⚡ Import This Playlist", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+
+                AndroidView(
+                    factory = { ctx ->
+                        WebView(ctx).apply {
+                            layoutParams = android.view.ViewGroup.LayoutParams(
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = true
+                                databaseEnabled = true
+                                userAgentString = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+                            }
+                            webViewClient = WebViewClient()
+                            loadUrl(webSheetCurrentUrl)
+                            webViewInstance = this
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+            }
+        }
     }
 
     // Playlist 3-Dots Options BottomSheet (Delete & Clear All Songs)
