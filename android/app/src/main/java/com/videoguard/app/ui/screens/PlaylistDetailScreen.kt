@@ -59,15 +59,16 @@ fun PlaylistDetailScreen(
         iconType = if (isDownloads) "download" else "playlist"
     )
 
-    val currentVideos = if (isDownloads) offlineTracks else {
-        var videos by remember(playlistId) { mutableStateOf(playlist.videos) }
-        LaunchedEffect(repoPlaylist?.videos) {
-            val updated = repoPlaylist?.videos
-            if (!updated.isNullOrEmpty()) {
-                videos = updated
-            }
+    var dynamicVideos by remember(playlistId) { mutableStateOf(playlist.videos) }
+    LaunchedEffect(repoPlaylist?.videos) {
+        val updated = repoPlaylist?.videos
+        if (!updated.isNullOrEmpty()) {
+            dynamicVideos = updated
         }
-        videos
+    }
+    val currentVideos = if (isDownloads) offlineTracks else dynamicVideos
+    val totalDurationStr = remember(currentVideos) {
+        UserDataRepository.formatCombinedDuration(currentVideos)
     }
 
     var isLoading by remember(playlistId) { mutableStateOf(!isDownloads && playlist.videos.isEmpty()) }
@@ -213,9 +214,6 @@ fun PlaylistDetailScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(4.dp))
-                            val totalDurationStr = remember(currentVideos) {
-                                UserDataRepository.formatCombinedDuration(currentVideos)
-                            }
                             Text(
                                 text = if (isDownloads) {
                                     "${currentVideos.size} Songs • $totalDurationStr • Available Offline"

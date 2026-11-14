@@ -79,6 +79,9 @@ fun MusicLibraryScreen(
 
     val likedPlaylist = playlists.find { it.id == "liked_videos" }
     val likedCount = likedPlaylist?.videoCount ?: 0
+    val downloadDurationStr = remember(offlineTracks) {
+        UserDataRepository.formatCombinedDuration(offlineTracks)
+    }
 
     Scaffold(
         topBar = {
@@ -297,9 +300,6 @@ fun MusicLibraryScreen(
             // 2b. Downloads Playlist Hero Card (Dedicated Music Library Playlist)
             if (selectedFilter == "All" || selectedFilter == "Playlists" || selectedFilter == "Downloads") {
                 item {
-                    val downloadDurationStr = remember(offlineTracks) {
-                        UserDataRepository.formatCombinedDuration(offlineTracks)
-                    }
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
