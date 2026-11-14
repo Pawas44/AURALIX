@@ -482,11 +482,13 @@ struct MusicLibraryView: View {
             }
             Button("Cancel", role: .cancel) { newPlaylistTitle = "" }
         }
-        .sheet(item: Binding<ServiceItem?>(
-            get: { selectedService != nil ? ServiceItem(name: selectedService!) : nil },
-            set: { selectedService = $0?.name }
-        )) { item in
-            serviceImportSheetView(service: item.name)
+        .sheet(isPresented: Binding<Bool>(
+            get: { selectedService != nil },
+            set: { if !$0 { selectedService = nil } }
+        )) {
+            if let service = selectedService {
+                serviceImportSheetView(service: service)
+            }
         }
     }
 
