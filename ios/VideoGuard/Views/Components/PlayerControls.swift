@@ -5,7 +5,6 @@ struct PlayerControls: View {
     var onSwitchToMusic: (() -> Void)? = nil
     @ObservedObject var userData = UserDataRepository.shared
     @State private var showPlaylistPicker = false
-    @State private var isDownloaded = false
 
     var body: some View {
         let isLiked = userData.isLiked(video.id)
@@ -73,7 +72,10 @@ struct PlayerControls: View {
                 }
 
                 // Download
-                Button(action: { isDownloaded = true }) {
+                let isDownloaded = userData.isDownloaded(id: video.id)
+                Button(action: {
+                    userData.startDownload(video: video)
+                }) {
                     HStack(spacing: 5) {
                         Image(systemName: isDownloaded ? "checkmark.circle.fill" : "arrow.down.circle")
                             .font(.system(size: 14))

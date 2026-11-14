@@ -2,6 +2,7 @@
 
 package com.videoguard.app.ui.screens
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -99,7 +100,9 @@ fun VideoDetailScreen(
     }
 
     var showAddToPlaylistSheet by remember { mutableStateOf(false) }
-    var isDownloaded by remember { mutableStateOf(false) }
+    val offlineTracks by com.videoguard.app.data.UserDataRepository.offlineTracks.collectAsState()
+    val isTrackDownloaded = offlineTracks.any { it.id == video.id }
+    val currentDownload by com.videoguard.app.data.UserDataRepository.currentDownload.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     Column(
@@ -118,6 +121,62 @@ fun VideoDetailScreen(
                 .statusBarsPadding()
                 .aspectRatio(16f / 9f)
         )
+
+        // Real-Time Download Banner for Active Download
+        AnimatedVisibility(
+            visible = currentDownload != null && currentDownload?.videoId == video.id,
+            enter = slideInVertically() + fadeIn(),
+            exit = slideOutVertically() + fadeOut()
+        ) {
+            currentDownload?.let { dl ->
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF1B1D2C),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF1744).copy(alpha = 0.5f))
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (dl.isComplete) "✓ Download Complete" else "Downloading: ${dl.title}",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = if (dl.isComplete) "Ready" else "${dl.progress}%",
+                                color = Color(0xFFFF1744),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { dl.progress / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = Color(0xFFFF1744),
+                            trackColor = Color.White.copy(alpha = 0.15f)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = dl.bytesText,
+                            color = Color(0xFFAAAAAA),
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+        }
 
         // Scrollable Video Details & Related Videos
         LazyColumn(
@@ -274,10 +333,10 @@ fun VideoDetailScreen(
 
                     Surface(
                         onClick = {
-                            isDownloaded = true
+                            com.videoguard.app.data.UserDataRepository.startDownload(context, video)
                             android.widget.Toast.makeText(
                                 context,
-                                "Downloading \"${video.title}\" for offline playback...",
+                                if (isTrackDownloaded) "Removed from downloads" else "Downloading \"${video.title}\" for offline playback...",
                                 android.widget.Toast.LENGTH_SHORT
                             ).show()
                         },
@@ -289,13 +348,13 @@ fun VideoDetailScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
-                                imageVector = if (isDownloaded) Icons.Filled.CheckCircle else Icons.Default.Download,
+                                imageVector = if (isTrackDownloaded) Icons.Filled.CheckCircle else Icons.Default.Download,
                                 contentDescription = "Download",
-                                tint = if (isDownloaded) Color(0xFFFF1744) else Color.White,
+                                tint = if (isTrackDownloaded) Color(0xFFFF1744) else Color.White,
                                 modifier = Modifier.size(17.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text(if (isDownloaded) "Downloaded" else "Download", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(if (isTrackDownloaded) "Downloaded" else "Download", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
 

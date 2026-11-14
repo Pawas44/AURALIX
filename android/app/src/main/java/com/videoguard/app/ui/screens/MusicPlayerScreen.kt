@@ -9,8 +9,11 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -163,12 +166,61 @@ fun MusicPlayerScreen(
         isLoadingLyrics = false
     }
 
+    val coroutineScope = rememberCoroutineScope()
+    val dragOffsetY = remember { Animatable(0f) }
+
+    val swipeToCollapseModifier = Modifier.pointerInput(Unit) {
+        detectVerticalDragGestures(
+            onDragStart = { },
+            onDragEnd = {
+                coroutineScope.launch {
+                    val threshold = 90.dp.toPx()
+                    if (dragOffsetY.value > threshold) {
+                        dragOffsetY.animateTo(
+                            targetValue = 1200f,
+                            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                        )
+                        onCollapse()
+                        dragOffsetY.snapTo(0f)
+                    } else {
+                        dragOffsetY.animateTo(
+                            targetValue = 0f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                stiffness = Spring.StiffnessMedium
+                            )
+                        )
+                    }
+                }
+            },
+            onDragCancel = {
+                coroutineScope.launch {
+                    dragOffsetY.animateTo(0f)
+                }
+            },
+            onVerticalDrag = { change, dragAmount ->
+                if (dragAmount > 0 || dragOffsetY.value > 0) {
+                    change.consume()
+                    coroutineScope.launch {
+                        val next = (dragOffsetY.value + dragAmount).coerceAtLeast(0f)
+                        dragOffsetY.snapTo(next)
+                    }
+                }
+            }
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTapGestures { /* Absorb background taps */ }
+            .offset { IntOffset(0, dragOffsetY.value.roundToInt().coerceAtLeast(0)) }
+            .graphicsLayer {
+                val progress = (dragOffsetY.value / 1200f).coerceIn(0f, 1f)
+                alpha = 1f - (progress * 0.3f)
+                scaleX = 1f - (progress * 0.04f)
+                scaleY = 1f - (progress * 0.04f)
             }
+            .then(swipeToCollapseModifier)
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
@@ -180,6 +232,21 @@ fun MusicPlayerScreen(
             )
             .statusBarsPadding()
     ) {
+        // Top Drag Handle Indicator
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp, bottom = 2.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White.copy(alpha = 0.3f))
+            )
+        }
         // Floating Real-Time Download Progress Banner
         AnimatedVisibility(
             visible = currentDownload != null,
@@ -323,9 +390,7 @@ fun MusicPlayerScreen(
                 .fillMaxWidth()
                 .weight(1f)
                 .padding(horizontal = 24.dp)
-                .pointerInput(Unit) {
-                    detectTapGestures { /* Absorb center taps */ }
-                },
+                .then(swipeToCollapseModifier),
             contentAlignment = Alignment.Center
         ) {
             Column(

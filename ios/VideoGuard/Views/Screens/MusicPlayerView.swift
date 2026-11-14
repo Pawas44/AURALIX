@@ -64,9 +64,17 @@ struct MusicPlayerView: View {
                 // Main Full-screen Player Body
                 VStack(spacing: 0) {
                     // Pinned Top Bar (Guaranteed visible directly below notch/status bar)
-                    topBar
-                        .padding(.top, max(safeTop, 12))
-                        .padding(.bottom, 4)
+                    VStack(spacing: 4) {
+                        // Drag Handle Indicator for smooth swipe down
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.white.opacity(0.3))
+                            .frame(width: 36, height: 4)
+                            .padding(.top, 4)
+
+                        topBar
+                    }
+                    .padding(.top, max(safeTop, 8))
+                    .padding(.bottom, 4)
 
                     Spacer(minLength: 6)
 
@@ -201,26 +209,28 @@ struct MusicPlayerView: View {
             )
             .offset(y: max(0, dragOffset))
             .gesture(
-                DragGesture(minimumDistance: 15)
+                DragGesture(minimumDistance: 10)
                     .onChanged { value in
                         if !isSheetExpanded && value.translation.height > 0 {
                             dragOffset = value.translation.height
                         }
                     }
                     .onEnded { value in
-                        if !isSheetExpanded && (value.translation.height > 100 || value.predictedEndTranslation.height > 180) {
-                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        if !isSheetExpanded && (value.translation.height > 80 || value.predictedEndTranslation.height > 150) {
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                                 onCollapse()
                             }
-                        }
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            dragOffset = 0
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                dragOffset = 0
+                            }
                         }
                     }
             )
         }
         .ignoresSafeArea()
         .onAppear { wavePhase = true }
+        .onDisappear { dragOffset = 0 }
         .task(id: track.id) {
             isLoadingLyrics = true
             lyricsResult = await LyricsEngine.shared.getLyrics(
