@@ -291,8 +291,18 @@ object PlaybackController {
                     val f = java.io.File(ctx.filesDir, "downloads/${track.id}.m4a")
                     if (f.exists() && f.length() > 500) {
                         offlineMediaPlayer = android.media.MediaPlayer().apply {
+                            setAudioAttributes(
+                                android.media.AudioAttributes.Builder()
+                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                                    .build()
+                            )
                             setDataSource(f.absolutePath)
                             isLooping = _isLoopEnabled.value
+                            setOnErrorListener { _, what, extra ->
+                                android.util.Log.e("PlaybackController", "Offline MediaPlayer error: what=$what, extra=$extra")
+                                true // Handled: suppress native crash
+                            }
                             setOnCompletionListener {
                                 if (_isLoopEnabled.value) {
                                     this@PlaybackController.seekTo(0f)
@@ -306,9 +316,17 @@ object PlaybackController {
                             prepare()
                             start()
                         }
+                    } else {
+                        // File missing or incomplete: fallback smoothly to online streaming
+                        isOfflineModeActive = false
+                        sendCommand("loadVideo('${track.id}')")
+                        sendCommand("setPlaybackState(true)")
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
+                    isOfflineModeActive = false
+                    sendCommand("loadVideo('${track.id}')")
+                    sendCommand("setPlaybackState(true)")
                 }
             }
             resumeOfflineTicker()
@@ -321,12 +339,21 @@ object PlaybackController {
             while (isActive && _isPlaying.value && isOfflineModeActive) {
                 kotlinx.coroutines.delay(500)
                 val mp = offlineMediaPlayer
-                if (mp != null && try { mp.isPlaying } catch (e: Exception) { false }) {
-                    val sec = mp.currentPosition / 1000f
-                    _currentTimeSeconds.value = sec
-                    val d = mp.duration / 1000f
-                    if (d > 0f) _durationSeconds.value = d
-                } else {
+                var hasPlayed = false
+                if (mp != null) {
+                    try {
+                        if (mp.isPlaying) {
+                            val sec = mp.currentPosition / 1000f
+                            _currentTimeSeconds.value = sec
+                            val d = mp.duration / 1000f
+                            if (d > 0f) _durationSeconds.value = d
+                            hasPlayed = true
+                        }
+                    } catch (e: Exception) {
+                        // Handled state exceptions
+                    }
+                }
+                if (!hasPlayed) {
                     val cur = _currentTimeSeconds.value
                     val maxDur = _durationSeconds.value
                     val next = (cur + 0.5f).coerceAtMost(maxDur)

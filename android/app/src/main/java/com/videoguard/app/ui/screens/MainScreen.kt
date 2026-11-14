@@ -86,26 +86,14 @@ fun MainScreen() {
     }
 
     val onSwipeDownRelease: (Float) -> Unit = { velocityY ->
-        val threshold = with(density) { 90.dp.toPx() }
+        val threshold = with(density) { 80.dp.toPx() }
         val currentVal = playerDragOffsetY
-        val shouldDismiss = currentVal > threshold || velocityY > 750f
-        coroutineScope.launch {
-            if (shouldDismiss) {
-                val targetY = with(density) { 1400.dp.toPx() }
-                val anim = Animatable(currentVal)
-                anim.animateTo(
-                    targetValue = targetY,
-                    initialVelocity = velocityY,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow
-                    )
-                ) {
-                    playerDragOffsetY = value
-                }
-                isPlayerExpanded = false
-                playerDragOffsetY = 0f
-            } else {
+        val shouldDismiss = currentVal > threshold || velocityY > 600f
+        if (shouldDismiss) {
+            isPlayerExpanded = false
+            playerDragOffsetY = 0f
+        } else {
+            coroutineScope.launch {
                 val anim = Animatable(currentVal)
                 anim.animateTo(
                     targetValue = 0f,
@@ -122,21 +110,8 @@ fun MainScreen() {
     }
 
     val collapsePlayerWithAnimation: () -> Unit = {
-        coroutineScope.launch {
-            val targetY = with(density) { 1400.dp.toPx() }
-            val anim = Animatable(playerDragOffsetY)
-            anim.animateTo(
-                targetValue = targetY,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            ) {
-                playerDragOffsetY = value
-            }
-            isPlayerExpanded = false
-            playerDragOffsetY = 0f
-        }
+        playerDragOffsetY = 0f
+        isPlayerExpanded = false
     }
 
     // Synchronize window system bars & screen orientation with isFullscreen
@@ -501,36 +476,23 @@ fun MainScreen() {
                 }
             }
 
-            // Mini Player Bar (docked above Bottom Nav when video is loaded & minimized)
-            if (currentVideo != null && (!isPlayerExpanded || playerDragOffsetY > 0f)) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .graphicsLayer {
-                            alpha = if (isPlayerExpanded) {
-                                (playerDragOffsetY / 300f).coerceIn(0f, 1f)
-                            } else {
-                                1f
-                            }
-                        }
-                ) {
-                    MiniPlayerBar(
-                        video = currentVideo,
-                        isPlaying = isPlaying,
-                        currentMode = appMode,
-                        onExpand = {
-                            isPlayerExpanded = true
-                            playerDragOffsetY = 0f
-                        },
-                        onPlayPauseToggle = { PlaybackController.togglePlayPause() },
-                        onClose = { PlaybackController.stop() }
-                    )
-                }
+            // Mini Player Bar (docked directly above Bottom Nav when video is minimized)
+            if (currentVideo != null && !isPlayerExpanded) {
+                MiniPlayerBar(
+                    video = currentVideo,
+                    isPlaying = isPlaying,
+                    currentMode = appMode,
+                    onExpand = {
+                        playerDragOffsetY = 0f
+                        isPlayerExpanded = true
+                    },
+                    onPlayPauseToggle = { PlaybackController.togglePlayPause() },
+                    onClose = { PlaybackController.stop() }
+                )
             }
 
-            // Bottom Navigation Bar
-            if (!isPlayerExpanded) {
-                BottomNavBar(
+            // Bottom Navigation Bar (Persistent at bottom for stable measurement)
+            BottomNavBar(
                     currentMode = appMode,
                     selectedYTTab = selectedYTTab,
                     selectedMusicTab = selectedMusicTab,
@@ -616,7 +578,6 @@ fun MainScreen() {
                     }
                 )
             }
-        }
 
         // Full Screen Player Overlay (Animated Slide/Fade with Fluid Gesture Settle)
         AnimatedVisibility(
@@ -628,16 +589,22 @@ fun MainScreen() {
                     stiffness = Spring.StiffnessMediumLow
                 )
             ) + fadeIn(animationSpec = tween(220)),
-            exit = fadeOut(animationSpec = tween(150)),
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            ) + fadeOut(animationSpec = tween(180)),
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(10f)
                 .offset { IntOffset(0, playerDragOffsetY.roundToInt().coerceAtLeast(0)) }
                 .graphicsLayer {
-                    val progress = (playerDragOffsetY / 1000f).coerceIn(0f, 1f)
-                    scaleX = 1f - (progress * 0.12f)
-                    scaleY = 1f - (progress * 0.12f)
-                    shape = RoundedCornerShape((progress * 28).dp)
+                    val progress = (playerDragOffsetY / 800f).coerceIn(0f, 1f)
+                    scaleX = 1f - (progress * 0.10f)
+                    scaleY = 1f - (progress * 0.10f)
+                    shape = RoundedCornerShape((progress * 24).dp)
                     clip = true
                 }
         ) {

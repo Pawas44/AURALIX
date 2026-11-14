@@ -114,31 +114,6 @@ fun VideoDetailScreen(
     val currentDownload by com.videoguard.app.data.UserDataRepository.currentDownload.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y < 0f) {
-                    onSwipeDownDelta(available.y)
-                    return Offset(0f, available.y)
-                }
-                return Offset.Zero
-            }
-
-            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                if (available.y > 0f) {
-                    onSwipeDownDelta(available.y)
-                    return Offset(0f, available.y)
-                }
-                return Offset.Zero
-            }
-
-            override suspend fun onPreFling(available: Velocity): Velocity {
-                onSwipeDownRelease(available.y)
-                return Velocity.Zero
-            }
-        }
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -147,7 +122,6 @@ fun VideoDetailScreen(
                 interactionSource = remember { MutableInteractionSource() }
             ) {}
             .background(LiquidGlassDefaults.LiquidCanvas)
-            .nestedScroll(nestedScrollConnection)
     ) {
         // Top Player Section Spacer (Pinned player sits above this in MainScreen)
         Box(

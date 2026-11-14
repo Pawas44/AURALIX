@@ -230,21 +230,31 @@ fun MusicPlayerScreen(
         activeQueue.size
     }
 
+    // Guard against recursive re-triggers between programmatic page changes and user swipe gestures
+    var isProgrammaticScroll by remember { mutableStateOf(false) }
+
     // Sync pager when track changes externally (Next/Prev buttons, auto-play)
     LaunchedEffect(track.id, activeQueue) {
         val targetIdx = activeQueue.indexOfFirst { it.id == track.id }
         if (targetIdx >= 0 && targetIdx != pagerState.currentPage) {
-            pagerState.animateScrollToPage(targetIdx)
+            isProgrammaticScroll = true
+            try {
+                pagerState.scrollToPage(targetIdx)
+            } finally {
+                isProgrammaticScroll = false
+            }
         }
     }
 
-    // When pager settles on a new page, trigger track playback
+    // When pager settles on a new page from an authentic user swipe gesture, trigger track playback
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { currPage ->
-            if (currPage in activeQueue.indices) {
-                val settledTrack = activeQueue[currPage]
-                if (settledTrack.id != track.id) {
-                    com.videoguard.app.service.PlaybackController.playTrack(settledTrack, activeQueue)
+        snapshotFlow { pagerState.settledPage }.collect { settledPage ->
+            if (!isProgrammaticScroll && !pagerState.isScrollInProgress) {
+                if (settledPage in activeQueue.indices) {
+                    val settledTrack = activeQueue[settledPage]
+                    if (settledTrack.id != track.id) {
+                        com.videoguard.app.service.PlaybackController.playTrack(settledTrack, activeQueue)
+                    }
                 }
             }
         }
@@ -283,37 +293,11 @@ fun MusicPlayerScreen(
         )
     }
 
-    val nestedScrollConnection = remember {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y < 0f) {
-                    onSwipeDownDelta(available.y)
-                    return Offset(0f, available.y)
-                }
-                return Offset.Zero
-            }
-
-            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                if (available.y > 0f) {
-                    onSwipeDownDelta(available.y)
-                    return Offset(0f, available.y)
-                }
-                return Offset.Zero
-            }
-
-            override suspend fun onPreFling(available: Velocity): Velocity {
-                onSwipeDownRelease(available.y)
-                return Velocity.Zero
-            }
-        }
-    }
-
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(ambientGradient)
             .statusBarsPadding()
-            .nestedScroll(nestedScrollConnection)
     ) {
         // Top Drag Handle & Bar Area with Vertical Drag Gesture
         Column(
@@ -483,23 +467,11 @@ fun MusicPlayerScreen(
             }
         }
 
-        // Center Area: YouTube Music Artwork Carousel (Swipe left/right to change tracks, drag down to minimize)
+        // Center Area: YouTube Music Artwork Carousel (Swipe left/right to change tracks)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .pointerInput(Unit) {
-                    detectVerticalDragGestures(
-                        onVerticalDrag = { change, dragAmount ->
-                            if (dragAmount > 0f) {
-                                change.consume()
-                                onSwipeDownDelta(dragAmount)
-                            }
-                        },
-                        onDragEnd = { onSwipeDownRelease(0f) },
-                        onDragCancel = { onSwipeDownRelease(0f) }
-                    )
-                }
         ) {
             HorizontalPager(
                 state = pagerState,
@@ -773,10 +745,11 @@ fun MusicPlayerScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Box(
                     modifier = Modifier
-                        .size(width = 38.dp, height = 4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color.White.copy(alpha = 0.35f))
+                        .size(width = 44.dp, height = 5.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color.White.copy(alpha = 0.40f))
                         .align(Alignment.CenterHorizontally)
+                        .clickable { isSheetExpanded = !isSheetExpanded }
                 )
                 Spacer(modifier = Modifier.height(6.dp))
 
@@ -800,12 +773,18 @@ fun MusicPlayerScreen(
                         TabPill(
                             title = "LYRICS",
                             isActive = activeTab == MusicSheetTab.LYRICS,
-                            onClick = { activeTab = MusicSheetTab.LYRICS }
+                            onClick = {
+                                activeTab = MusicSheetTab.LYRICS
+                                isSheetExpanded = true
+                            }
                         )
                         TabPill(
                             title = "RELATED",
                             isActive = activeTab == MusicSheetTab.RELATED,
-                            onClick = { activeTab = MusicSheetTab.RELATED }
+                            onClick = {
+                                activeTab = MusicSheetTab.RELATED
+                                isSheetExpanded = true
+                            }
                         )
                     }
 

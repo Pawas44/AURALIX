@@ -13,7 +13,8 @@ object RecommendationRanker {
     private const val ONE_DAY_MS = 24 * 60 * 60 * 1000L
 
     /**
-     * Ranks candidate tracks according to personalized user taste, similarity, and diversity controls.
+     * Ranks candidate tracks according to personalized user taste, acoustic vector similarity, and diversity controls.
+     * Content-Based Recommendation inspired by unkletam/Spotify-Recommendation-System
      */
     fun rank(
         candidates: List<VideoItem>,
@@ -24,6 +25,15 @@ object RecommendationRanker {
     ): List<ScoredTrack> {
         val profile = UserTasteProfile.get()
         val now = System.currentTimeMillis()
+
+        // 1. Build Spotify-Style User Taste Centroid from Liked Tracks & Listening History
+        val weightedUserTracks = mutableListOf<Pair<VideoItem, Double>>()
+        likedTracks.forEach { weightedUserTracks.add(it to 3.0) }
+        recentHistory.take(20).forEachIndexed { idx, trk ->
+            val w = 2.0 * (1.0 - (idx * 0.04))
+            weightedUserTracks.add(trk to w.coerceAtLeast(0.5))
+        }
+        val userCentroidVector = SongSimilarityEngine.computeProfileCentroid(weightedUserTracks)
 
         val recentIds = recentHistory.map { it.id }.toSet()
         val scoredList = mutableListOf<ScoredTrack>()
@@ -47,14 +57,18 @@ object RecommendationRanker {
 
             val tasteAffinity = (normArtistScore * 0.50) + (normGenreScore * 0.35) + (normMoodScore * 0.15)
 
-            // 2. Similarity Against Liked Tracks and History (0.0 to 1.0)
+            // 2. High-Dimensional Acoustic Vector Cosine Similarity (unkletam/Spotify-Recommendation-System)
+            val candidateVec = SongSimilarityEngine.extractFeatureVector(candidate)
+            val centroidCosineSim = SongSimilarityEngine.cosineSimilarity(candidateVec, userCentroidVector)
+
+            // Seed Collection Direct Similarity
             val similarityToLiked = SongSimilarityEngine.maxSimilarityAgainstCollection(candidate, likedTracks)
             val similarityToHistory = SongSimilarityEngine.maxSimilarityAgainstCollection(candidate, recentHistory)
-            val contentSimilarity = (similarityToLiked * 0.60) + (similarityToHistory * 0.40)
+            val contentSimilarity = (centroidCosineSim * 0.50) + (similarityToLiked * 0.30) + (similarityToHistory * 0.20)
 
-            // 3. Discovery Bonus: Fresh artists that align with user's favorite genres
+            // 3. Discovery Bonus: Fresh artists that align with user's favorite genres / acoustic features
             val isUnfamiliarArtist = !profile.discoveredArtists.contains(artist) && artistScore < 2.0
-            val discoveryBonus = if (isUnfamiliarArtist && genreScore > 1.0) {
+            val discoveryBonus = if (isUnfamiliarArtist && (genreScore > 1.0 || centroidCosineSim > 0.65)) {
                 0.35 * discoveryFactor
             } else {
                 0.0
@@ -70,12 +84,13 @@ object RecommendationRanker {
             }
 
             // 5. Total Weighted Score
-            val rawScore = ((tasteAffinity * 0.40) + (contentSimilarity * 0.40) + discoveryBonus) * repetitionMultiplier
+            val rawScore = ((tasteAffinity * 0.35) + (contentSimilarity * 0.45) + discoveryBonus) * repetitionMultiplier
 
             // Determine human-readable reason
             val reason = when {
                 artistScore > 8.0 -> "Because you listen to $artist frequently"
                 candidate.id in likedTracks.map { it.id } -> "Because you liked this track"
+                centroidCosineSim > 0.80 -> "Acoustically matches your favorite music"
                 similarityToLiked > 0.65 -> "Similar to your liked music"
                 isUnfamiliarArtist && genreScore > 3.0 -> "New discovery in $genre"
                 genreScore > 5.0 -> "Based on your love for $genre"
