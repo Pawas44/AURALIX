@@ -81,6 +81,10 @@ fun YouTubeVideoPlayer(
     // Register with PlaybackController so transport buttons execute JS commands directly
     DisposableEffect(webViewRef) {
         PlaybackController.setCommandListener { command ->
+            if (PlaybackController.isOfflineModeActive) {
+                // Ignore WebView commands when offline playback is active
+                return@setCommandListener
+            }
             if (command.startsWith("loadVideo('") && command.endsWith("')")) {
                 currentLoadedId = command.removePrefix("loadVideo('").removeSuffix("')")
             }
@@ -95,6 +99,10 @@ fun YouTubeVideoPlayer(
 
     // Video ID updates
     LaunchedEffect(videoId) {
+        if (PlaybackController.isOfflineModeActive) {
+            webViewRef?.evaluateJavascript("stopVideo();", null)
+            return@LaunchedEffect
+        }
         if (currentLoadedId != null && currentLoadedId != videoId) {
             currentLoadedId = videoId
             webViewRef?.evaluateJavascript("loadVideo('$videoId');", null)
@@ -103,6 +111,10 @@ fun YouTubeVideoPlayer(
 
     // Play/Pause sync from Compose state
     LaunchedEffect(isPlaying) {
+        if (PlaybackController.isOfflineModeActive) {
+            webViewRef?.evaluateJavascript("stopVideo();", null)
+            return@LaunchedEffect
+        }
         webViewRef?.evaluateJavascript("setPlaybackState($isPlaying);", null)
     }
 
@@ -217,6 +229,10 @@ fun YouTubeVideoPlayer(
                     val bridge = YouTubeBridge(
                         readyCallback = {
                             post {
+                                if (PlaybackController.isOfflineModeActive) {
+                                    evaluateJavascript("stopVideo();", null)
+                                    return@post
+                                }
                                 currentLoadedId = videoId
                                 evaluateJavascript("setPlaybackState($isPlaying);", null)
                                 if (PlaybackController.isCaptionsEnabled.value) {
@@ -225,6 +241,10 @@ fun YouTubeVideoPlayer(
                             }
                         },
                         stateChangeCallback = { state ->
+                            if (PlaybackController.isOfflineModeActive) {
+                                // Strictly suppress WebView state callbacks during offline playback
+                                return@YouTubeBridge
+                            }
                             // Synchronize player state with PlaybackController
                             when (state) {
                                 1 -> PlaybackController.setPlayingState(true)   // PLAYING
@@ -248,6 +268,9 @@ fun YouTubeVideoPlayer(
                             onStateChange(state)
                         },
                         timeUpdateCallback = { current, duration ->
+                            if (PlaybackController.isOfflineModeActive) {
+                                return@YouTubeBridge
+                            }
                             PlaybackController.updateProgress(current, duration)
                         }
                     )

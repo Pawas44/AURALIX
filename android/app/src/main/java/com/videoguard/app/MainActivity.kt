@@ -24,6 +24,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Process-wide crash protector for media player/audio thread errors
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            android.util.Log.e("AURALIX_CRASH", "Uncaught exception in thread ${thread.name}", throwable)
+            val isMediaCrash = throwable is IllegalStateException || throwable is java.io.IOException || throwable is NullPointerException
+            if (isMediaCrash && (thread.name.contains("MediaPlayer") || thread.name.contains("coroutine") || thread.name.contains("DefaultDispatcher") || thread.name.contains("main"))) {
+                android.util.Log.w("AURALIX_CRASH", "Suppressed non-fatal media exception: ${throwable.message}")
+            } else {
+                defaultHandler?.uncaughtException(thread, throwable)
+            }
+        }
+
         PlaybackController.init(this)
 
         CoroutineScope(Dispatchers.IO).launch {

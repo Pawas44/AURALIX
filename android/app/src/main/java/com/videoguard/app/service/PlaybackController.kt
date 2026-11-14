@@ -86,7 +86,15 @@ object PlaybackController {
 
     fun setPlaybackSpeed(speed: Float) {
         _playbackSpeed.value = speed
-        sendCommand("setPlaybackRate($speed)")
+        if (isOfflineModeActive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                offlineMediaPlayer?.let { mp ->
+                    mp.playbackParams = mp.playbackParams.setSpeed(speed)
+                }
+            } catch (e: Exception) {}
+        } else {
+            sendCommand("setPlaybackRate($speed)")
+        }
         syncServiceProgress(force = true)
     }
 
@@ -287,35 +295,54 @@ object PlaybackController {
             _durationSeconds.value = dur
             val ctx = appContext
             if (ctx != null) {
+                var fis: java.io.FileInputStream? = null
                 try {
-                    val f = java.io.File(ctx.filesDir, "downloads/${track.id}.m4a")
-                    if (f.exists() && f.length() > 500) {
-                        offlineMediaPlayer = android.media.MediaPlayer().apply {
-                            setAudioAttributes(
-                                android.media.AudioAttributes.Builder()
-                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
-                                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
-                                    .build()
-                            )
-                            setDataSource(f.absolutePath)
-                            isLooping = _isLoopEnabled.value
-                            setOnErrorListener { _, what, extra ->
-                                android.util.Log.e("PlaybackController", "Offline MediaPlayer error: what=$what, extra=$extra")
-                                true // Handled: suppress native crash
-                            }
-                            setOnCompletionListener {
-                                if (_isLoopEnabled.value) {
-                                    this@PlaybackController.seekTo(0f)
-                                    try { start() } catch (e: Exception) {}
-                                } else if (_isAutoplayEnabled.value) {
-                                    nextTrack()
-                                } else {
-                                    pause()
-                                }
-                            }
-                            prepare()
-                            start()
+                    val dir = java.io.File(ctx.filesDir, "downloads")
+                    val f = listOf(
+                        java.io.File(dir, "${track.id}.m4a"),
+                        java.io.File(dir, "${track.id}.mp4"),
+                        java.io.File(dir, "${track.id}.webm")
+                    ).firstOrNull { it.exists() && it.length() > 10_000L }
+
+                    if (f != null) {
+                        fis = java.io.FileInputStream(f)
+                        val mp = android.media.MediaPlayer()
+                        offlineMediaPlayer = mp
+                        mp.setAudioAttributes(
+                            android.media.AudioAttributes.Builder()
+                                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                                .build()
+                        )
+                        // Use open FileDescriptor to bypass Android mediaserver internal storage permission restrictions
+                        mp.setDataSource(fis.fd, 0L, f.length())
+                        fis.close()
+                        fis = null
+
+                        mp.isLooping = _isLoopEnabled.value
+                        mp.setOnErrorListener { _, what, extra ->
+                            android.util.Log.e("PlaybackController", "Offline MediaPlayer error: what=$what, extra=$extra")
+                            stopOfflinePlayback()
+                            true // Handled: suppress native crash dialog
                         }
+                        mp.setOnCompletionListener {
+                            if (_isLoopEnabled.value) {
+                                this@PlaybackController.seekTo(0f)
+                                try { mp.start() } catch (e: Exception) {}
+                            } else if (_isAutoplayEnabled.value) {
+                                nextTrack()
+                            } else {
+                                pause()
+                            }
+                        }
+                        mp.prepare()
+                        mp.start()
+
+                        val trueDurSec = mp.duration / 1000f
+                        if (trueDurSec > 0f) {
+                            _durationSeconds.value = trueDurSec
+                        }
+                        isOfflineModeActive = true
                     } else {
                         // File missing or incomplete: fallback smoothly to online streaming
                         isOfflineModeActive = false
@@ -323,7 +350,10 @@ object PlaybackController {
                         sendCommand("setPlaybackState(true)")
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    android.util.Log.e("PlaybackController", "Failed to start offline MediaPlayer: ${e.message}", e)
+                    try { fis?.close() } catch (ignored: Exception) {}
+                    try { offlineMediaPlayer?.release() } catch (ignored: Exception) {}
+                    offlineMediaPlayer = null
                     isOfflineModeActive = false
                     sendCommand("loadVideo('${track.id}')")
                     sendCommand("setPlaybackState(true)")
@@ -335,41 +365,28 @@ object PlaybackController {
 
     private fun resumeOfflineTicker() {
         offlineTickerJob?.cancel()
-        offlineTickerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+        if (!isOfflineModeActive || offlineMediaPlayer == null) return
+
+        val handler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
+            android.util.Log.e("PlaybackController", "Offline ticker exception", throwable)
+        }
+        offlineTickerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main + handler).launch {
             while (isActive && _isPlaying.value && isOfflineModeActive) {
                 kotlinx.coroutines.delay(500)
-                val mp = offlineMediaPlayer
-                var hasPlayed = false
-                if (mp != null) {
-                    try {
-                        if (mp.isPlaying) {
-                            val sec = mp.currentPosition / 1000f
-                            _currentTimeSeconds.value = sec
-                            val d = mp.duration / 1000f
-                            if (d > 0f) _durationSeconds.value = d
-                            hasPlayed = true
+                val mp = offlineMediaPlayer ?: break
+                try {
+                    if (mp.isPlaying) {
+                        val sec = (mp.currentPosition / 1000f).coerceAtLeast(0f)
+                        _currentTimeSeconds.value = sec
+                        val d = mp.duration / 1000f
+                        if (d > 0f && kotlin.math.abs(_durationSeconds.value - d) > 0.5f) {
+                            _durationSeconds.value = d
                         }
-                    } catch (e: Exception) {
-                        // Handled state exceptions
+                        syncServiceProgress(force = false)
                     }
+                } catch (e: Exception) {
+                    // Handled safely
                 }
-                if (!hasPlayed) {
-                    val cur = _currentTimeSeconds.value
-                    val maxDur = _durationSeconds.value
-                    val next = (cur + 0.5f).coerceAtMost(maxDur)
-                    _currentTimeSeconds.value = next
-                    if (next >= maxDur && maxDur > 0f) {
-                        if (_isLoopEnabled.value) {
-                            seekTo(0f)
-                        } else if (_isAutoplayEnabled.value) {
-                            nextTrack()
-                        } else {
-                            pause()
-                        }
-                        break
-                    }
-                }
-                syncServiceProgress(force = false)
             }
         }
     }
@@ -410,6 +427,7 @@ object PlaybackController {
     }
 
     fun setPlayingState(playing: Boolean) {
+        if (isOfflineModeActive) return // Suppress WebView state interference during offline playback!
         if (!playing && System.currentTimeMillis() - lastTrackChangeTimeMs < 2500L) {
             // Ignore transient pause events reported by the player while a newly loaded track is initializing
             return

@@ -80,6 +80,20 @@ fun PlayerControlsOverlay(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .pointerInput(isFullscreen) {
+                if (!isFullscreen) {
+                    detectVerticalDragGestures(
+                        onVerticalDrag = { change, dragAmount ->
+                            if (dragAmount > 0f) {
+                                change.consume()
+                                onSwipeDownDelta?.invoke(dragAmount)
+                            }
+                        },
+                        onDragEnd = { onSwipeDownRelease?.invoke(0f) },
+                        onDragCancel = { onSwipeDownRelease?.invoke(0f) }
+                    )
+                }
+            }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {

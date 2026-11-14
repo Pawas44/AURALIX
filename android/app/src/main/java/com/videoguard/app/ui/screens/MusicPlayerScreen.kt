@@ -390,6 +390,18 @@ fun MusicPlayerScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onVerticalDrag = { change, dragAmount ->
+                            if (dragAmount > 0f) {
+                                change.consume()
+                                onSwipeDownDelta(dragAmount)
+                            }
+                        },
+                        onDragEnd = { onSwipeDownRelease(0f) },
+                        onDragCancel = { onSwipeDownRelease(0f) }
+                    )
+                }
                 .padding(horizontal = 10.dp, vertical = 6.dp)
         ) {
             IconButton(
@@ -467,11 +479,23 @@ fun MusicPlayerScreen(
             }
         }
 
-        // Center Area: YouTube Music Artwork Carousel (Swipe left/right to change tracks)
+        // Center Area: YouTube Music Artwork Carousel (Swipe left/right to change tracks, drag down to minimize)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onVerticalDrag = { change, dragAmount ->
+                            if (dragAmount > 0f) {
+                                change.consume()
+                                onSwipeDownDelta(dragAmount)
+                            }
+                        },
+                        onDragEnd = { onSwipeDownRelease(0f) },
+                        onDragCancel = { onSwipeDownRelease(0f) }
+                    )
+                }
         ) {
             HorizontalPager(
                 state = pagerState,
@@ -551,10 +575,22 @@ fun MusicPlayerScreen(
             }
         }
 
-        // Track Info & Like / Dislike
+        // Track Info & Like / Dislike (drag down anywhere here to minimize)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onVerticalDrag = { change, dragAmount ->
+                            if (dragAmount > 0f) {
+                                change.consume()
+                                onSwipeDownDelta(dragAmount)
+                            }
+                        },
+                        onDragEnd = { onSwipeDownRelease(0f) },
+                        onDragCancel = { onSwipeDownRelease(0f) }
+                    )
+                }
                 .padding(horizontal = 24.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween

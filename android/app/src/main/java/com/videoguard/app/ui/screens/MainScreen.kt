@@ -89,11 +89,23 @@ fun MainScreen() {
         val threshold = with(density) { 80.dp.toPx() }
         val currentVal = playerDragOffsetY
         val shouldDismiss = currentVal > threshold || velocityY > 600f
-        if (shouldDismiss) {
-            isPlayerExpanded = false
-            playerDragOffsetY = 0f
-        } else {
-            coroutineScope.launch {
+        coroutineScope.launch {
+            if (shouldDismiss) {
+                val targetY = with(density) { 1200.dp.toPx() }
+                val anim = Animatable(currentVal)
+                anim.animateTo(
+                    targetValue = targetY,
+                    initialVelocity = velocityY,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                ) {
+                    playerDragOffsetY = value
+                }
+                isPlayerExpanded = false
+                playerDragOffsetY = 0f
+            } else {
                 val anim = Animatable(currentVal)
                 anim.animateTo(
                     targetValue = 0f,
@@ -110,8 +122,21 @@ fun MainScreen() {
     }
 
     val collapsePlayerWithAnimation: () -> Unit = {
-        playerDragOffsetY = 0f
-        isPlayerExpanded = false
+        coroutineScope.launch {
+            val targetY = with(density) { 1000.dp.toPx() }
+            val anim = Animatable(playerDragOffsetY)
+            anim.animateTo(
+                targetValue = targetY,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMedium
+                )
+            ) {
+                playerDragOffsetY = value
+            }
+            isPlayerExpanded = false
+            playerDragOffsetY = 0f
+        }
     }
 
     // Synchronize window system bars & screen orientation with isFullscreen
@@ -476,19 +501,31 @@ fun MainScreen() {
                 }
             }
 
-            // Mini Player Bar (docked directly above Bottom Nav when video is minimized)
-            if (currentVideo != null && !isPlayerExpanded) {
-                MiniPlayerBar(
-                    video = currentVideo,
-                    isPlaying = isPlaying,
-                    currentMode = appMode,
-                    onExpand = {
-                        playerDragOffsetY = 0f
-                        isPlayerExpanded = true
-                    },
-                    onPlayPauseToggle = { PlaybackController.togglePlayPause() },
-                    onClose = { PlaybackController.stop() }
-                )
+            // Mini Player Bar (docked directly above Bottom Nav when video is loaded)
+            if (currentVideo != null && (!isPlayerExpanded || playerDragOffsetY > 0f)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            alpha = if (isPlayerExpanded) {
+                                (playerDragOffsetY / 250f).coerceIn(0f, 1f)
+                            } else {
+                                1f
+                            }
+                        }
+                ) {
+                    MiniPlayerBar(
+                        video = currentVideo,
+                        isPlaying = isPlaying,
+                        currentMode = appMode,
+                        onExpand = {
+                            playerDragOffsetY = 0f
+                            isPlayerExpanded = true
+                        },
+                        onPlayPauseToggle = { PlaybackController.togglePlayPause() },
+                        onClose = { PlaybackController.stop() }
+                    )
+                }
             }
 
             // Bottom Navigation Bar (Persistent at bottom for stable measurement)
@@ -601,11 +638,12 @@ fun MainScreen() {
                 .zIndex(10f)
                 .offset { IntOffset(0, playerDragOffsetY.roundToInt().coerceAtLeast(0)) }
                 .graphicsLayer {
-                    val progress = (playerDragOffsetY / 800f).coerceIn(0f, 1f)
-                    scaleX = 1f - (progress * 0.10f)
-                    scaleY = 1f - (progress * 0.10f)
-                    shape = RoundedCornerShape((progress * 24).dp)
+                    val progress = (playerDragOffsetY / 700f).coerceIn(0f, 1f)
+                    scaleX = 1f - (progress * 0.12f)
+                    scaleY = 1f - (progress * 0.12f)
+                    shape = RoundedCornerShape((progress * 28).dp)
                     clip = true
+                    alpha = 1f - (progress * 0.35f)
                 }
         ) {
             currentVideo?.let { video ->

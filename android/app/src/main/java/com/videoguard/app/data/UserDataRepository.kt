@@ -592,7 +592,16 @@ object UserDataRepository {
                         }
 
                         if (audioUrl.isNotBlank()) {
-                            if (bestFormat == null || mime.contains("mp4") || bitrate > bestFormat.bitrate) {
+                            val isMp4 = mime.contains("mp4") || mime.contains("m4a") || mime.contains("aac")
+                            val currentIsMp4 = bestFormat?.mimeType?.let { it.contains("mp4") || it.contains("m4a") || it.contains("aac") } ?: false
+                            val shouldPick = when {
+                                bestFormat == null -> true
+                                isMp4 && !currentIsMp4 -> true
+                                isMp4 && currentIsMp4 && bitrate > (bestFormat?.bitrate ?: 0) -> true
+                                !isMp4 && !currentIsMp4 && bitrate > (bestFormat?.bitrate ?: 0) -> true
+                                else -> false
+                            }
+                            if (shouldPick) {
                                 bestFormat = AudioStreamFormat(
                                     url = audioUrl,
                                     contentLength = clen,
