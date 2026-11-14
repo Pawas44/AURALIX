@@ -355,9 +355,6 @@ fun MusicPlayerScreen(
                         .aspectRatio(1f)
                         .shadow(24.dp, RoundedCornerShape(16.dp), spotColor = Color(0x66FF1744))
                         .clip(RoundedCornerShape(16.dp))
-                        .pointerInput(Unit) {
-                            detectTapGestures { /* Do not toggle play/pause on album tap */ }
-                        }
                 ) {
                     AsyncImage(
                         model = track.thumbnailUrl,

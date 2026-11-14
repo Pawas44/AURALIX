@@ -81,40 +81,11 @@ fun MainScreen() {
     val playerDragOffsetY = remember { Animatable(0f) }
     val density = androidx.compose.ui.platform.LocalDensity.current
 
-    val onDragDelta: (Float) -> Unit = { delta ->
-        coroutineScope.launch {
-            val newOffset = (playerDragOffsetY.value + delta).coerceAtLeast(0f)
-            playerDragOffsetY.snapTo(newOffset)
-        }
-    }
-
-    val onDragEnd: (Float) -> Unit = { velocityY ->
-        coroutineScope.launch {
-            val threshold = with(density) { 90.dp.toPx() }
-            val shouldDismiss = playerDragOffsetY.value > threshold || velocityY > 800f
-            if (shouldDismiss) {
-                playerDragOffsetY.animateTo(
-                    targetValue = 2200f,
-                    animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
-                )
-                isPlayerExpanded = false
-                playerDragOffsetY.snapTo(0f)
-            } else {
-                playerDragOffsetY.animateTo(
-                    targetValue = 0f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioLowBouncy,
-                        stiffness = Spring.StiffnessMedium
-                    )
-                )
-            }
-        }
-    }
-
     val collapsePlayerWithAnimation: () -> Unit = {
         coroutineScope.launch {
+            val targetY = with(density) { 1400.dp.toPx() }
             playerDragOffsetY.animateTo(
-                targetValue = 2200f,
+                targetValue = targetY,
                 animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
             )
             isPlayerExpanded = false
@@ -122,23 +93,13 @@ fun MainScreen() {
         }
     }
 
-    val stationarySwipeToMinimizeModifier = Modifier.pointerInput(isPlayerExpanded, isFullscreen, appMode) {
-        if (!isPlayerExpanded || isFullscreen) return@pointerInput
+    val swipeToMinimizeModifier = if (!isPlayerExpanded || isFullscreen) Modifier else Modifier.pointerInput(Unit) {
         awaitEachGesture {
             val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
-
-            // Calculate swipe initiation zone:
-            // YouTube Video: 16:9 video player area (0..320dp)
-            // YouTube Music: Top bar, drag handle, album cover, and title area (0..520dp)
-            val maxYStart = with(density) {
-                if (appMode == AppMode.YOUTUBE) 320.dp.toPx() else 520.dp.toPx()
-            }
-            if (down.position.y > maxYStart) return@awaitEachGesture
-
-            var isDraggingDown = false
-            val startY = down.position.y
-            val startX = down.position.x
-            var lastY = down.position.y
+            var isDragging = false
+            val startScreenY = down.position.y + playerDragOffsetY.value
+            val startScreenX = down.position.x
+            var lastScreenY = startScreenY
             var lastTime = down.uptimeMillis
             var velocityY = 0f
 
@@ -147,32 +108,56 @@ fun MainScreen() {
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 if (!change.pressed) break
 
-                val currentY = change.position.y
-                val currentX = change.position.x
-                val deltaY = currentY - lastY
-                val totalY = currentY - startY
-                val totalX = currentX - startX
+                val currentScreenY = change.position.y + playerDragOffsetY.value
+                val currentScreenX = change.position.x
+                val deltaY = currentScreenY - lastScreenY
+                val totalY = currentScreenY - startScreenY
+                val totalX = currentScreenX - startScreenX
                 val dt = (change.uptimeMillis - lastTime).coerceAtLeast(1)
                 velocityY = deltaY / dt * 1000f
-                lastY = currentY
+                lastScreenY = currentScreenY
                 lastTime = change.uptimeMillis
 
-                if (!isDraggingDown) {
+                if (!isDragging) {
                     if (totalY > 16f && totalY > kotlin.math.abs(totalX) * 1.3f) {
-                        isDraggingDown = true
+                        isDragging = true
                         change.consume()
-                        onDragDelta(totalY)
+                        val newOffset = (playerDragOffsetY.value + totalY).coerceAtLeast(0f)
+                        playerDragOffsetY.snapTo(newOffset)
+                        lastScreenY = change.position.y + playerDragOffsetY.value
                     }
                 } else {
                     change.consume()
                     if (deltaY != 0f) {
-                        onDragDelta(deltaY)
+                        val newOffset = (playerDragOffsetY.value + deltaY).coerceAtLeast(0f)
+                        playerDragOffsetY.snapTo(newOffset)
+                        lastScreenY = change.position.y + playerDragOffsetY.value
                     }
                 }
             }
 
-            if (isDraggingDown) {
-                onDragEnd(velocityY)
+            if (isDragging) {
+                val threshold = with(density) { 90.dp.toPx() }
+                val shouldDismiss = playerDragOffsetY.value > threshold || velocityY > 750f
+                if (shouldDismiss) {
+                    val targetY = with(density) { 1400.dp.toPx() }
+                    playerDragOffsetY.animateTo(
+                        targetValue = targetY,
+                        initialVelocity = velocityY,
+                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                    )
+                    isPlayerExpanded = false
+                    playerDragOffsetY.snapTo(0f)
+                } else {
+                    playerDragOffsetY.animateTo(
+                        targetValue = 0f,
+                        initialVelocity = velocityY,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessMedium
+                        )
+                    )
+                }
             }
         }
     }
@@ -253,7 +238,6 @@ fun MainScreen() {
         modifier = Modifier
             .fillMaxSize()
             .background(bgBrush)
-            .then(stationarySwipeToMinimizeModifier)
     ) {
         // Floating In-App Update Banner Pill
         val updateInfo by com.videoguard.app.data.AppUpdateManager.updateInfo.collectAsState()
@@ -352,7 +336,10 @@ fun MainScreen() {
                             }
                         },
                         isFullscreen = isFullscreen,
-                        onToggleFullscreen = { isFullscreen = !isFullscreen }
+                        onToggleFullscreen = { isFullscreen = !isFullscreen },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(swipeToMinimizeModifier)
                     )
                 }
             }
@@ -648,13 +635,7 @@ fun MainScreen() {
                     stiffness = Spring.StiffnessMediumLow
                 )
             ) + fadeIn(animationSpec = tween(220)),
-            exit = slideOutVertically(
-                targetOffsetY = { it },
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            ) + fadeOut(animationSpec = tween(180)),
+            exit = fadeOut(animationSpec = tween(150)),
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(10f)
@@ -690,7 +671,10 @@ fun MainScreen() {
                             isBackgroundPlay = isBackgroundPlay,
                             onToggleBackgroundPlay = {
                                 PlaybackController.toggleBackgroundPlay()
-                            }
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(swipeToMinimizeModifier)
                         )
                     }
                     AppMode.YOUTUBE_MUSIC -> {
@@ -711,7 +695,10 @@ fun MainScreen() {
                             },
                             onSwitchToVideoMode = {
                                 appMode = AppMode.YOUTUBE
-                            }
+                            },
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(swipeToMinimizeModifier)
                         )
                     }
                 }
