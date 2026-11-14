@@ -9,8 +9,6 @@ import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
@@ -96,8 +94,6 @@ class MediaPlaybackService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main)
 
-    private var audioManager: AudioManager? = null
-    private var audioFocusRequest: AudioFocusRequest? = null
     private var telephonyManager: android.telephony.TelephonyManager? = null
 
     @Suppress("DEPRECATION")
@@ -108,60 +104,6 @@ class MediaPlaybackService : Service() {
                 // Incoming phone call -> auto-pause playback
                 PlaybackController.pause()
             }
-        }
-    }
-
-    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-        when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS -> {
-                // Another audio app requested permanent playback focus (e.g. Spotify, YouTube app)
-                PlaybackController.pause()
-            }
-        }
-    }
-
-    private fun requestAudioFocus() {
-        if (audioManager == null) {
-            audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-        }
-        val am = audioManager ?: return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                if (audioFocusRequest == null) {
-                    val attrs = AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .build()
-                    audioFocusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                        .setAudioAttributes(attrs)
-                        .setOnAudioFocusChangeListener(audioFocusChangeListener)
-                        .build()
-                }
-                audioFocusRequest?.let { am.requestAudioFocus(it) }
-            } else {
-                @Suppress("DEPRECATION")
-                am.requestAudioFocus(
-                    audioFocusChangeListener,
-                    AudioManager.STREAM_MUSIC,
-                    AudioManager.AUDIOFOCUS_GAIN
-                )
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun abandonAudioFocus() {
-        val am = audioManager ?: return
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                audioFocusRequest?.let { am.abandonAudioFocusRequest(it) }
-            } else {
-                @Suppress("DEPRECATION")
-                am.abandonAudioFocus(audioFocusChangeListener)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
@@ -297,10 +239,8 @@ class MediaPlaybackService : Service() {
 
                 if (isPlaying) {
                     acquireWakeLock()
-                    requestAudioFocus()
                 } else {
                     releaseWakeLock()
-                    abandonAudioFocus()
                 }
 
                 updateMediaSessionState(forceMetadata = true)
@@ -317,7 +257,6 @@ class MediaPlaybackService : Service() {
             }
             ACTION_STOP -> {
                 releaseWakeLock()
-                abandonAudioFocus()
                 mediaSession?.isActive = false
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
@@ -542,7 +481,6 @@ class MediaPlaybackService : Service() {
             @Suppress("DEPRECATION")
             telephonyManager?.listen(phoneStateListener, android.telephony.PhoneStateListener.LISTEN_NONE)
         } catch (e: Exception) {}
-        abandonAudioFocus()
         releaseWakeLock()
         super.onDestroy()
     }

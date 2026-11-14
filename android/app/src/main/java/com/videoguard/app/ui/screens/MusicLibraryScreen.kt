@@ -976,6 +976,13 @@ fun MusicLibraryScreen(
                                     isImporting = false
                                     res.onSuccess { pl ->
                                         importedPlaylistResult = pl
+                                    }.onFailure { err ->
+                                        val errText = err.message ?: "Failed to import tracks"
+                                        importProgress = ImportProgress("Error", 0, 0, error = errText)
+                                        if (importUrlInput.contains("amazon", ignoreCase = true) && importUrlInput.startsWith("http")) {
+                                            webSheetCurrentUrl = importUrlInput
+                                            showInAppWebSheet = true
+                                        }
                                     }
                                 }
                             }
@@ -1035,37 +1042,60 @@ fun MusicLibraryScreen(
                             val js = """
                                 (function() {
                                     var tracks = [];
-                                    document.querySelectorAll('a[href*="/albums/"]').forEach(function(a) {
-                                        var t = a.innerText.trim();
-                                        if (t.length > 0 && !t.includes('Amazon') && !t.includes('Playlist')) {
-                                            var container = a.parentElement;
-                                            var artist = '';
-                                            for (var i = 0; i < 5 && container; i++) {
-                                                var artistA = container.querySelector('a[href*="/artists/"]');
-                                                if (artistA && artistA !== a) { artist = artistA.innerText.trim(); break; }
-                                                container = container.parentElement;
+                                    var seen = {};
+
+                                    function add(title, artist) {
+                                        title = (title || '').trim().replace(/^[\d\.\s\-]+/, '');
+                                        artist = (artist || '').trim().replace(/Explicit Content/gi, '').trim();
+                                        if (title.length > 1 && !title.includes('Amazon') && !title.includes('Playlist') && !title.includes('Library') && !title.includes('Add to')) {
+                                            var key = (title + '|' + artist).toLowerCase();
+                                            if (!seen[key]) {
+                                                seen[key] = true;
+                                                tracks.push(artist ? (title + ' - ' + artist) : title);
                                             }
-                                            tracks.push(t + (artist ? ' - ' + artist : ''));
+                                        }
+                                    }
+
+                                    // 1. Amazon Music button items (Title, Artist, Album)
+                                    document.querySelectorAll('button[aria-label]').forEach(function(b) {
+                                        var label = b.getAttribute('aria-label') || '';
+                                        if (label.includes(',') && !label.includes('Play') && !label.includes('Add to') && !label.includes('Menu') && !label.includes('Share')) {
+                                            var parts = label.split(',');
+                                            if (parts.length >= 2) add(parts[0], parts[1]);
                                         }
                                     });
+
+                                    // 2. Amazon Music track links
+                                    document.querySelectorAll('a[href*="trackAsin"]').forEach(function(a) {
+                                        var t = a.innerText.trim();
+                                        var row = a.closest('[role="row"], div, li');
+                                        var artA = row ? row.querySelector('a[href*="/artists/"]') : null;
+                                        add(t, artA ? artA.innerText : '');
+                                    });
+
+                                    // 3. Spotify tracklist rows
+                                    document.querySelectorAll('[data-testid="tracklist-row"]').forEach(function(row) {
+                                        var tEl = row.querySelector('div[dir="auto"], [data-encore-id="text"]');
+                                        var aEl = row.querySelector('a[href*="/artist/"]');
+                                        if (tEl) add(tEl.innerText, aEl ? aEl.innerText : '');
+                                    });
+
+                                    // 4. Generic table/list items
                                     if (tracks.length === 0) {
-                                        document.querySelectorAll('button[aria-label]').forEach(function(b) {
-                                            var label = b.getAttribute('aria-label') || '';
-                                            if (label.includes(',') && !label.includes('Play') && !label.includes('Add')) {
-                                                var p = label.split(',');
-                                                if (p.length >= 2) tracks.push(p[0].trim() + ' - ' + p[1].trim());
+                                        document.querySelectorAll('li, tr, [role="row"]').forEach(function(el) {
+                                            var txt = el.innerText || '';
+                                            var lines = txt.split('\n').map(function(s) { return s.trim(); }).filter(Boolean);
+                                            if (lines.length >= 2 && lines[0].length < 80 && lines[1].length < 60) {
+                                                add(lines[0], lines[1]);
                                             }
                                         });
                                     }
-                                    if (tracks.length === 0) {
-                                        document.querySelectorAll('[data-testid="tracklist-row"]').forEach(function(r) {
-                                            var t = r.querySelector('[data-encore-id="text"]');
-                                            var a = r.querySelector('a[href*="/artist/"]');
-                                            if (t) tracks.push(t.innerText.trim() + ' - ' + (a ? a.innerText.trim() : ''));
-                                        });
-                                    }
-                                    var h1 = document.querySelector('h1');
-                                    var title = h1 ? h1.innerText.trim() : document.title;
+
+                                    var title = (document.querySelector('h1') ? document.querySelector('h1').innerText.trim() : document.title)
+                                        .replace(/Playlist on Amazon Music.*/i, '')
+                                        .replace(/\| Spotify/i, '')
+                                        .trim();
+
                                     return JSON.stringify({ title: title, tracks: tracks });
                                 })()
                             """.trimIndent()
