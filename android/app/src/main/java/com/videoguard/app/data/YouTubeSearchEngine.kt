@@ -399,36 +399,46 @@ object YouTubeSearchEngine {
     }
 
     suspend fun getRelatedVideos(video: VideoItem, isMusicOnly: Boolean = false): List<VideoItem> = withContext(Dispatchers.IO) {
+        val candidates = mutableListOf<VideoItem>()
         try {
-            // First search with clean title or artist + title
             val cleanTitle = video.title.replace(Regex("[\\[\\(].*?[\\]\\)]"), "").trim()
-            val query = if (video.artist.isNotBlank() && !video.title.contains(video.artist, ignoreCase = true)) {
-                "${video.artist} $cleanTitle"
-            } else if (video.channelName.isNotBlank() && !video.channelName.startsWith("@") && !video.title.contains(video.channelName, ignoreCase = true)) {
-                "${video.channelName} $cleanTitle"
+            val artist = video.artist.ifBlank { video.channelName }.trim()
+
+            // 1. Search clean title + artist
+            val query = if (artist.isNotBlank() && !cleanTitle.contains(artist, ignoreCase = true)) {
+                "$artist $cleanTitle"
             } else {
                 cleanTitle
             }
+            candidates.addAll(searchVideos(query, isMusicOnly).filter { it.id != video.id })
 
-            val searchRes = searchVideos(query, isMusicOnly).filter { it.id != video.id }
-            if (searchRes.isNotEmpty()) {
-                return@withContext searchRes
+            // 2. Discover related tracks by same artist / artist radio
+            if (artist.isNotBlank() && artist != "YouTube Channel" && candidates.size < 12) {
+                candidates.addAll(searchVideos("$artist songs", isMusicOnly).filter { it.id != video.id })
             }
 
-            // Fallback: search by channel or artist alone
-            val secondaryQuery = video.artist.ifBlank { video.channelName }
-            if (secondaryQuery.isNotBlank()) {
-                val secRes = searchVideos(secondaryQuery, isMusicOnly).filter { it.id != video.id }
-                if (secRes.isNotEmpty()) {
-                    return@withContext secRes
+            // 3. Search genre / style matching tracks
+            if (candidates.size < 8 && artist.isNotBlank()) {
+                candidates.addAll(searchVideos("$artist radio", isMusicOnly).filter { it.id != video.id })
+            }
+
+            // Deduplicate
+            val distinct = candidates.distinctBy { it.id }.filter { it.id != video.id }
+
+            if (distinct.isNotEmpty()) {
+                // Rank candidates based on high-dimensional acoustic, lyrical and genre vector similarity (unkletam/Spotify-Recommendation-System)
+                val ranked = distinct.sortedByDescending { candidate ->
+                    com.videoguard.app.recommendation.SongSimilarityEngine.computeSimilarity(video, candidate)
                 }
+                return@withContext ranked
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        // Final fallback: sample videos
-        if (isMusicOnly) VideoRepository.getMusicTracks().filter { it.id != video.id }
+        // Final fallback: sample videos ranked by vector similarity to seed
+        val fallback = if (isMusicOnly) VideoRepository.getMusicTracks().filter { it.id != video.id }
         else VideoRepository.sampleVideos.filter { it.id != video.id }
+        fallback.sortedByDescending { com.videoguard.app.recommendation.SongSimilarityEngine.computeSimilarity(video, it) }
     }
 }

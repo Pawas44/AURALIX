@@ -106,7 +106,10 @@ fun MusicPlayerScreen(
     modifier: Modifier = Modifier
 ) {
     var activeTab by remember { mutableStateOf(MusicSheetTab.UP_NEXT) }
-    var isLiked by remember { mutableStateOf(false) }
+    val userPlaylists by com.videoguard.app.data.UserDataRepository.playlists.collectAsState()
+    val isLiked = remember(userPlaylists, track.id) {
+        com.videoguard.app.data.UserDataRepository.isLiked(track.id)
+    }
     var isDisliked by remember { mutableStateOf(false) }
     var isShuffle by remember { mutableStateOf(false) }
     val isRepeat by com.videoguard.app.service.PlaybackController.isLoopEnabled.collectAsState()
@@ -742,7 +745,9 @@ fun MusicPlayerScreen(
                 IconButton(
                     onClick = {
                         isDisliked = !isDisliked
-                        if (isDisliked) isLiked = false
+                        if (isDisliked && isLiked) {
+                            com.videoguard.app.data.UserDataRepository.toggleLiked(track)
+                        }
                     }
                 ) {
                     Icon(
@@ -753,8 +758,8 @@ fun MusicPlayerScreen(
                 }
                 IconButton(
                     onClick = {
-                        isLiked = !isLiked
-                        if (isLiked) isDisliked = false
+                        com.videoguard.app.data.UserDataRepository.toggleLiked(track)
+                        if (isDisliked) isDisliked = false
                     }
                 ) {
                     Icon(
