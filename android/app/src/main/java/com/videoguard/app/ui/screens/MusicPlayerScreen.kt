@@ -2,6 +2,14 @@
 
 package com.videoguard.app.ui.screens
 
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -19,6 +27,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.graphicsLayer
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+import kotlin.math.absoluteValue
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -56,6 +65,21 @@ import com.videoguard.app.ui.theme.YouTubeRed
 import com.videoguard.app.ui.theme.YTMusicBlack
 import com.videoguard.app.ui.theme.YTMusicRedAccent
 
+data class AmbientPalette(
+    val primary: Color,
+    val secondary: Color,
+    val deep: Color
+)
+
+fun getTrackPalette(track: VideoItem): AmbientPalette {
+    val hash = track.id.hashCode()
+    val hue = ((hash and 0x7FFFFFFF) % 360).toFloat()
+    val primary = Color.hsl(hue = hue, saturation = 0.68f, lightness = 0.22f)
+    val secondary = Color.hsl(hue = (hue + 28f) % 360f, saturation = 0.52f, lightness = 0.11f)
+    val deep = Color(0xFF070707)
+    return AmbientPalette(primary, secondary, deep)
+}
+
 enum class MusicSheetTab {
     UP_NEXT,
     LYRICS,
@@ -74,6 +98,8 @@ fun MusicPlayerScreen(
     isBackgroundPlay: Boolean = true,
     onToggleBackgroundPlay: () -> Unit = {},
     onSwitchToVideoMode: () -> Unit = {},
+    onSwipeDownDelta: (Float) -> Unit = {},
+    onSwipeDownRelease: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var activeTab by remember { mutableStateOf(MusicSheetTab.UP_NEXT) }
@@ -171,34 +197,143 @@ fun MusicPlayerScreen(
         isLoadingLyrics = false
     }
 
+    val activeQueue = remember(liveQueue, track.id) {
+        if (liveQueue.isNotEmpty() && liveQueue.any { it.id == track.id }) {
+            liveQueue
+        } else {
+            listOf(track)
+        }
+    }
+    val initialIndex = remember(activeQueue, track.id) {
+        activeQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+    }
+    val pagerState = rememberPagerState(
+        initialPage = initialIndex,
+        pageCount = { activeQueue.size }
+    )
+
+    // Sync pager when track changes externally (Next/Prev buttons, auto-play)
+    LaunchedEffect(track.id, activeQueue) {
+        val targetIdx = activeQueue.indexOfFirst { it.id == track.id }
+        if (targetIdx >= 0 && targetIdx != pagerState.currentPage) {
+            pagerState.animateScrollToPage(
+                page = targetIdx,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+        }
+    }
+
+    // When pager settles on a new page, trigger track playback
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { settledPage ->
+            if (settledPage in activeQueue.indices) {
+                val settledTrack = activeQueue[settledPage]
+                if (settledTrack.id != track.id) {
+                    com.videoguard.app.service.PlaybackController.playTrack(settledTrack, activeQueue)
+                }
+            }
+        }
+    }
+
+    // Dynamic Ambient Background Interpolation (YouTube Music — Swipe Bg Transition)
+    val page = pagerState.currentPage.coerceIn(0, (activeQueue.size - 1).coerceAtLeast(0))
+    val offsetFraction = pagerState.currentPageOffsetFraction
+
+    val (fromIdx, toIdx, blend) = if (offsetFraction >= 0f) {
+        val next = (page + 1).coerceAtMost(activeQueue.lastIndex.coerceAtLeast(0))
+        Triple(page, next, offsetFraction)
+    } else {
+        val prev = (page - 1).coerceAtLeast(0)
+        Triple(page, prev, -offsetFraction)
+    }
+
+    val fromPalette = remember(fromIdx, activeQueue) {
+        if (fromIdx in activeQueue.indices) getTrackPalette(activeQueue[fromIdx]) else getTrackPalette(track)
+    }
+    val toPalette = remember(toIdx, activeQueue) {
+        if (toIdx in activeQueue.indices) getTrackPalette(activeQueue[toIdx]) else getTrackPalette(track)
+    }
+
+    val dynamicPrimary = lerp(fromPalette.primary, toPalette.primary, blend)
+    val dynamicSecondary = lerp(fromPalette.secondary, toPalette.secondary, blend)
+    val dynamicDeep = lerp(fromPalette.deep, toPalette.deep, blend)
+
+    val ambientGradient = remember(dynamicPrimary, dynamicSecondary, dynamicDeep) {
+        Brush.verticalGradient(
+            colors = listOf(
+                dynamicPrimary,
+                dynamicSecondary,
+                dynamicDeep
+            )
+        )
+    }
+
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < 0f) {
+                    onSwipeDownDelta(available.y)
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (available.y > 0f) {
+                    onSwipeDownDelta(available.y)
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                onSwipeDownRelease(available.y)
+                return Velocity.Zero
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF2B0C16),
-                        Color(0xFF14060B),
-                        Color(0xFF070707)
-                    )
-                )
-            )
+            .background(ambientGradient)
             .statusBarsPadding()
+            .nestedScroll(nestedScrollConnection)
     ) {
-        // Top Drag Handle Indicator
-        Box(
+        // Top Drag Handle & Bar Area with Vertical Drag Gesture
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 4.dp, bottom = 2.dp),
-            contentAlignment = Alignment.Center
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onVerticalDrag = { change, dragAmount ->
+                            if (dragAmount > 0f) {
+                                change.consume()
+                                onSwipeDownDelta(dragAmount)
+                            }
+                        },
+                        onDragEnd = { onSwipeDownRelease(0f) }
+                    )
+                }
         ) {
+            // Top Drag Handle Indicator
             Box(
                 modifier = Modifier
-                    .width(36.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(Color.White.copy(alpha = 0.3f))
-            )
+                    .fillMaxWidth()
+                    .padding(top = 4.dp, bottom = 2.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color.White.copy(alpha = 0.35f))
+                )
+            }
         }
         // Floating Real-Time Download Progress Banner
         AnimatedVisibility(
@@ -337,57 +472,81 @@ fun MusicPlayerScreen(
             }
         }
 
-        // Center Area: Square Album Art with Audio Visualizer
-        Box(
+        // Center Area: YouTube Music Artwork Carousel (Swipe left/right to change tracks)
+        HorizontalPager(
+            state = pagerState,
+            contentPadding = PaddingValues(horizontal = 38.dp),
+            pageSpacing = 16.dp,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-                .padding(horizontal = 24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.88f)
-                        .aspectRatio(1f)
-                        .shadow(24.dp, RoundedCornerShape(16.dp), spotColor = Color(0x66FF1744))
-                        .clip(RoundedCornerShape(16.dp))
-                ) {
-                    AsyncImage(
-                        model = track.thumbnailUrl,
-                        contentDescription = track.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
+        ) { pageIndex ->
+            val itemTrack = activeQueue.getOrNull(pageIndex) ?: track
+            val pageOffset = ((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction).absoluteValue.coerceIn(0f, 1f)
+            val scale = 0.88f + (1f - 0.88f) * (1f - pageOffset)
+            val alpha = 0.45f + (1f - 0.45f) * (1f - pageOffset)
+            val itemPalette = remember(itemTrack.id) { getTrackPalette(itemTrack) }
 
-                // Audio visualizer bar when playing
-                if (isPlaying) {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.height(18.dp)
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                                this.alpha = alpha
+                            }
+                            .shadow(
+                                elevation = (22 * (1f - pageOffset)).dp,
+                                shape = RoundedCornerShape(18.dp),
+                                spotColor = itemPalette.primary.copy(alpha = 0.65f)
+                            )
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Color(0xFF161616))
                     ) {
-                        listOf(wave1, wave2, wave3, wave1 * 0.7f, wave2 * 0.9f).forEach { h ->
-                            Box(
-                                modifier = Modifier
-                                    .width(3.5.dp)
-                                    .fillMaxHeight(h)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(YTMusicRedAccent)
+                        AsyncImage(
+                            model = itemTrack.thumbnailUrl,
+                            contentDescription = itemTrack.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    // Audio visualizer bar when playing on the active page
+                    if (pageIndex == pagerState.currentPage && isPlaying) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.height(18.dp)
+                        ) {
+                            listOf(wave1, wave2, wave3, wave1 * 0.7f, wave2 * 0.9f).forEach { h ->
+                                Box(
+                                    modifier = Modifier
+                                        .width(3.5.dp)
+                                        .fillMaxHeight(h)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(YTMusicRedAccent)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "High Quality Audio",
+                                color = Color(0xFFAAAAAA),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium
                             )
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "High Quality Audio",
-                            color = Color(0xFFAAAAAA),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                    } else {
+                        Spacer(modifier = Modifier.height(32.dp))
                     }
                 }
             }

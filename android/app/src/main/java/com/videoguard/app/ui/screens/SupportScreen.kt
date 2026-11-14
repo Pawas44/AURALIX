@@ -562,6 +562,7 @@ fun OfficialBmcWidgetButton(
         onClick = onClick,
         shape = RoundedCornerShape(16.dp),
         color = BmcOrange,
+        border = androidx.compose.foundation.BorderStroke(1.2.dp, Color(0xFF1E1E1E).copy(alpha = 0.45f)),
         shadowElevation = 8.dp,
         modifier = modifier
             .fillMaxWidth()

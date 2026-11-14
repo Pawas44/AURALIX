@@ -2,6 +2,13 @@
 
 package com.videoguard.app.ui.screens
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -53,6 +60,8 @@ fun VideoDetailScreen(
     onPrevTrack: () -> Unit = { com.videoguard.app.service.PlaybackController.prevTrack() },
     isBackgroundPlay: Boolean = true,
     onToggleBackgroundPlay: () -> Unit = {},
+    onSwipeDownDelta: (Float) -> Unit = {},
+    onSwipeDownRelease: (Float) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val userPlaylists by com.videoguard.app.data.UserDataRepository.playlists.collectAsState()
@@ -105,6 +114,31 @@ fun VideoDetailScreen(
     val currentDownload by com.videoguard.app.data.UserDataRepository.currentDownload.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y < 0f) {
+                    onSwipeDownDelta(available.y)
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (available.y > 0f) {
+                    onSwipeDownDelta(available.y)
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                onSwipeDownRelease(available.y)
+                return Velocity.Zero
+            }
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -113,6 +147,7 @@ fun VideoDetailScreen(
                 interactionSource = remember { MutableInteractionSource() }
             ) {}
             .background(LiquidGlassDefaults.LiquidCanvas)
+            .nestedScroll(nestedScrollConnection)
     ) {
         // Top Player Section Spacer (Pinned player sits above this in MainScreen)
         Box(
@@ -120,7 +155,45 @@ fun VideoDetailScreen(
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .aspectRatio(16f / 9f)
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onVerticalDrag = { change, dragAmount ->
+                            if (dragAmount > 0f) {
+                                change.consume()
+                                onSwipeDownDelta(dragAmount)
+                            }
+                        },
+                        onDragEnd = { onSwipeDownRelease(0f) }
+                    )
+                }
         )
+
+        // Sleek Drag Handle Indicator between video player and info
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures(
+                        onVerticalDrag = { change, dragAmount ->
+                            if (dragAmount > 0f) {
+                                change.consume()
+                                onSwipeDownDelta(dragAmount)
+                            }
+                        },
+                        onDragEnd = { onSwipeDownRelease(0f) }
+                    )
+                }
+                .padding(top = 4.dp, bottom = 4.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color.White.copy(alpha = 0.35f))
+            )
+        }
 
         // Real-Time Download Banner for Active Download
         AnimatedVisibility(

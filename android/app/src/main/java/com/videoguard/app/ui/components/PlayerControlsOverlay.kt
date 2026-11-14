@@ -210,6 +210,19 @@ fun PlayerControlsOverlay(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.TopCenter)
+                        .pointerInput(isFullscreen) {
+                            if (!isFullscreen) {
+                                androidx.compose.foundation.gestures.detectVerticalDragGestures(
+                                    onVerticalDrag = { change, dragAmount ->
+                                        if (dragAmount > 0f) {
+                                            change.consume()
+                                            onSwipeDownDelta?.invoke(dragAmount)
+                                        }
+                                    },
+                                    onDragEnd = { onSwipeDownRelease?.invoke(0f) }
+                                )
+                            }
+                        }
                         .padding(
                             horizontal = if (isFullscreen) 24.dp else 12.dp,
                             vertical = if (isFullscreen) 14.dp else 10.dp

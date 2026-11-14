@@ -81,94 +81,61 @@ fun MainScreen() {
     var playerDragOffsetY by remember { mutableFloatStateOf(0f) }
     val density = androidx.compose.ui.platform.LocalDensity.current
 
+    val onSwipeDownDelta: (Float) -> Unit = { delta ->
+        playerDragOffsetY = (playerDragOffsetY + delta).coerceAtLeast(0f)
+    }
+
+    val onSwipeDownRelease: (Float) -> Unit = { velocityY ->
+        val threshold = with(density) { 90.dp.toPx() }
+        val currentVal = playerDragOffsetY
+        val shouldDismiss = currentVal > threshold || velocityY > 750f
+        coroutineScope.launch {
+            if (shouldDismiss) {
+                val targetY = with(density) { 1400.dp.toPx() }
+                val anim = Animatable(currentVal)
+                anim.animateTo(
+                    targetValue = targetY,
+                    initialVelocity = velocityY,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                ) {
+                    playerDragOffsetY = value
+                }
+                isPlayerExpanded = false
+                playerDragOffsetY = 0f
+            } else {
+                val anim = Animatable(currentVal)
+                anim.animateTo(
+                    targetValue = 0f,
+                    initialVelocity = velocityY,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                ) {
+                    playerDragOffsetY = value
+                }
+            }
+        }
+    }
+
     val collapsePlayerWithAnimation: () -> Unit = {
         coroutineScope.launch {
             val targetY = with(density) { 1400.dp.toPx() }
             val anim = Animatable(playerDragOffsetY)
             anim.animateTo(
                 targetValue = targetY,
-                animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioNoBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
             ) {
                 playerDragOffsetY = value
             }
             isPlayerExpanded = false
             playerDragOffsetY = 0f
-        }
-    }
-
-    val swipeToMinimizeModifier = if (!isPlayerExpanded || isFullscreen) Modifier else Modifier.pointerInput(Unit) {
-        awaitEachGesture {
-            val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
-            var isDragging = false
-            val startScreenY = down.position.y + playerDragOffsetY
-            val startScreenX = down.position.x
-            var lastScreenY = startScreenY
-            var lastTime = down.uptimeMillis
-            var velocityY = 0f
-
-            while (true) {
-                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
-                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                if (!change.pressed) break
-
-                val currentScreenY = change.position.y + playerDragOffsetY
-                val currentScreenX = change.position.x
-                val deltaY = currentScreenY - lastScreenY
-                val totalY = currentScreenY - startScreenY
-                val totalX = currentScreenX - startScreenX
-                val dt = (change.uptimeMillis - lastTime).coerceAtLeast(1)
-                velocityY = deltaY / dt * 1000f
-                lastScreenY = currentScreenY
-                lastTime = change.uptimeMillis
-
-                if (!isDragging) {
-                    if (totalY > 16f && totalY > kotlin.math.abs(totalX) * 1.3f) {
-                        isDragging = true
-                        change.consume()
-                        playerDragOffsetY = (playerDragOffsetY + totalY).coerceAtLeast(0f)
-                        lastScreenY = change.position.y + playerDragOffsetY
-                    }
-                } else {
-                    change.consume()
-                    if (deltaY != 0f) {
-                        playerDragOffsetY = (playerDragOffsetY + deltaY).coerceAtLeast(0f)
-                        lastScreenY = change.position.y + playerDragOffsetY
-                    }
-                }
-            }
-
-            if (isDragging) {
-                val threshold = with(density) { 90.dp.toPx() }
-                val currentVal = playerDragOffsetY
-                val shouldDismiss = currentVal > threshold || velocityY > 750f
-                coroutineScope.launch {
-                    if (shouldDismiss) {
-                        val targetY = with(density) { 1400.dp.toPx() }
-                        val anim = Animatable(currentVal)
-                        anim.animateTo(
-                            targetValue = targetY,
-                            initialVelocity = velocityY,
-                            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
-                        ) {
-                            playerDragOffsetY = value
-                        }
-                        isPlayerExpanded = false
-                        playerDragOffsetY = 0f
-                    } else {
-                        val anim = Animatable(currentVal)
-                        anim.animateTo(
-                            targetValue = 0f,
-                            initialVelocity = velocityY,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioLowBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            )
-                        ) {
-                            playerDragOffsetY = value
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -311,10 +278,11 @@ fun MainScreen() {
                     .zIndex(15f)
                     .offset { IntOffset(0, playerDragOffsetY.roundToInt().coerceAtLeast(0)) }
                     .graphicsLayer {
-                        val progress = (playerDragOffsetY / 1200f).coerceIn(0f, 1f)
-                        alpha = 1f - (progress * 0.25f)
-                        scaleX = 1f - (progress * 0.04f)
-                        scaleY = 1f - (progress * 0.04f)
+                        val progress = (playerDragOffsetY / 1000f).coerceIn(0f, 1f)
+                        scaleX = 1f - (progress * 0.12f)
+                        scaleY = 1f - (progress * 0.12f)
+                        shape = RoundedCornerShape((progress * 18).dp)
+                        clip = true
                     }
                 else -> Modifier
                     .size(1.dp)
@@ -347,9 +315,9 @@ fun MainScreen() {
                         },
                         isFullscreen = isFullscreen,
                         onToggleFullscreen = { isFullscreen = !isFullscreen },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .then(swipeToMinimizeModifier)
+                        onSwipeDownDelta = onSwipeDownDelta,
+                        onSwipeDownRelease = onSwipeDownRelease,
+                        modifier = Modifier.fillMaxSize()
                     )
                 }
             }
@@ -534,15 +502,30 @@ fun MainScreen() {
             }
 
             // Mini Player Bar (docked above Bottom Nav when video is loaded & minimized)
-            if (currentVideo != null && !isPlayerExpanded) {
-                MiniPlayerBar(
-                    video = currentVideo,
-                    isPlaying = isPlaying,
-                    currentMode = appMode,
-                    onExpand = { isPlayerExpanded = true },
-                    onPlayPauseToggle = { PlaybackController.togglePlayPause() },
-                    onClose = { PlaybackController.stop() }
-                )
+            if (currentVideo != null && (!isPlayerExpanded || playerDragOffsetY > 0f)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            alpha = if (isPlayerExpanded) {
+                                (playerDragOffsetY / 300f).coerceIn(0f, 1f)
+                            } else {
+                                1f
+                            }
+                        }
+                ) {
+                    MiniPlayerBar(
+                        video = currentVideo,
+                        isPlaying = isPlaying,
+                        currentMode = appMode,
+                        onExpand = {
+                            isPlayerExpanded = true
+                            playerDragOffsetY = 0f
+                        },
+                        onPlayPauseToggle = { PlaybackController.togglePlayPause() },
+                        onClose = { PlaybackController.stop() }
+                    )
+                }
             }
 
             // Bottom Navigation Bar
@@ -651,10 +634,11 @@ fun MainScreen() {
                 .zIndex(10f)
                 .offset { IntOffset(0, playerDragOffsetY.roundToInt().coerceAtLeast(0)) }
                 .graphicsLayer {
-                    val progress = (playerDragOffsetY / 1200f).coerceIn(0f, 1f)
-                    alpha = 1f - (progress * 0.25f)
-                    scaleX = 1f - (progress * 0.04f)
-                    scaleY = 1f - (progress * 0.04f)
+                    val progress = (playerDragOffsetY / 1000f).coerceIn(0f, 1f)
+                    scaleX = 1f - (progress * 0.12f)
+                    scaleY = 1f - (progress * 0.12f)
+                    shape = RoundedCornerShape((progress * 28).dp)
+                    clip = true
                 }
         ) {
             currentVideo?.let { video ->
@@ -682,9 +666,9 @@ fun MainScreen() {
                             onToggleBackgroundPlay = {
                                 PlaybackController.toggleBackgroundPlay()
                             },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .then(swipeToMinimizeModifier)
+                            onSwipeDownDelta = onSwipeDownDelta,
+                            onSwipeDownRelease = onSwipeDownRelease,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                     AppMode.YOUTUBE_MUSIC -> {
@@ -706,9 +690,9 @@ fun MainScreen() {
                             onSwitchToVideoMode = {
                                 appMode = AppMode.YOUTUBE
                             },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .then(swipeToMinimizeModifier)
+                            onSwipeDownDelta = onSwipeDownDelta,
+                            onSwipeDownRelease = onSwipeDownRelease,
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                 }
