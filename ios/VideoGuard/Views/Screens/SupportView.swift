@@ -51,22 +51,28 @@ struct SupportView: View {
                 // 1. UPI & Razorpay Native Card
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(razorpayAccent.opacity(0.2))
-                                .frame(width: 36, height: 36)
-                            Image(systemName: "creditcard.fill")
-                                .font(.system(size: 17))
-                                .foregroundColor(razorpayAccent)
-                        }
+                        Button(action: {
+                            UIApplication.shared.open(razorpayURL)
+                        }) {
+                            HStack(spacing: 10) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(razorpayAccent.opacity(0.2))
+                                        .frame(width: 36, height: 36)
+                                    Image(systemName: "creditcard.fill")
+                                        .font(.system(size: 17))
+                                        .foregroundColor(razorpayAccent)
+                                }
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Pay via UPI / Razorpay")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(.white)
-                            Text("GPay, PhonePe, Paytm, Cards (@pawas)")
-                                .font(.system(size: 11))
-                                .foregroundColor(Color(hex: 0xA0AEC0))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Pay via UPI / Razorpay")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(.white)
+                                    Text("GPay, PhonePe, Paytm, Cards (@pawas)")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Color(hex: 0xA0AEC0))
+                                }
+                            }
                         }
 
                         Spacer()
@@ -139,22 +145,28 @@ struct SupportView: View {
                 // 2. Buy Me a Coffee Card (Opens in Browser)
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(coffeeGold.opacity(0.2))
-                                .frame(width: 36, height: 36)
-                            Image(systemName: "cup.and.saucer.fill")
-                                .font(.system(size: 17))
-                                .foregroundColor(coffeeGold)
-                        }
+                        Button(action: {
+                            UIApplication.shared.open(bmcProfileURL)
+                        }) {
+                            HStack(spacing: 10) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(coffeeGold.opacity(0.2))
+                                        .frame(width: 36, height: 36)
+                                    Image(systemName: "cup.and.saucer.fill")
+                                        .font(.system(size: 17))
+                                        .foregroundColor(coffeeGold)
+                                }
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Buy Me a Coffee")
-                                .font(.system(size: 16, weight: .bold))
-                                .foregroundColor(.white)
-                            Text("buymeacoffee.com/FINDEX")
-                                .font(.system(size: 11))
-                                .foregroundColor(Color(hex: 0xA0AEC0))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Buy Me a Coffee")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(.white)
+                                    Text("buymeacoffee.com/FINDEX")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Color(hex: 0xA0AEC0))
+                                }
+                            }
                         }
 
                         Spacer()
@@ -206,7 +218,7 @@ struct SupportView: View {
                     Text("Why Your Support Matters")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(.white)
-                    Text("• 100% Ad-Free & Privacy-First: No user tracking or injected ads.\n• Spotify-Level AI Recommendations: Continuous improvements to algorithms.\n• YouTube InnerTube Streaming & Downloads: Maintenance and bandwidth.")
+                    Text("• 100% Ad-Free & Privacy-First: No user tracking or injected ads.\n• Spotify-Level AI Recommendations: Continuous improvements to algorithms.\n• High-Fidelity Audio & Offline Playback: Free unlimited music for everyone.")
                         .font(.system(size: 11.5))
                         .foregroundColor(Color(hex: 0x9E9EAF))
                         .lineSpacing(4)

@@ -120,28 +120,36 @@ fun SupportScreen(
                     .padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Header inside card
+                val effectiveAmount = customAmount.ifBlank { selectedAmount }.ifBlank { "100" }
+
+                // Header inside card - Clickable to launch UPI directly
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                openUpiPayment(context, effectiveAmount)
+                            },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(40.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(RazorpayAccent.copy(alpha = 0.2f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Payment,
-                                contentDescription = null,
+                                contentDescription = "Pay with UPI",
                                 tint = RazorpayAccent,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                         Column {
@@ -241,8 +249,6 @@ fun SupportScreen(
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                val effectiveAmount = customAmount.ifBlank { selectedAmount }.ifBlank { "100" }
-
                 // Action 1: Open UPI App Directly
                 Button(
                     onClick = {
@@ -324,21 +330,31 @@ fun SupportScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                try {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(BMC_PROFILE_URL)))
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
+                                }
+                            },
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(40.dp)
                                 .clip(RoundedCornerShape(10.dp))
                                 .background(CoffeeGold.copy(alpha = 0.2f)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
                                 imageVector = Icons.Filled.Coffee,
-                                contentDescription = null,
+                                contentDescription = "Buy Me a Coffee",
                                 tint = CoffeeGold,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(22.dp)
                             )
                         }
                         Column {
@@ -435,7 +451,7 @@ fun SupportScreen(
                 Text(
                     text = "• 100% Ad-Free & Privacy-First: No user tracking or injected advertisements.\n" +
                            "• Spotify-Level AI Recommendations: Continuous updates to the recommendation engine.\n" +
-                           "• YouTube InnerTube Streaming & Downloads: Server maintenance and CDN bandwidth.",
+                           "• High-Fidelity Audio & Offline Playback: Free unlimited music for everyone.",
                     color = Color(0xFF9E9EAF),
                     fontSize = 11.5.sp,
                     lineHeight = 17.sp
