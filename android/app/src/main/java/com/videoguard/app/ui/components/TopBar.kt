@@ -1,5 +1,6 @@
 package com.videoguard.app.ui.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,11 +8,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,6 +43,7 @@ fun TopBar(
     modifier: Modifier = Modifier
 ) {
     val isMusic = currentMode == AppMode.YOUTUBE_MUSIC
+    val sleepTimerRemaining by com.videoguard.app.service.PlaybackController.sleepTimerRemainingSeconds.collectAsState()
     val glassBg = Brush.verticalGradient(
         colors = listOf(
             Color(0xD0121320),
@@ -72,46 +78,79 @@ fun TopBar(
                 )
             }
 
-            // Right Action: Liquid Glass Mode Switcher Pill
-            Box(
-                modifier = Modifier
-                    .shadow(elevation = 6.dp, shape = RoundedCornerShape(20.dp), ambientColor = Color.Black.copy(alpha = 0.5f))
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(
-                        Brush.linearGradient(
-                            listOf(
-                                Color.White.copy(alpha = 0.16f),
-                                Color.White.copy(alpha = 0.05f)
+            // Right Actions: Sleep Timer Pill & Liquid Glass Mode Switcher Pill
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (sleepTimerRemaining != null && sleepTimerRemaining!! > 0) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color(0xF21C1E30),
+                        border = BorderStroke(1.dp, Color(0xFFB39DDB).copy(alpha = 0.6f)),
+                        modifier = Modifier.clip(RoundedCornerShape(20.dp))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Bedtime,
+                                contentDescription = "Sleep Timer",
+                                tint = Color(0xFFB39DDB),
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = com.videoguard.app.service.PlaybackController.formatSleepTimerRemaining(sleepTimerRemaining),
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .shadow(elevation = 6.dp, shape = RoundedCornerShape(20.dp), ambientColor = Color.Black.copy(alpha = 0.5f))
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(
+                            Brush.linearGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.16f),
+                                    Color.White.copy(alpha = 0.05f)
+                                )
                             )
                         )
-                    )
-                    .border(
-                        width = 1.dp,
-                        brush = LiquidGlassDefaults.BorderSpecular,
-                        shape = RoundedCornerShape(20.dp)
-                    )
-                    .clickable {
-                        onModeChanged(if (isMusic) AppMode.YOUTUBE else AppMode.YOUTUBE_MUSIC)
-                    }
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
+                        .border(
+                            width = 1.dp,
+                            brush = LiquidGlassDefaults.BorderSpecular,
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                        .clickable {
+                            onModeChanged(if (isMusic) AppMode.YOUTUBE else AppMode.YOUTUBE_MUSIC)
+                        }
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = if (isMusic) Icons.Default.PlayArrow else Icons.Default.MusicNote,
-                        contentDescription = "Switch Mode",
-                        tint = if (isMusic) YouTubeRed else YTMusicRedAccent,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isMusic) "Video" else "Music",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (isMusic) Icons.Default.PlayArrow else Icons.Default.MusicNote,
+                            contentDescription = "Switch Mode",
+                            tint = if (isMusic) YouTubeRed else YTMusicRedAccent,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isMusic) "Video" else "Music",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

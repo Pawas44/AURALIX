@@ -34,7 +34,7 @@ private val YTMusicColorScheme = darkColorScheme(
 
 @Composable
 fun VideoGuardTheme(
-    appMode: AppMode = AppMode.YOUTUBE,
+    appMode: AppMode = AppMode.YOUTUBE_MUSIC,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when (appMode) {

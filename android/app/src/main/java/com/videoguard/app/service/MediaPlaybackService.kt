@@ -28,6 +28,7 @@ import com.videoguard.app.MainActivity
 import com.videoguard.app.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -80,6 +81,7 @@ class MediaPlaybackService : Service() {
 
     private var currentTitle: String = "AURALIX Audio"
     private var currentArtist: String = "YouTube & YT Music"
+    private var currentSubText: String = "AURALIX"
     private var isPlaying: Boolean = false
     private var playbackSpeed: Float = 1.0f
     private var currentThumbnailUrl: String? = null
@@ -174,6 +176,23 @@ class MediaPlaybackService : Service() {
         }
 
         initMediaSession()
+
+        // Real-time Lock Screen Sleep Timer Sync
+        serviceScope.launch {
+            PlaybackController.sleepTimerRemainingSeconds.collect { remaining ->
+                val newSubText = if (remaining != null && remaining > 0) {
+                    "🌙 Sleep: ${PlaybackController.formatSleepTimerRemaining(remaining)}"
+                } else {
+                    "AURALIX"
+                }
+                if (currentSubText != newSubText) {
+                    currentSubText = newSubText
+                    if (activeInstance != null && (isPlaying || currentThumbnailUrl != null)) {
+                        showNotification()
+                    }
+                }
+            }
+        }
     }
 
     private fun initMediaSession() {
@@ -434,10 +453,11 @@ class MediaPlaybackService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(currentTitle)
             .setContentText(currentArtist)
-            .setSubText("AURALIX")
+            .setSubText(currentSubText)
             .setContentIntent(openAppPendingIntent)
             .setOngoing(isPlaying)
             .setSilent(true)
+            .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .addAction(android.R.drawable.ic_media_previous, "Previous", prevPending)
@@ -482,6 +502,9 @@ class MediaPlaybackService : Service() {
             telephonyManager?.listen(phoneStateListener, android.telephony.PhoneStateListener.LISTEN_NONE)
         } catch (e: Exception) {}
         releaseWakeLock()
+        try {
+            serviceScope.cancel()
+        } catch (e: Exception) {}
         super.onDestroy()
     }
 

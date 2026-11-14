@@ -56,7 +56,17 @@ import com.videoguard.app.ui.theme.YTMusicBlack
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen() {
-    var appMode by remember { mutableStateOf(AppMode.YOUTUBE) }
+    val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences("videoguard_prefs", android.content.Context.MODE_PRIVATE) }
+    var appMode by remember {
+        val saved = prefs.getString("user_preferred_app_mode", AppMode.YOUTUBE_MUSIC.name)
+        mutableStateOf(try { AppMode.valueOf(saved ?: AppMode.YOUTUBE_MUSIC.name) } catch (e: Exception) { AppMode.YOUTUBE_MUSIC })
+    }
+
+    LaunchedEffect(appMode) {
+        prefs.edit().putString("user_preferred_app_mode", appMode.name).apply()
+    }
+
     var selectedYTTab by remember { mutableStateOf(YouTubeTab.HOME) }
     var selectedMusicTab by remember { mutableStateOf(YouTubeMusicTab.HOME) }
     var homeScrollToTopTrigger by remember { mutableStateOf(0) }
@@ -67,7 +77,6 @@ fun MainScreen() {
     val currentTime by PlaybackController.currentTimeSeconds.collectAsState()
     val duration by PlaybackController.durationSeconds.collectAsState()
 
-    val context = LocalContext.current
     val activity = context as? Activity
     var isFullscreen by rememberSaveable { mutableStateOf(false) }
     var isPlayerExpanded by remember { mutableStateOf(false) }
@@ -285,8 +294,8 @@ fun MainScreen() {
                         clip = true
                     }
                 else -> Modifier
-                    .size(1.dp)
-                    .alpha(0.01f)
+                    .size(200.dp, 120.dp)
+                    .alpha(0.08f)
                     .zIndex(-10f)
             }
 

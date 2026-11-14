@@ -8,6 +8,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.collect
@@ -767,11 +768,27 @@ fun MusicPlayerScreen(
                     com.videoguard.app.service.PlaybackController.seekTo(scrubPosition)
                 },
                 valueRange = 0f..maxSeconds,
-                colors = SliderDefaults.colors(
-                    thumbColor = YTMusicRedAccent,
-                    activeTrackColor = YTMusicRedAccent,
-                    inactiveTrackColor = Color.White.copy(alpha = 0.2f)
-                ),
+                track = { sliderState ->
+                    SliderDefaults.Track(
+                        sliderState = sliderState,
+                        modifier = Modifier.height(2.5.dp),
+                        thumbTrackGapSize = 0.dp,
+                        drawStopIndicator = null,
+                        colors = SliderDefaults.colors(
+                            activeTrackColor = YTMusicRedAccent,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.25f)
+                        )
+                    )
+                },
+                thumb = {
+                    SliderDefaults.Thumb(
+                        interactionSource = remember { MutableInteractionSource() },
+                        thumbSize = DpSize(10.dp, 10.dp),
+                        colors = SliderDefaults.colors(
+                            thumbColor = YTMusicRedAccent
+                        )
+                    )
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(20.dp)

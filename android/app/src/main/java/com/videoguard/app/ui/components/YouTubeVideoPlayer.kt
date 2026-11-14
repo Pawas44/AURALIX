@@ -599,12 +599,6 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               if (window.isLoadingNewVideo) return;
               if (window.ytPlayer && typeof window.ytPlayer.getCurrentTime === 'function' && typeof window.ytPlayer.getDuration === 'function') {
                 try {
-                  if (typeof window.ytPlayer.getVideoData === 'function') {
-                    var vData = window.ytPlayer.getVideoData();
-                    if (vData && vData.video_id && window.currentVideoId && vData.video_id !== window.currentVideoId) {
-                      return;
-                    }
-                  }
                   var cur = window.ytPlayer.getCurrentTime();
                   var dur = window.ytPlayer.getDuration();
                   if (typeof cur === 'number' && typeof dur === 'number' && !isNaN(cur) && !isNaN(dur) && cur >= 0 && dur > 0) {
@@ -625,7 +619,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                   }
                 } catch(e) {}
               }
-            }, 500);
+            }, 250);
           </script>
         </head>
         <body>

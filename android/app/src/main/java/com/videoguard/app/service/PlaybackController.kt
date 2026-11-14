@@ -392,6 +392,14 @@ object PlaybackController {
                                 pause()
                             }
                         }
+                        mp.setOnSeekCompleteListener { seekedMp ->
+                            try {
+                                val pos = seekedMp.currentPosition / 1000f
+                                _currentTimeSeconds.value = pos
+                                pendingSeekTarget = null
+                                syncServiceProgress(force = true)
+                            } catch (e: Exception) {}
+                        }
                         mp.setOnPreparedListener { preparedMp ->
                             try {
                                 preparedMp.start()
@@ -437,18 +445,22 @@ object PlaybackController {
         }
         offlineTickerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main + handler).launch {
             while (isActive && _isPlaying.value && isOfflineModeActive) {
-                kotlinx.coroutines.delay(500)
+                kotlinx.coroutines.delay(200L)
                 val mp = offlineMediaPlayer ?: break
                 try {
-                    if (mp.isPlaying) {
-                        val sec = (mp.currentPosition / 1000f).coerceAtLeast(0f)
+                    val pos = mp.currentPosition
+                    if (pos >= 0) {
+                        val sec = (pos / 1000f).coerceAtLeast(0f)
                         _currentTimeSeconds.value = sec
-                        val d = mp.duration / 1000f
-                        if (d > 0f && kotlin.math.abs(_durationSeconds.value - d) > 0.5f) {
+                    }
+                    val dur = mp.duration
+                    if (dur > 0) {
+                        val d = dur / 1000f
+                        if (kotlin.math.abs(_durationSeconds.value - d) > 0.5f) {
                             _durationSeconds.value = d
                         }
-                        syncServiceProgress(force = false)
                     }
+                    syncServiceProgress(force = false)
                 } catch (e: Exception) {
                     // Handled safely
                 }
@@ -522,7 +534,15 @@ object PlaybackController {
         lastTrackChangeTimeMs = 0L
         _isPlaying.value = false
         if (isOfflineModeActive) {
-            try { offlineMediaPlayer?.pause() } catch (e: Exception) {}
+            try {
+                offlineMediaPlayer?.let {
+                    val cur = it.currentPosition
+                    if (cur >= 0) {
+                        _currentTimeSeconds.value = cur / 1000f
+                    }
+                    it.pause()
+                }
+            } catch (e: Exception) {}
             offlineTickerJob?.cancel()
         }
         // Always tell WebView to pause as well to guarantee no rogue online audio

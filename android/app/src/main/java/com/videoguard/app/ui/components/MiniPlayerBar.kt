@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -53,6 +54,7 @@ fun MiniPlayerBar(
 
     val currentTime by com.videoguard.app.service.PlaybackController.currentTimeSeconds.collectAsState()
     val duration by com.videoguard.app.service.PlaybackController.durationSeconds.collectAsState()
+    val sleepTimerRemaining by com.videoguard.app.service.PlaybackController.sleepTimerRemainingSeconds.collectAsState()
     val progressFraction = remember(currentTime, duration) {
         if (duration > 0f) (currentTime / duration).coerceIn(0f, 1f) else 0f
     }
@@ -119,14 +121,41 @@ fun MiniPlayerBar(
                         overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = if (isMusic && video.artist.isNotEmpty()) video.artist else video.channelName,
-                        color = Color(0xFFB0B0C2),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Normal,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = if (isMusic && video.artist.isNotEmpty()) video.artist else video.channelName,
+                            color = Color(0xFFB0B0C2),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (sleepTimerRemaining != null && sleepTimerRemaining!! > 0) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF673AB7).copy(alpha = 0.35f))
+                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Bedtime,
+                                    contentDescription = null,
+                                    tint = Color(0xFFB39DDB),
+                                    modifier = Modifier.size(10.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = com.videoguard.app.service.PlaybackController.formatSleepTimerRemaining(sleepTimerRemaining),
+                                    color = Color(0xFFE1BEE7),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                 }
 
                 // Play / Pause Glass Button
