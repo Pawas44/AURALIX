@@ -230,7 +230,8 @@ object PlaybackController {
                         isLooping = _isLoopEnabled.value
                         setOnCompletionListener {
                             if (_isLoopEnabled.value) {
-                                seekTo(0f)
+                                this@PlaybackController.seekTo(0f)
+                                try { start() } catch (e: Exception) {}
                             } else if (_isAutoplayEnabled.value) {
                                 nextTrack()
                             } else {
