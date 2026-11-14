@@ -179,7 +179,7 @@ class UserDataRepository: ObservableObject {
                                     title: video.title,
                                     progress: percent,
                                     bytesText: "\(mbNow) MB / \(mbTotal) MB",
-                                    isComplete = false
+                                    isComplete: false
                                 )
 
                                 if downloaded >= totalLen {
