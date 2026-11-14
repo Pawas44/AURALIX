@@ -285,9 +285,17 @@ object UserDataRepository {
             _offlineTracks.value = current
             saveOfflineTracks()
             try {
-                val f = File(context.filesDir, "downloads/${video.id}.m4a")
-                if (f.exists()) f.delete()
+                val dir = File(context.filesDir, "downloads")
+                listOf(
+                    File(dir, "${video.id}.m4a"),
+                    File(dir, "${video.id}.mp4"),
+                    File(dir, "${video.id}.webm"),
+                    File(dir, "${video.id}.tmp")
+                ).forEach { if (it.exists()) it.delete() }
             } catch (e: Exception) {}
+            repoScope.launch(Dispatchers.Main) {
+                android.widget.Toast.makeText(context, "Removed from downloads", android.widget.Toast.LENGTH_SHORT).show()
+            }
             return
         }
 
@@ -309,6 +317,14 @@ object UserDataRepository {
                         thumbnailUrl = if (targetVideo.thumbnailUrl.isBlank()) realMeta.third else targetVideo.thumbnailUrl
                     )
                 }
+            }
+
+            withContext(Dispatchers.Main) {
+                android.widget.Toast.makeText(
+                    context,
+                    "Downloading \"${targetVideo.title}\" for offline playback...",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
             }
 
             val dir = File(context.filesDir, "downloads")
@@ -338,21 +354,19 @@ object UserDataRepository {
             var isRealStreamDownloaded = false
             val candidateFormats = mutableListOf<AudioStreamFormat>()
 
-            // 1. Fetch primary format (checks ANDROID muxed format 18, IPADOS itag 140/251, ANDROID_VR)
-            val primary = fetchRealYouTubeAudioFormat(targetVideo.id)
-            if (primary != null) {
-                candidateFormats.add(primary)
-            }
+            // 1. Primary Priority: Format 18 (mp4 video container with clean unthrottled AAC audio stream)
+            fetchMuxedFormat18(targetVideo.id)?.let { candidateFormats.add(it) }
 
-            // 2. Always guarantee ANDROID Format 18 (mp4 with AAC audio) is in candidate list as unthrottled fallback
-            if (candidateFormats.none { it.isMuxed }) {
-                fetchMuxedFormat18(targetVideo.id)?.let { candidateFormats.add(it) }
+            // 2. Secondary fallback: Other InnerTube audio formats
+            val primary = fetchRealYouTubeAudioFormat(targetVideo.id)
+            if (primary != null && candidateFormats.none { it.url == primary.url }) {
+                candidateFormats.add(primary)
             }
 
             for (format in candidateFormats) {
                 if (targetFile.exists()) targetFile.delete()
                 val ok = downloadStreamToFile(context, targetVideo, format, targetFile, notifManager, channelId, notifId)
-                if (ok && targetFile.exists() && targetFile.length() > 200_000L) {
+                if (ok && targetFile.exists() && targetFile.length() > 100_000L) {
                     isRealStreamDownloaded = true
                     break
                 } else {
@@ -368,6 +382,13 @@ object UserDataRepository {
                     bytesText = "Download failed (network error)",
                     isComplete = true
                 )
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Download failed. Please check internet connection.",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
                 kotlinx.coroutines.delay(2000)
                 _currentDownload.value = null
                 return@launch
@@ -381,6 +402,14 @@ object UserDataRepository {
                 bytesText = "Complete",
                 isComplete = true
             )
+
+            withContext(Dispatchers.Main) {
+                android.widget.Toast.makeText(
+                    context,
+                    "✓ \"${targetVideo.title}\" is ready for offline playback",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
 
             try {
                 val completeNotif = androidx.core.app.NotificationCompat.Builder(context, channelId)
@@ -413,7 +442,9 @@ object UserDataRepository {
         channelId: String,
         notifId: Int
     ): Boolean = withContext(Dispatchers.IO) {
+        val tempFile = File(targetFile.parentFile, "${video.id}.tmp")
         try {
+            if (tempFile.exists()) tempFile.delete()
             val url = format.url
             val userAgent = format.userAgent
             val totalBytes = if (format.contentLength > 0L) format.contentLength else 0L
@@ -444,7 +475,7 @@ object UserDataRepository {
             var lastNotifUpdate = 0L
 
             conn.inputStream.use { input ->
-                java.io.FileOutputStream(targetFile).use { output ->
+                java.io.FileOutputStream(tempFile).use { output ->
                     val buffer = ByteArray(64 * 1024)
                     var bytesRead: Int
                     while (input.read(buffer).also { bytesRead = it } != -1) {
@@ -482,9 +513,17 @@ object UserDataRepository {
                 }
             }
 
-            targetFile.exists() && targetFile.length() > 200_000L
+            if (tempFile.exists() && tempFile.length() > 100_000L) {
+                if (targetFile.exists()) targetFile.delete()
+                val renamed = tempFile.renameTo(targetFile)
+                renamed || (targetFile.exists() && targetFile.length() > 100_000L)
+            } else {
+                if (tempFile.exists()) tempFile.delete()
+                false
+            }
         } catch (e: Exception) {
             android.util.Log.e("UserDataRepository", "downloadStreamToFile error for ${video.id}: ${e.message}")
+            try { if (tempFile.exists()) tempFile.delete() } catch (ignored: Exception) {}
             false
         }
     }

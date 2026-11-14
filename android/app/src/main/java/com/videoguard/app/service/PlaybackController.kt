@@ -74,6 +74,7 @@ object PlaybackController {
     // Offline native playback support
     private var offlineTickerJob: kotlinx.coroutines.Job? = null
     private var offlineMediaPlayer: android.media.MediaPlayer? = null
+    private var offlineFileInputStream: java.io.FileInputStream? = null
     var isOfflineModeActive: Boolean = false
         private set
 
@@ -223,16 +224,18 @@ object PlaybackController {
                 offlineTickerJob?.cancel()
                 offlineTickerJob = null
                 offlineMediaPlayer?.apply {
-                    if (isPlaying) {
-                        stop()
-                    }
-                    reset()
-                    release()
+                    try {
+                        if (isPlaying) stop()
+                    } catch (e: Exception) {}
+                    try { reset() } catch (e: Exception) {}
+                    try { release() } catch (e: Exception) {}
                 }
             } catch (e: Exception) {
                 // Ignore
             } finally {
                 offlineMediaPlayer = null
+                try { offlineFileInputStream?.close() } catch (e: Exception) {}
+                offlineFileInputStream = null
                 isOfflineModeActive = false
             }
         }
@@ -295,17 +298,19 @@ object PlaybackController {
             _durationSeconds.value = dur
             val ctx = appContext
             if (ctx != null) {
-                var fis: java.io.FileInputStream? = null
                 try {
                     val dir = java.io.File(ctx.filesDir, "downloads")
                     val f = listOf(
                         java.io.File(dir, "${track.id}.m4a"),
                         java.io.File(dir, "${track.id}.mp4"),
                         java.io.File(dir, "${track.id}.webm")
-                    ).firstOrNull { it.exists() && it.length() > 10_000L }
+                    ).firstOrNull { it.exists() && it.length() > 20_000L }
 
                     if (f != null) {
-                        fis = java.io.FileInputStream(f)
+                        try { offlineFileInputStream?.close() } catch (e: Exception) {}
+                        val fis = java.io.FileInputStream(f)
+                        offlineFileInputStream = fis
+
                         val mp = android.media.MediaPlayer()
                         offlineMediaPlayer = mp
                         mp.setAudioAttributes(
@@ -314,10 +319,8 @@ object PlaybackController {
                                 .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
                                 .build()
                         )
-                        // Use open FileDescriptor to bypass Android mediaserver internal storage permission restrictions
+                        // Use open FileDescriptor. DO NOT close fis while MediaPlayer is using the fd!
                         mp.setDataSource(fis.fd, 0L, f.length())
-                        fis.close()
-                        fis = null
 
                         mp.isLooping = _isLoopEnabled.value
                         mp.setOnErrorListener { _, what, extra ->
@@ -335,13 +338,21 @@ object PlaybackController {
                                 pause()
                             }
                         }
-                        mp.prepare()
-                        mp.start()
-
-                        val trueDurSec = mp.duration / 1000f
-                        if (trueDurSec > 0f) {
-                            _durationSeconds.value = trueDurSec
+                        mp.setOnPreparedListener { preparedMp ->
+                            try {
+                                preparedMp.start()
+                                val trueDurSec = preparedMp.duration / 1000f
+                                if (trueDurSec > 0f) {
+                                    _durationSeconds.value = trueDurSec
+                                }
+                                _isPlaying.value = true
+                                resumeOfflineTicker()
+                                startOrUpdateService()
+                            } catch (e: Exception) {
+                                android.util.Log.e("PlaybackController", "Error starting prepared MediaPlayer: ${e.message}", e)
+                            }
                         }
+                        mp.prepareAsync()
                         isOfflineModeActive = true
                     } else {
                         // File missing or incomplete: fallback smoothly to online streaming
@@ -351,7 +362,8 @@ object PlaybackController {
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("PlaybackController", "Failed to start offline MediaPlayer: ${e.message}", e)
-                    try { fis?.close() } catch (ignored: Exception) {}
+                    try { offlineFileInputStream?.close() } catch (ignored: Exception) {}
+                    offlineFileInputStream = null
                     try { offlineMediaPlayer?.release() } catch (ignored: Exception) {}
                     offlineMediaPlayer = null
                     isOfflineModeActive = false
@@ -359,7 +371,6 @@ object PlaybackController {
                     sendCommand("setPlaybackState(true)")
                 }
             }
-            resumeOfflineTicker()
         }
     }
 
@@ -398,12 +409,14 @@ object PlaybackController {
             offlineTickerJob = null
             try {
                 offlineMediaPlayer?.apply {
-                    if (isPlaying) stop()
-                    reset()
-                    release()
+                    try { if (isPlaying) stop() } catch (e: Exception) {}
+                    try { reset() } catch (e: Exception) {}
+                    try { release() } catch (e: Exception) {}
                 }
             } catch (e: Exception) {}
             offlineMediaPlayer = null
+            try { offlineFileInputStream?.close() } catch (e: Exception) {}
+            offlineFileInputStream = null
         }
     }
 
@@ -608,19 +621,21 @@ object PlaybackController {
                     }
                 }
 
-                // Tier 5: Local Offline Tracks Fallback (or if network failed)
-                if (candidates.isEmpty()) {
+                // Tier 5: Local Offline Tracks Fallback (or if in offline mode / network failed)
+                if (candidates.isEmpty() || isOfflineModeActive) {
                     val offline = com.videoguard.app.data.UserDataRepository.offlineTracks.value
                     val unplayedOffline = offline.filter { it.id !in existingIds && it.id != seedTrack.id }
                     if (unplayedOffline.isNotEmpty()) {
                         candidates.addAll(unplayedOffline)
                     } else if (offline.size > 1) {
                         candidates.addAll(offline.filter { it.id != seedTrack.id }.shuffled())
+                    } else if (offline.isNotEmpty()) {
+                        candidates.addAll(offline)
                     }
                 }
 
-                // Tier 6: Failsafe fallback across sample catalogue
-                if (candidates.isEmpty()) {
+                // Tier 6: Failsafe fallback across sample catalogue (online only)
+                if (candidates.isEmpty() && !isOfflineModeActive) {
                     val samplePool = VideoRepository.sampleVideos.filter { it.id != seedTrack.id }
                     candidates.addAll(samplePool)
                 }

@@ -290,35 +290,37 @@ fun MainScreen() {
                     .zIndex(-10f)
             }
 
-            Box(modifier = playerModifier) {
-                YouTubeVideoPlayer(
-                    videoId = currentVideo!!.id,
-                    isPlaying = isPlaying,
-                    modifier = Modifier.fillMaxSize()
-                )
-                if (showVideoInYT) {
-                    PlayerControlsOverlay(
+            if (!PlaybackController.isOfflineModeActive) {
+                Box(modifier = playerModifier) {
+                    YouTubeVideoPlayer(
+                        videoId = currentVideo!!.id,
                         isPlaying = isPlaying,
-                        currentTime = currentTime,
-                        duration = duration,
-                        onPlayPauseToggle = { PlaybackController.togglePlayPause() },
-                        onNext = { PlaybackController.nextTrack() },
-                        onPrev = { PlaybackController.prevTrack() },
-                        onSeekBy = { PlaybackController.seekBy(it) },
-                        onSeekTo = { PlaybackController.seekTo(it) },
-                        onCollapse = {
-                            if (isFullscreen) {
-                                isFullscreen = false
-                            } else {
-                                collapsePlayerWithAnimation()
-                            }
-                        },
-                        isFullscreen = isFullscreen,
-                        onToggleFullscreen = { isFullscreen = !isFullscreen },
-                        onSwipeDownDelta = onSwipeDownDelta,
-                        onSwipeDownRelease = onSwipeDownRelease,
                         modifier = Modifier.fillMaxSize()
                     )
+                    if (showVideoInYT) {
+                        PlayerControlsOverlay(
+                            isPlaying = isPlaying,
+                            currentTime = currentTime,
+                            duration = duration,
+                            onPlayPauseToggle = { PlaybackController.togglePlayPause() },
+                            onNext = { PlaybackController.nextTrack() },
+                            onPrev = { PlaybackController.prevTrack() },
+                            onSeekBy = { PlaybackController.seekBy(it) },
+                            onSeekTo = { PlaybackController.seekTo(it) },
+                            onCollapse = {
+                                if (isFullscreen) {
+                                    isFullscreen = false
+                                } else {
+                                    collapsePlayerWithAnimation()
+                                }
+                            },
+                            isFullscreen = isFullscreen,
+                            onToggleFullscreen = { isFullscreen = !isFullscreen },
+                            onSwipeDownDelta = onSwipeDownDelta,
+                            onSwipeDownRelease = onSwipeDownRelease,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }

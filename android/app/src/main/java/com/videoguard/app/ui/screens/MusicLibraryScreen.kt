@@ -642,7 +642,16 @@ fun MusicLibraryScreen(
                     }
                 }
 
-                items(playlists, key = { it.id }) { playlist ->
+                items(
+                    playlists.filter {
+                        it.id != "downloads" &&
+                        it.id != "liked_videos" &&
+                        !it.title.equals("Downloads", ignoreCase = true) &&
+                        !it.title.equals("Liked Videos", ignoreCase = true) &&
+                        !it.title.equals("Liked Songs", ignoreCase = true)
+                    },
+                    key = { it.id }
+                ) { playlist ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()

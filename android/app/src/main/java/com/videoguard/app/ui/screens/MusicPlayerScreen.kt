@@ -125,18 +125,27 @@ fun MusicPlayerScreen(
     var isSheetExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(track.id) {
-        if (liveQueue.size <= 1) {
-            isLoadingRelated = true
-            val results = com.videoguard.app.data.YouTubeSearchEngine.getRelatedVideos(track, isMusicOnly = true)
-            if (results.isNotEmpty()) {
-                dynamicRelated = results
-                com.videoguard.app.service.PlaybackController.setQueue(listOf(track) + results)
+        val isOffline = com.videoguard.app.service.PlaybackController.isOfflineModeActive
+        if (isOffline) {
+            val offlineList = com.videoguard.app.data.UserDataRepository.offlineTracks.value
+            if (offlineList.size > 1) {
+                dynamicRelated = offlineList.filter { it.id != track.id }
             }
+        } else if (liveQueue.size <= 1) {
+            isLoadingRelated = true
+            try {
+                val results = com.videoguard.app.data.YouTubeSearchEngine.getRelatedVideos(track, isMusicOnly = true)
+                if (results.isNotEmpty()) {
+                    dynamicRelated = results
+                    com.videoguard.app.service.PlaybackController.setQueue(listOf(track) + results)
+                }
+            } catch (e: Exception) {}
             isLoadingRelated = false
         }
     }
 
     val queueTracks = remember(liveQueue, dynamicRelated, track.id) {
+        val isOffline = com.videoguard.app.service.PlaybackController.isOfflineModeActive
         if (liveQueue.size > 1) {
             val currentIdx = liveQueue.indexOfFirst { it.id == track.id }
             if (currentIdx != -1) {
@@ -148,6 +157,8 @@ fun MusicPlayerScreen(
             }
         } else if (dynamicRelated.isNotEmpty()) {
             dynamicRelated
+        } else if (isOffline) {
+            com.videoguard.app.data.UserDataRepository.offlineTracks.value.filter { it.id != track.id }
         } else {
             VideoRepository.getMusicTracks().filter { it.id != track.id }
         }
@@ -210,14 +221,21 @@ fun MusicPlayerScreen(
     var isLoadingLyrics by remember(track.id) { mutableStateOf(false) }
 
     LaunchedEffect(track.id) {
-        isLoadingLyrics = true
-        lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
-            trackTitle = track.title,
-            artistName = track.artist.ifBlank { track.channelName },
-            durationSeconds = duration.toInt(),
-            videoId = track.id
-        )
-        isLoadingLyrics = false
+        if (!com.videoguard.app.service.PlaybackController.isOfflineModeActive) {
+            isLoadingLyrics = true
+            try {
+                lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
+                    trackTitle = track.title,
+                    artistName = track.artist.ifBlank { track.channelName },
+                    durationSeconds = duration.toInt(),
+                    videoId = track.id
+                )
+            } catch (e: Exception) {}
+            isLoadingLyrics = false
+        } else {
+            lyricsResult = null
+            isLoadingLyrics = false
+        }
     }
 
     val activeQueue = remember(liveQueue, track.id) {
