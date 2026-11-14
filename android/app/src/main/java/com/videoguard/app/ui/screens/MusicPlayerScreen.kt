@@ -146,27 +146,44 @@ fun MusicPlayerScreen(
         }
     }
 
-    val queueTracks = remember(liveQueue, dynamicRelated, track.id) {
+    val queueTracks = remember(liveQueue, dynamicRelated, offlineTracks, track.id) {
         val isOffline = com.videoguard.app.service.PlaybackController.isOfflineModeActive
-        if (liveQueue.size > 1) {
-            val currentIdx = liveQueue.indexOfFirst { it.id == track.id }
-            if (currentIdx != -1) {
-                val upcoming = liveQueue.drop(currentIdx + 1)
-                val previous = liveQueue.take(currentIdx)
-                upcoming + previous
-            } else {
-                liveQueue.filter { it.id != track.id }
+        val rawList = when {
+            isOffline -> {
+                if (liveQueue.size > 1) {
+                    val currentIdx = liveQueue.indexOfFirst { it.id == track.id }
+                    if (currentIdx != -1) {
+                        val upcoming = liveQueue.drop(currentIdx + 1)
+                        val previous = liveQueue.take(currentIdx)
+                        upcoming + previous
+                    } else {
+                        liveQueue.filter { it.id != track.id }
+                    }
+                } else {
+                    offlineTracks.filter { it.id != track.id }
+                }
             }
-        } else if (dynamicRelated.isNotEmpty()) {
-            dynamicRelated
-        } else if (isOffline) {
-            com.videoguard.app.data.UserDataRepository.offlineTracks.value.filter { it.id != track.id }
-        } else {
-            VideoRepository.getMusicTracks().filter { it.id != track.id }
+            liveQueue.size > 1 -> {
+                val currentIdx = liveQueue.indexOfFirst { it.id == track.id }
+                if (currentIdx != -1) {
+                    val upcoming = liveQueue.drop(currentIdx + 1)
+                    val previous = liveQueue.take(currentIdx)
+                    upcoming + previous
+                } else {
+                    liveQueue.filter { it.id != track.id }
+                }
+            }
+            dynamicRelated.isNotEmpty() -> {
+                dynamicRelated
+            }
+            else -> {
+                VideoRepository.getMusicTracks().filter { it.id != track.id }
+            }
         }
+        rawList.distinctBy { it.id }
     }
 
-    val peekSheetHeight = 54.dp + navBarBottom
+    val peekSheetHeight = 58.dp + navBarBottom
     val expandedSheetHeight = 580.dp + navBarBottom
     val sheetHeight by animateDpAsState(
         targetValue = if (isSheetExpanded) expandedSheetHeight else peekSheetHeight,
@@ -963,30 +980,59 @@ fun MusicPlayerScreen(
                     }
                 }
 
-                if (isSheetExpanded) {
+                if (isSheetExpanded && sheetHeight > 90.dp) {
+                    HorizontalDivider(color = Color(0xFF333333), thickness = 1.dp)
 
-                HorizontalDivider(color = Color(0xFF333333), thickness = 1.dp)
-
-                // Tab Content
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    when (activeTab) {
-                        MusicSheetTab.UP_NEXT -> {
-                            if (isLoadingRelated && queueTracks.isEmpty()) {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                }
-                            } else {
-                                LazyColumn(
-                                    contentPadding = PaddingValues(bottom = navBarBottom + 8.dp)
-                                ) {
-                                    items(queueTracks, key = { it.id }) { qTrack ->
+                    // Tab Content
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                    ) {
+                        when (activeTab) {
+                            MusicSheetTab.UP_NEXT -> {
+                                if (isLoadingRelated && queueTracks.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                                    }
+                                } else if (queueTracks.isEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(vertical = 36.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.MusicNote,
+                                                contentDescription = null,
+                                                tint = Color(0xFF666666),
+                                                modifier = Modifier.size(36.dp)
+                                            )
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            Text(
+                                                text = if (com.videoguard.app.service.PlaybackController.isOfflineModeActive)
+                                                    "No more downloaded songs in queue"
+                                                else
+                                                    "No upcoming tracks",
+                                                color = Color(0xFFAAAAAA),
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    LazyColumn(
+                                        contentPadding = PaddingValues(bottom = navBarBottom + 8.dp)
+                                    ) {
+                                        itemsIndexed(queueTracks, key = { index, item -> "${item.id}_$index" }) { _, qTrack ->
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
