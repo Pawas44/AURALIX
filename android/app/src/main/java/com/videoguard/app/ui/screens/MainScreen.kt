@@ -76,14 +76,43 @@ fun MainScreen() {
     val coroutineScope = rememberCoroutineScope()
     val playerDragOffsetY = remember { Animatable(0f) }
 
+    val onDragDelta: (Float) -> Unit = { delta ->
+        coroutineScope.launch {
+            val newOffset = (playerDragOffsetY.value + delta).coerceAtLeast(0f)
+            playerDragOffsetY.snapTo(newOffset)
+        }
+    }
+
+    val onDragEnd: (Float) -> Unit = { velocityY ->
+        coroutineScope.launch {
+            val threshold = 90.dp.toPx()
+            val shouldDismiss = playerDragOffsetY.value > threshold || velocityY > 800f
+            if (shouldDismiss) {
+                playerDragOffsetY.animateTo(
+                    targetValue = 2200f,
+                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+                )
+                isPlayerExpanded = false
+                playerDragOffsetY.snapTo(0f)
+            } else {
+                playerDragOffsetY.animateTo(
+                    targetValue = 0f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                )
+            }
+        }
+    }
+
     val swipeToMinimizeModifier = Modifier.pointerInput(isPlayerExpanded, isFullscreen) {
         if (!isPlayerExpanded || isFullscreen) return@pointerInput
         awaitEachGesture {
             val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
             var isDraggingDown = false
-            val initialY = down.position.y
-            val initialX = down.position.x
-            var lastY = initialY
+            var accumulatedY = 0f
+            var accumulatedX = 0f
             var lastTime = down.uptimeMillis
             var velocityY = 0f
 
@@ -92,51 +121,29 @@ fun MainScreen() {
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 if (!change.pressed) break
 
-                val currentY = change.position.y
-                val currentX = change.position.x
-                val dy = currentY - initialY
-                val dx = currentX - initialX
+                val deltaY = change.position.y - change.previousPosition.y
+                val deltaX = change.position.x - change.previousPosition.x
                 val dt = (change.uptimeMillis - lastTime).coerceAtLeast(1)
-                velocityY = (currentY - lastY) / dt * 1000f
-                lastY = currentY
+                velocityY = deltaY / dt * 1000f
                 lastTime = change.uptimeMillis
 
                 if (!isDraggingDown) {
-                    if (dy > 14f && dy > kotlin.math.abs(dx) * 1.15f) {
+                    accumulatedY += deltaY
+                    accumulatedX += deltaX
+                    if (accumulatedY > 14f && accumulatedY > kotlin.math.abs(accumulatedX) * 1.2f) {
                         isDraggingDown = true
+                        onDragDelta(accumulatedY)
                     }
-                }
-
-                if (isDraggingDown) {
+                } else {
                     change.consume()
-                    val targetOffset = (dy - 14f).coerceAtLeast(0f)
-                    coroutineScope.launch {
-                        playerDragOffsetY.snapTo(targetOffset)
+                    if (deltaY != 0f) {
+                        onDragDelta(deltaY)
                     }
                 }
             }
 
             if (isDraggingDown) {
-                coroutineScope.launch {
-                    val threshold = 95.dp.toPx()
-                    val shouldDismiss = playerDragOffsetY.value > threshold || velocityY > 1000f
-                    if (shouldDismiss) {
-                        playerDragOffsetY.animateTo(
-                            targetValue = 2000f,
-                            animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing)
-                        )
-                        isPlayerExpanded = false
-                        playerDragOffsetY.snapTo(0f)
-                    } else {
-                        playerDragOffsetY.animateTo(
-                            targetValue = 0f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioLowBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            )
-                        )
-                    }
-                }
+                onDragEnd(velocityY)
             }
         }
     }
@@ -239,7 +246,6 @@ fun MainScreen() {
                         scaleX = 1f - (progress * 0.04f)
                         scaleY = 1f - (progress * 0.04f)
                     }
-                    .then(swipeToMinimizeModifier)
                 else -> Modifier
                     .size(1.dp)
                     .alpha(0.01f)
@@ -270,7 +276,9 @@ fun MainScreen() {
                             }
                         },
                         isFullscreen = isFullscreen,
-                        onToggleFullscreen = { isFullscreen = !isFullscreen }
+                        onToggleFullscreen = { isFullscreen = !isFullscreen },
+                        onSwipeDownDelta = onDragDelta,
+                        onSwipeDownRelease = onDragEnd
                     )
                 }
             }
