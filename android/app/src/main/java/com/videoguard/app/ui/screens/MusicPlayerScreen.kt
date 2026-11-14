@@ -5,11 +5,13 @@ package com.videoguard.app.ui.screens
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.Velocity
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.collect
+import kotlin.math.abs
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -208,29 +210,24 @@ fun MusicPlayerScreen(
         activeQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
     }
     val pagerState = rememberPagerState(
-        initialPage = initialIndex,
-        pageCount = { activeQueue.size }
-    )
+        initialPage = initialIndex
+    ) {
+        activeQueue.size
+    }
 
     // Sync pager when track changes externally (Next/Prev buttons, auto-play)
     LaunchedEffect(track.id, activeQueue) {
         val targetIdx = activeQueue.indexOfFirst { it.id == track.id }
         if (targetIdx >= 0 && targetIdx != pagerState.currentPage) {
-            pagerState.animateScrollToPage(
-                page = targetIdx,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            )
+            pagerState.animateScrollToPage(targetIdx)
         }
     }
 
     // When pager settles on a new page, trigger track playback
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.settledPage }.collect { settledPage ->
-            if (settledPage in activeQueue.indices) {
-                val settledTrack = activeQueue[settledPage]
+        snapshotFlow { pagerState.currentPage }.collect { currPage ->
+            if (currPage in activeQueue.indices) {
+                val settledTrack = activeQueue[currPage]
                 if (settledTrack.id != track.id) {
                     com.videoguard.app.service.PlaybackController.playTrack(settledTrack, activeQueue)
                 }
@@ -257,9 +254,9 @@ fun MusicPlayerScreen(
         if (toIdx in activeQueue.indices) getTrackPalette(activeQueue[toIdx]) else getTrackPalette(track)
     }
 
-    val dynamicPrimary = lerp(fromPalette.primary, toPalette.primary, blend)
-    val dynamicSecondary = lerp(fromPalette.secondary, toPalette.secondary, blend)
-    val dynamicDeep = lerp(fromPalette.deep, toPalette.deep, blend)
+    val dynamicPrimary = androidx.compose.ui.graphics.lerp(fromPalette.primary, toPalette.primary, blend)
+    val dynamicSecondary = androidx.compose.ui.graphics.lerp(fromPalette.secondary, toPalette.secondary, blend)
+    val dynamicDeep = androidx.compose.ui.graphics.lerp(fromPalette.deep, toPalette.deep, blend)
 
     val ambientGradient = remember(dynamicPrimary, dynamicSecondary, dynamicDeep) {
         Brush.verticalGradient(
@@ -482,7 +479,7 @@ fun MusicPlayerScreen(
                 .weight(1f)
         ) { pageIndex ->
             val itemTrack = activeQueue.getOrNull(pageIndex) ?: track
-            val pageOffset = ((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction).absoluteValue.coerceIn(0f, 1f)
+            val pageOffset = abs((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction).coerceIn(0f, 1f)
             val scale = 0.88f + (1f - 0.88f) * (1f - pageOffset)
             val alpha = 0.45f + (1f - 0.45f) * (1f - pageOffset)
             val itemPalette = remember(itemTrack.id) { getTrackPalette(itemTrack) }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -212,7 +213,7 @@ fun PlayerControlsOverlay(
                         .align(Alignment.TopCenter)
                         .pointerInput(isFullscreen) {
                             if (!isFullscreen) {
-                                androidx.compose.foundation.gestures.detectVerticalDragGestures(
+                                detectVerticalDragGestures(
                                     onVerticalDrag = { change, dragAmount ->
                                         if (dragAmount > 0f) {
                                             change.consume()
