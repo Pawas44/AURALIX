@@ -195,23 +195,13 @@ object PlaybackController {
 
         if (queue.isNotEmpty()) {
             _playbackQueue.value = queue
-            if (queue.size <= 2) {
-                checkAndFetchSimilarTracks(track)
-            }
+        } else if (_playbackQueue.value.none { it.id == track.id }) {
+            _playbackQueue.value = listOf(track)
+        }
+
         val isDownloaded = com.videoguard.app.data.UserDataRepository.isDownloaded(track.id)
-        if (!isDownloaded) {
-            if (!queue.isEmpty()) {
-                if (queue.size <= 2) {
-                    checkAndFetchSimilarTracks(track)
-                }
-            } else if (_playbackQueue.value.none { it.id == track.id }) {
-                _playbackQueue.value = listOf(track)
-                checkAndFetchSimilarTracks(track)
-            }
-        } else {
-            if (_playbackQueue.value.none { it.id == track.id }) {
-                _playbackQueue.value = listOf(track)
-            }
+        if (!isDownloaded && _playbackQueue.value.size <= 2) {
+            checkAndFetchSimilarTracks(track)
         }
 
         startOrUpdateService()

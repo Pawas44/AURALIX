@@ -2080,14 +2080,6 @@ final class SpotifyImportEngine {
         }
         return nil
     }
-                   !lower.contains("log in") &&
-                   lower != "library" &&
-                   lower != "browse" &&
-                   lower != "home"
-        }
-
-        return (title, filteredTracks)
-    }
 
     private func parseDomTracksJson(jsonStr: String) -> (title: String, tracks: [ImportTrackMeta]) {
         guard let data = jsonStr.data(using: .utf8),
