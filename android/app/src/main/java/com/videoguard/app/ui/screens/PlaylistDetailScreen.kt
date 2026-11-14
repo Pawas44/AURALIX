@@ -449,10 +449,10 @@ fun PlaylistDetailScreen(
                                     onClick = {
                                         if (alreadyIn) {
                                             UserDataRepository.removeVideoFromPlaylist(playlist.id, item.id)
-                                            currentVideos = currentVideos.filter { it.id != item.id }
+                                            dynamicVideos = dynamicVideos.filter { it.id != item.id }
                                         } else {
                                             UserDataRepository.addVideoToPlaylist(playlist.id, item)
-                                            currentVideos = currentVideos + item
+                                            dynamicVideos = dynamicVideos + item
                                         }
                                     }
                                 ) {

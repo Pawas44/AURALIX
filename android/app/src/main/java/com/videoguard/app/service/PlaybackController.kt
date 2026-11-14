@@ -550,7 +550,7 @@ object PlaybackController {
                         try {
                             val artistSongs = com.videoguard.app.data.YouTubeSearchEngine.searchVideos(
                                 "$artist songs",
-                                isMusic = true
+                                isMusicOnly = true
                             ).filter { it.id !in existingIds }
                             candidates.addAll(artistSongs)
                         } catch (e: Exception) {}
