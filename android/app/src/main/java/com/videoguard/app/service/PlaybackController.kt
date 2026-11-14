@@ -54,6 +54,12 @@ object PlaybackController {
     private val _sleepTimerMinutes = MutableStateFlow<Int?>(null)
     val sleepTimerMinutes: StateFlow<Int?> = _sleepTimerMinutes.asStateFlow()
 
+    private val _sleepTimerRemainingSeconds = MutableStateFlow<Int?>(null)
+    val sleepTimerRemainingSeconds: StateFlow<Int?> = _sleepTimerRemainingSeconds.asStateFlow()
+
+    private val _sleepTimerEndOnTrackFinish = MutableStateFlow(false)
+    val sleepTimerEndOnTrackFinish: StateFlow<Boolean> = _sleepTimerEndOnTrackFinish.asStateFlow()
+
     private var sleepTimerJob: kotlinx.coroutines.Job? = null
     private var lastTrackChangeTimeMs: Long = 0L
     private var lastServiceSyncTimeMs: Long = 0L
@@ -134,15 +140,63 @@ object PlaybackController {
         sendCommand("setCaptions($enabled)")
     }
 
-    fun setSleepTimer(minutes: Int?) {
-        _sleepTimerMinutes.value = minutes
+    fun setSleepTimer(minutes: Int?, endOnTrackFinish: Boolean = false) {
         sleepTimerJob?.cancel()
-        if (minutes != null && minutes > 0) {
+        sleepTimerJob = null
+        _sleepTimerEndOnTrackFinish.value = endOnTrackFinish
+
+        if (endOnTrackFinish) {
+            val cur = _currentTimeSeconds.value
+            val dur = _durationSeconds.value
+            val remain = if (dur > cur) (dur - cur).toInt().coerceAtLeast(10) else 180
+            _sleepTimerRemainingSeconds.value = remain
+            _sleepTimerMinutes.value = (remain + 59) / 60
             sleepTimerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
-                kotlinx.coroutines.delay(minutes * 60 * 1000L)
+                var currentSec = remain
+                while (kotlinx.coroutines.isActive && currentSec > 0) {
+                    kotlinx.coroutines.delay(1000L)
+                    currentSec--
+                    _sleepTimerRemainingSeconds.value = currentSec
+                    _sleepTimerMinutes.value = (currentSec + 59) / 60
+                }
                 pause()
+                _sleepTimerRemainingSeconds.value = null
+                _sleepTimerMinutes.value = null
+                _sleepTimerEndOnTrackFinish.value = false
+            }
+            return
+        }
+
+        if (minutes != null && minutes > 0) {
+            val totalSeconds = minutes * 60
+            _sleepTimerMinutes.value = minutes
+            _sleepTimerRemainingSeconds.value = totalSeconds
+            sleepTimerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+                var currentSec = totalSeconds
+                while (kotlinx.coroutines.isActive && currentSec > 0) {
+                    kotlinx.coroutines.delay(1000L)
+                    currentSec--
+                    _sleepTimerRemainingSeconds.value = currentSec
+                    _sleepTimerMinutes.value = (currentSec + 59) / 60
+                }
+                pause()
+                _sleepTimerRemainingSeconds.value = null
                 _sleepTimerMinutes.value = null
             }
+        } else {
+            _sleepTimerRemainingSeconds.value = null
+            _sleepTimerMinutes.value = null
+        }
+    }
+
+    fun formatSleepTimerRemaining(seconds: Int?): String {
+        if (seconds == null || seconds <= 0) return ""
+        val m = seconds / 60
+        val s = seconds % 60
+        return if (m > 0) {
+            String.format(java.util.Locale.US, "%dm %02ds", m, s)
+        } else {
+            String.format(java.util.Locale.US, "%ds", s)
         }
     }
 

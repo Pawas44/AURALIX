@@ -30,11 +30,14 @@ fun PlayerSettingsBottomSheet(
     val currentSpeed by PlaybackController.playbackSpeed.collectAsState()
     val currentQuality by PlaybackController.playbackQuality.collectAsState()
     val sleepTimer by PlaybackController.sleepTimerMinutes.collectAsState()
+    val sleepTimerRemaining by PlaybackController.sleepTimerRemainingSeconds.collectAsState()
+    val sleepTimerEndOnTrackFinish by PlaybackController.sleepTimerEndOnTrackFinish.collectAsState()
     val currentTrack by PlaybackController.currentTrack.collectAsState()
 
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showQualityDialog by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
+    var customSleepMinutes by remember { mutableIntStateOf(20) }
     var showStatsDialog by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
@@ -129,7 +132,10 @@ fun PlayerSettingsBottomSheet(
             )
 
             // 7. Sleep Timer
-            val timerText = if (sleepTimer != null) "$sleepTimer minutes remaining" else "Off"
+            val timerText = when {
+                sleepTimerRemaining != null -> "🌙 ${PlaybackController.formatSleepTimerRemaining(sleepTimerRemaining)} remaining"
+                else -> "Off"
+            }
             SettingsRow(
                 icon = Icons.Default.Timer,
                 title = "Sleep timer",
@@ -226,31 +232,179 @@ fun PlayerSettingsBottomSheet(
         )
     }
 
-    // Sleep Timer Dialog
+    // Sleep Timer Dialog with Live Countdown & Custom Timer
     if (showSleepTimerDialog) {
-        val options = listOf(null to "Off", 15 to "15 minutes", 30 to "30 minutes", 45 to "45 minutes", 60 to "60 minutes")
+        val presets = listOf(
+            5 to "5 minutes",
+            15 to "15 minutes",
+            30 to "30 minutes",
+            45 to "45 minutes",
+            60 to "60 minutes"
+        )
         AlertDialog(
             onDismissRequest = { showSleepTimerDialog = false },
-            title = { Text("Sleep Timer", color = Color.White, fontWeight = FontWeight.Bold) },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Bedtime,
+                        contentDescription = null,
+                        tint = Color(0xFFB39DDB),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Sleep Timer", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            },
             text = {
-                Column {
-                    options.forEach { (mins, label) ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (sleepTimerRemaining != null) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 12.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFF1E2138),
+                            border = BorderStroke(1.dp, Color(0xFFB39DDB).copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Active Countdown", color = Color(0xFFB39DDB), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = "${PlaybackController.formatSleepTimerRemaining(sleepTimerRemaining)} remaining",
+                                        color = Color.White,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Button(
+                                    onClick = {
+                                        PlaybackController.setSleepTimer(null)
+                                        showSleepTimerDialog = false
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                                    shape = RoundedCornerShape(16.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text("Turn Off", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    Text("Presets", color = Color(0xFFAAAAAA), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    presets.forEach { (mins, label) ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable {
                                     PlaybackController.setSleepTimer(mins)
                                     showSleepTimerDialog = false
                                 }
-                                .padding(vertical = 12.dp, horizontal = 4.dp),
+                                .padding(vertical = 10.dp, horizontal = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(label, color = Color.White, fontSize = 16.sp)
-                            if (sleepTimer == mins) {
-                                Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF3EA6FF))
+                            Text(label, color = Color.White, fontSize = 15.sp)
+                            if (sleepTimer == mins && !sleepTimerEndOnTrackFinish) {
+                                Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF40DCA5), modifier = Modifier.size(18.dp))
                             }
                         }
+                    }
+
+                    // End of Track option
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                PlaybackController.setSleepTimer(null, endOnTrackFinish = true)
+                                showSleepTimerDialog = false
+                            }
+                            .padding(vertical = 10.dp, horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("End of this track", color = Color.White, fontSize = 15.sp)
+                        if (sleepTimerEndOnTrackFinish) {
+                            Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF40DCA5), modifier = Modifier.size(18.dp))
+                        }
+                    }
+
+                    HorizontalDivider(color = Color(0xFF383838), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+
+                    Text("Custom Duration", color = Color(0xFFAAAAAA), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Custom Minutes Stepper
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF1E1E1E), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        IconButton(
+                            onClick = { customSleepMinutes = (customSleepMinutes - 5).coerceAtLeast(1) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Text("–5", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        IconButton(
+                            onClick = { customSleepMinutes = (customSleepMinutes - 1).coerceAtLeast(1) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Text("–1", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
+
+                        Text(
+                            text = "$customSleepMinutes min",
+                            color = Color(0xFF40DCA5),
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        IconButton(
+                            onClick = { customSleepMinutes = (customSleepMinutes + 1).coerceAtMost(360) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Text("+1", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        }
+
+                        IconButton(
+                            onClick = { customSleepMinutes = (customSleepMinutes + 5).coerceAtMost(360) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Text("+5", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Button(
+                        onClick = {
+                            PlaybackController.setSleepTimer(customSleepMinutes)
+                            showSleepTimerDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3EA6FF)),
+                        shape = RoundedCornerShape(20.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(40.dp)
+                    ) {
+                        Text("Set $customSleepMinutes Min Timer", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             },
@@ -260,8 +414,8 @@ fun PlayerSettingsBottomSheet(
                     Text("Close", color = Color(0xFFAAAAAA))
                 }
             },
-            containerColor = Color(0xFF282828),
-            shape = RoundedCornerShape(16.dp)
+            containerColor = Color(0xFF222432),
+            shape = RoundedCornerShape(20.dp)
         )
     }
 

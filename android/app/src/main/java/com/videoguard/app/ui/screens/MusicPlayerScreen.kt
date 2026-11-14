@@ -115,6 +115,7 @@ fun MusicPlayerScreen(
     val offlineTracks by com.videoguard.app.data.UserDataRepository.offlineTracks.collectAsState()
     val isTrackDownloaded = offlineTracks.any { it.id == track.id }
     val currentDownload by com.videoguard.app.data.UserDataRepository.currentDownload.collectAsState()
+    val sleepTimerRemaining by com.videoguard.app.service.PlaybackController.sleepTimerRemainingSeconds.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -360,6 +361,63 @@ fun MusicPlayerScreen(
                 )
             }
         }
+
+        // Dynamic Island Sleep Timer Pill (Live countdown pill)
+        AnimatedVisibility(
+            visible = sleepTimerRemaining != null,
+            enter = slideInVertically() + fadeIn(),
+            exit = slideOutVertically() + fadeOut()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 2.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    onClick = { showSettingsSheet = true },
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xF21C1E30),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFB39DDB).copy(alpha = 0.6f)),
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Bedtime,
+                            contentDescription = "Sleep Timer",
+                            tint = Color(0xFFB39DDB),
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Text(
+                            text = "Sleep Timer: ${com.videoguard.app.service.PlaybackController.formatSleepTimerRemaining(sleepTimerRemaining)}",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(Color.White.copy(alpha = 0.15f))
+                                .clickable { com.videoguard.app.service.PlaybackController.setSleepTimer(null) },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Cancel Timer",
+                                tint = Color.White,
+                                modifier = Modifier.size(11.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Floating Real-Time Download Progress Banner
         AnimatedVisibility(
             visible = currentDownload != null,
