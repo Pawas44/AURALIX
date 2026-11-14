@@ -365,41 +365,6 @@ object MusicImportEngine {
             }
         }
 
-        // 5. Intelligent ASIN & URL slug resolution (bypasses Amazon SPA / Bot Protection)
-        if (tracks.isEmpty()) {
-            val asinMatcher = Pattern.compile("(B0[A-Z0-9]{7,12})").matcher(url)
-            val asin = if (asinMatcher.find()) asinMatcher.group(1) else ""
-
-            val pathPart = url.substringBefore("?").trimEnd('/')
-            val lastSegment = pathPart.substringAfterLast("/")
-            val cleanSlug = lastSegment.replace(Regex("^B0[A-Z0-9]+-?"), "").replace("-", " ").replace("_", " ").trim()
-
-            var candidateTitle = if (title != "Amazon Music Playlist" && title.isNotBlank() && !title.equals("Amazon Music", ignoreCase = true)) {
-                title
-            } else if (cleanSlug.isNotBlank() && cleanSlug.length > 2 && !cleanSlug.startsWith("B0")) {
-                cleanSlug
-            } else ""
-
-            if (candidateTitle.isBlank() && !asin.isNullOrBlank()) {
-                onProgress(ImportProgress("Resolving Amazon Music playlist...", 0, 0))
-                val resolved = resolveAmazonAsinTitle(asin)
-                if (!resolved.isNullOrBlank()) {
-                    candidateTitle = resolved
-                }
-            }
-
-            if (candidateTitle.isNotBlank()) {
-                title = candidateTitle
-                onProgress(ImportProgress("Searching tracks for $candidateTitle...", 0, 0))
-                try {
-                    val searchItems = YouTubeSearchEngine.searchVideos("$candidateTitle songs", isMusicOnly = true)
-                    for (item in searchItems.take(30)) {
-                        tracks.add(ImportTrackMeta(item.title, item.artist.ifBlank { item.channelName }))
-                    }
-                } catch (e: Exception) {}
-            }
-        }
-
         // Deduplicate tracks while preserving order
         val uniqueTracks = mutableListOf<ImportTrackMeta>()
         val seen = mutableSetOf<String>()
@@ -424,7 +389,7 @@ object MusicImportEngine {
         }
 
         if (filteredTracks.isEmpty()) {
-            throw IllegalStateException("No tracks detected on this page. Please open a playlist or album and tap Sync.")
+            throw IllegalStateException("Amazon Music user playlists require login to view. Please copy & paste your playlist track list (e.g. 'Song - Artist') into the text box, or use a Spotify link.")
         }
 
         return Pair(title, filteredTracks)
@@ -457,34 +422,6 @@ object MusicImportEngine {
             curUrl
         } catch (e: Exception) {
             urlStr
-        }
-    }
-
-    private fun resolveAmazonAsinTitle(asin: String): String? {
-        if (asin.isBlank()) return null
-        return try {
-            val query = "site:music.amazon.com $asin"
-            val ddgUrl = "https://html.duckduckgo.com/html/?q=" + URLEncoder.encode(query, "UTF-8")
-            val html = httpGet(ddgUrl)
-            if (html.isBlank()) return null
-            val pattern = Pattern.compile("<a[^>]*class=\"result__a\"[^>]*>(.*?)</a>", Pattern.CASE_INSENSITIVE or Pattern.DOTALL)
-            val matcher = pattern.matcher(html)
-            while (matcher.find()) {
-                val raw = matcher.group(1)?.replace(Regex("<[^>]+>"), "")?.trim() ?: continue
-                val decoded = raw.replace("&#x27;", "'").replace("&amp;", "&").replace("&quot;", "\"")
-                val name = decoded
-                    .replace(Regex("(?i) on Amazon Music.*"), "")
-                    .replace(Regex("(?i) - music\\.amazon\\..*"), "")
-                    .replace(Regex("(?i) \\| Amazon\\..*"), "")
-                    .replace(Regex("(?i)\\bPlaylist\\b"), "")
-                    .trim()
-                if (name.length > 2 && !name.contains("Amazon", ignoreCase = true)) {
-                    return name
-                }
-            }
-            null
-        } catch (e: Exception) {
-            null
         }
     }
 

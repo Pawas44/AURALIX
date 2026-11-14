@@ -125,63 +125,85 @@ class UserDataRepository: ObservableObject {
             var isRealStreamDownloaded = false
             if let streamUrl = await self.fetchRealYouTubeAudioUrl(videoId: video.id) {
                 let userAgent = "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)"
-                let chunkSize: Int64 = 256 * 1024
-                var downloaded: Int64 = 0
-                let totalLen: Int64 = 4_500_000
-                var fileData = Data()
-                var hasMore = true
-                var chunkIdx = 0
-                let maxChunks = 150
 
-                while hasMore && chunkIdx < maxChunks {
-                    let start = downloaded
-                    let end = start + chunkSize - 1
-                    var chunkReq = URLRequest(url: streamUrl)
-                    chunkReq.timeoutInterval = 15
-                    chunkReq.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-                    chunkReq.setValue("bytes=\(start)-\(end)", forHTTPHeaderField: "Range")
-                    chunkReq.setValue("*/*", forHTTPHeaderField: "Accept")
+                // Strategy 1: Direct full stream download using native URLSession download
+                var streamReq = URLRequest(url: streamUrl)
+                streamReq.timeoutInterval = 30
+                streamReq.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                streamReq.setValue("*/*", forHTTPHeaderField: "Accept")
 
-                    if let (chunkBytes, response) = try? await URLSession.shared.data(for: chunkReq),
-                       let httpResp = response as? HTTPURLResponse,
-                       (200...299).contains(httpResp.statusCode) {
-                        if !chunkBytes.isEmpty {
-                            fileData.append(chunkBytes)
-                            downloaded += Int64(chunkBytes.count)
-                            chunkIdx += 1
+                if let (tempUrl, response) = try? await URLSession.shared.download(for: streamReq),
+                   let httpResp = response as? HTTPURLResponse,
+                   (200...299).contains(httpResp.statusCode) {
+                    if let attrs = try? FileManager.default.attributesOfItem(atPath: tempUrl.path),
+                       let size = attrs[.size] as? Int64, size > 600_000 {
+                        try? FileManager.default.removeItem(at: fileUrl)
+                        try? FileManager.default.moveItem(at: tempUrl, to: fileUrl)
+                        isRealStreamDownloaded = true
+                    }
+                }
 
-                            let percent = min(100, max(5, Int((downloaded * 100) / totalLen)))
-                            let mbNow = String(format: "%.1f", Double(downloaded) / (1024.0 * 1024.0))
-                            let mbTotal = String(format: "%.1f", Double(totalLen) / (1024.0 * 1024.0))
+                // Strategy 2: Chunked range download if direct download returned < 600KB
+                if !isRealStreamDownloaded {
+                    let chunkSize: Int64 = 512 * 1024
+                    var downloaded: Int64 = 0
+                    let totalLen: Int64 = 4_500_000
+                    var fileData = Data()
+                    var hasMore = true
+                    var chunkIdx = 0
+                    let maxChunks = 50
 
-                            self.currentDownload = DownloadTask(
-                                videoId: video.id,
-                                title: video.title,
-                                progress: percent,
-                                bytesText: "\(mbNow) MB / \(mbTotal) MB",
-                                isComplete: percent >= 100
-                            )
+                    while hasMore && chunkIdx < maxChunks && downloaded < totalLen {
+                        let start = downloaded
+                        let end = min(totalLen - 1, start + chunkSize - 1)
+                        var chunkReq = URLRequest(url: streamUrl)
+                        chunkReq.timeoutInterval = 15
+                        chunkReq.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                        chunkReq.setValue("bytes=\(start)-\(end)", forHTTPHeaderField: "Range")
+                        chunkReq.setValue("*/*", forHTTPHeaderField: "Accept")
 
-                            if chunkBytes.count < Int(chunkSize) {
+                        if let (chunkBytes, response) = try? await URLSession.shared.data(for: chunkReq),
+                           let httpResp = response as? HTTPURLResponse,
+                           (200...299).contains(httpResp.statusCode) {
+                            if !chunkBytes.isEmpty {
+                                fileData.append(chunkBytes)
+                                downloaded += Int64(chunkBytes.count)
+                                chunkIdx += 1
+
+                                let percent = min(99, max(5, Int((downloaded * 100) / totalLen)))
+                                let mbNow = String(format: "%.1f", Double(downloaded) / (1024.0 * 1024.0))
+                                let mbTotal = String(format: "%.1f", Double(totalLen) / (1024.0 * 1024.0))
+
+                                self.currentDownload = DownloadTask(
+                                    videoId: video.id,
+                                    title: video.title,
+                                    progress: percent,
+                                    bytesText: "\(mbNow) MB / \(mbTotal) MB",
+                                    isComplete = false
+                                )
+
+                                if downloaded >= totalLen {
+                                    hasMore = false
+                                }
+                            } else {
                                 hasMore = false
                             }
                         } else {
                             hasMore = false
                         }
-                    } else {
-                        hasMore = false
                     }
-                }
 
-                if fileData.count > 50000 {
-                    try? fileData.write(to: fileUrl)
-                    isRealStreamDownloaded = true
+                    if fileData.count > 600_000 {
+                        try? FileManager.default.removeItem(at: fileUrl)
+                        try? fileData.write(to: fileUrl)
+                        isRealStreamDownloaded = true
+                    }
                 }
             }
 
             if FileManager.default.fileExists(atPath: fileUrl.path),
                let attrs = try? FileManager.default.attributesOfItem(atPath: fileUrl.path),
-               let size = attrs[.size] as? Int64, size > 50000 {
+               let size = attrs[.size] as? Int64, size > 600_000 {
                 isRealStreamDownloaded = true
             }
 

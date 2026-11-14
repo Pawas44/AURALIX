@@ -1959,48 +1959,6 @@ final class SpotifyImportEngine {
             }
         }
 
-        // 5. Intelligent ASIN & URL slug resolution (bypasses Amazon SPA / Bot Protection)
-        if tracks.isEmpty {
-            let pathPart = finalUrl.components(separatedBy: "?").first ?? finalUrl
-            let lastSegment = pathPart.components(separatedBy: "/").last ?? ""
-            let cleanSlug = lastSegment
-                .replacingOccurrences(of: "^B0[A-Z0-9]+-?", with: "", options: .regularExpression)
-                .replacingOccurrences(of: "-", with: " ")
-                .replacingOccurrences(of: "_", with: " ")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-            var candidateTitle: String
-            if title != "Amazon Music Playlist" && !title.isEmpty && !title.lowercased().contains("amazon music") {
-                candidateTitle = title
-            } else if !cleanSlug.isEmpty && cleanSlug.count > 2 && !cleanSlug.hasPrefix("B0") {
-                candidateTitle = cleanSlug
-            } else {
-                candidateTitle = ""
-            }
-
-            var asin = ""
-            if let asinRegex = try? NSRegularExpression(pattern: "(B0[A-Z0-9]{7,12})") {
-                let nsUrl = finalUrl as NSString
-                if let m = asinRegex.firstMatch(in: finalUrl, range: NSRange(location: 0, length: nsUrl.length)), m.numberOfRanges > 1 {
-                    asin = nsUrl.substring(with: m.range(at: 1))
-                }
-            }
-
-            if candidateTitle.isEmpty && !asin.isEmpty {
-                if let resolved = await resolveAmazonAsinTitle(asin) {
-                    candidateTitle = resolved
-                }
-            }
-
-            if !candidateTitle.isEmpty {
-                title = candidateTitle
-                let searchItems = await YouTubeSearchEngine.searchVideos(query: "\(candidateTitle) songs", isMusicOnly: true)
-                for item in searchItems.prefix(30) {
-                    tracks.append(ImportTrackMeta(title: item.title, artist: item.artist.isEmpty ? item.channelName : item.artist))
-                }
-            }
-        }
-
         // Deduplicate tracks while preserving order
         var uniqueTracks: [ImportTrackMeta] = []
         var seen = Set<String>()
@@ -2045,40 +2003,6 @@ final class SpotifyImportEngine {
             }
         }
         return currentUrl.absoluteString
-    }
-
-    private func resolveAmazonAsinTitle(_ asin: String) async -> String? {
-        guard !asin.isEmpty,
-              let enc = "site:music.amazon.com \(asin)".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://html.duckduckgo.com/html/?q=\(enc)") else { return nil }
-        var req = URLRequest(url: url)
-        req.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
-        guard let (data, _) = try? await URLSession.shared.data(for: req),
-              let html = String(data: data, encoding: .utf8) else { return nil }
-        let pattern = "<a[^>]*class=\"result__a\"[^>]*>(.*?)</a>"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive, .dotMatchesLineSeparators]) else { return nil }
-        let nsHtml = html as NSString
-        let matches = regex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
-        for m in matches {
-            guard m.numberOfRanges > 1 else { continue }
-            var raw = nsHtml.substring(with: m.range(at: 1))
-            if let tagRegex = try? NSRegularExpression(pattern: "<[^>]+>") {
-                raw = tagRegex.stringByReplacingMatches(in: raw, range: NSRange(location: 0, length: (raw as NSString).length), withTemplate: "")
-            }
-            let decoded = raw
-                .replacingOccurrences(of: "&#x27;", with: "'")
-                .replacingOccurrences(of: "&amp;", with: "&")
-                .replacingOccurrences(of: "&quot;", with: "\"")
-            var name = decoded
-            if let r = try? NSRegularExpression(pattern: "(?i) on Amazon Music.*| - music\\.amazon\\..*| \\| Amazon\\..*|\\bPlaylist\\b") {
-                name = r.stringByReplacingMatches(in: name, range: NSRange(location: 0, length: (name as NSString).length), withTemplate: "")
-            }
-            name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-            if name.count > 2 && !name.lowercased().contains("amazon") {
-                return name
-            }
-        }
-        return nil
     }
 
     private func parseDomTracksJson(jsonStr: String) -> (title: String, tracks: [ImportTrackMeta]) {
