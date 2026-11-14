@@ -1,15 +1,15 @@
 import Foundation
 
 struct VideoItem: Identifiable, Hashable, Codable {
-    let id: String
-    let title: String
-    let channelName: String
+    var id: String
+    var title: String
+    var channelName: String
     var channelAvatarUrl: String = ""
     var subscriberCount: String = ""
-    let thumbnailUrl: String
-    let views: String
+    var thumbnailUrl: String
+    var views: String
     var uploadTime: String = ""
-    let duration: String
+    var duration: String
     var description: String = ""
     var likes: String = ""
     var isMusicTrack: Bool = false

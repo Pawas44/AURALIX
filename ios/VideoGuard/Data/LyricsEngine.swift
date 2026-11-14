@@ -14,7 +14,7 @@ struct LyricsResult {
 
 final class LyricsEngine {
     static let shared = LyricsEngine()
-    private var memoryCache: [String: LyricsResult?] = [:]
+    private var memoryCache: [String: LyricsResult] = [:]
     private let lock = NSLock()
 
     private init() {}
@@ -26,6 +26,7 @@ final class LyricsEngine {
     }
 
     private func setCached(key: String, result: LyricsResult?) {
+        guard let result = result else { return }
         lock.lock()
         defer { lock.unlock() }
         memoryCache[key] = result
