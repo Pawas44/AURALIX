@@ -230,13 +230,18 @@ fun YouTubeVideoPlayer(
                                 1 -> PlaybackController.setPlayingState(true)   // PLAYING
                                 2 -> PlaybackController.setPlayingState(false)  // PAUSED
                                 0 -> {
-                                    if (PlaybackController.isLoopEnabled.value) {
-                                        PlaybackController.seekTo(0f)
-                                        PlaybackController.play()
-                                    } else if (PlaybackController.isAutoplayEnabled.value) {
-                                        PlaybackController.nextTrack()
+                                    // Guard against transient state 0 dispatched prematurely during loading/buffering
+                                    if (PlaybackController.isSongFinished()) {
+                                        if (PlaybackController.isLoopEnabled.value) {
+                                            PlaybackController.seekTo(0f)
+                                            PlaybackController.play()
+                                        } else if (PlaybackController.isAutoplayEnabled.value) {
+                                            PlaybackController.nextTrack()
+                                        } else {
+                                            PlaybackController.pause()
+                                        }
                                     } else {
-                                        PlaybackController.pause()
+                                        android.util.Log.d("YouTubeVideoPlayer", "Debounced premature state 0: current=${PlaybackController.currentTimeSeconds.value}, duration=${PlaybackController.durationSeconds.value}")
                                     }
                                 }
                             }

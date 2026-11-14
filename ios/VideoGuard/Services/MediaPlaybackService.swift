@@ -358,6 +358,19 @@ class MediaPlaybackService: ObservableObject {
         }
     }
 
+    func isSongFinished() -> Bool {
+        let cur = currentTimeSeconds
+        let dur = durationSeconds
+        let elapsed = Date().timeIntervalSince(lastTrackChangeTime)
+        if dur > 10.0 {
+            return cur >= (dur - 4.0) || (elapsed > 15.0 && cur >= (dur - 6.0))
+        }
+        if dur > 2.0 {
+            return cur >= (dur - 1.0)
+        }
+        return false
+    }
+
     func setPlayingState(_ playing: Bool) {
         if !playing && Date().timeIntervalSince(lastTrackChangeTime) < 2.5 {
             return

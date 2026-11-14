@@ -292,6 +292,19 @@ object PlaybackController {
         offlineMediaPlayer = null
     }
 
+    fun isSongFinished(): Boolean {
+        val cur = _currentTimeSeconds.value
+        val dur = _durationSeconds.value
+        val elapsed = System.currentTimeMillis() - lastTrackChangeTimeMs
+        if (dur > 10f) {
+            return cur >= (dur - 4f) || (elapsed > 15000L && cur >= (dur - 6f))
+        }
+        if (dur > 2f) {
+            return cur >= (dur - 1f)
+        }
+        return false
+    }
+
     fun setQueue(queue: List<VideoItem>) {
         if (queue.isNotEmpty()) {
             _playbackQueue.value = queue

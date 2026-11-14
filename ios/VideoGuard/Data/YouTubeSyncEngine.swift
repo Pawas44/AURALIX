@@ -1759,6 +1759,13 @@ final class SpotifyImportEngine {
             }
         }
 
+        if isPlaylist, let token = getAccessToken(), !token.isEmpty {
+            let oauthTracks = await fetchPlaylistTracks(playlistId: spotifyId)
+            if !oauthTracks.isEmpty {
+                return ("Spotify Playlist", oauthTracks)
+            }
+        }
+
         let embedUrlString = isAlbum ? "https://open.spotify.com/embed/album/\(spotifyId)" : "https://open.spotify.com/embed/playlist/\(spotifyId)"
         guard let embedUrl = URL(string: embedUrlString) else { return ("Spotify Playlist", []) }
 

@@ -196,6 +196,22 @@ object MusicImportEngine {
             }
         }
 
+        if (isPlaylist) {
+            val token = SpotifyOAuthEngine.getAccessToken()
+            if (!token.isNullOrBlank()) {
+                try {
+                    val oauthTracks = kotlinx.coroutines.runBlocking {
+                        SpotifyOAuthEngine.fetchPlaylistTracks(id)
+                    }
+                    if (oauthTracks.isNotEmpty()) {
+                        return Pair("Spotify Playlist", oauthTracks)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
         val embedUrl = if (isAlbum) {
             "https://open.spotify.com/embed/album/$id"
         } else {

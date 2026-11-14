@@ -192,13 +192,15 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
                                 MediaPlaybackService.shared.setPlayingState(false)
                             }
                         case 0:
-                            if MediaPlaybackService.shared.isLoopEnabled {
-                                MediaPlaybackService.shared.seekTo(seconds: 0)
-                                MediaPlaybackService.shared.play()
-                            } else if MediaPlaybackService.shared.isAutoplayEnabled {
-                                MediaPlaybackService.shared.nextTrack()
-                            } else {
-                                MediaPlaybackService.shared.pause()
+                            if MediaPlaybackService.shared.isSongFinished() {
+                                if MediaPlaybackService.shared.isLoopEnabled {
+                                    MediaPlaybackService.shared.seekTo(seconds: 0)
+                                    MediaPlaybackService.shared.play()
+                                } else if MediaPlaybackService.shared.isAutoplayEnabled {
+                                    MediaPlaybackService.shared.nextTrack()
+                                } else {
+                                    MediaPlaybackService.shared.pause()
+                                }
                             }
                         default:
                             break
