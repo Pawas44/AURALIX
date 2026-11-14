@@ -54,14 +54,14 @@ final class LyricsEngine {
         if result == nil || result?.lines.isEmpty == true {
             let q = "\(cleanTitle) \(cleanArtist)".trimmingCharacters(in: .whitespacesAndNewlines)
             if !q.isEmpty {
-                result = await trySearchLrc(query: q)
+                result = await trySearchLrc(query: q, expectedTitle: cleanTitle, expectedArtist: cleanArtist)
             }
         }
 
-        // 3. LRCLib Search: query = title alone
+        // 3. LRCLib Search: query = title alone (Strictly verified against expected artist/title)
         if result == nil || result?.lines.isEmpty == true {
             if !cleanTitle.isEmpty {
-                result = await trySearchLrc(query: cleanTitle)
+                result = await trySearchLrc(query: cleanTitle, expectedTitle: cleanTitle, expectedArtist: cleanArtist)
             }
         }
 
@@ -95,7 +95,7 @@ final class LyricsEngine {
         return parseLrcResponse(json)
     }
 
-    private func trySearchLrc(query: String) async -> LyricsResult? {
+    private func trySearchLrc(query: String, expectedTitle: String, expectedArtist: String) async -> LyricsResult? {
         guard !query.isEmpty,
               let encQ = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "https://lrclib.net/api/search?q=\(encQ)") else {
@@ -111,12 +111,59 @@ final class LyricsEngine {
             return nil
         }
 
+        let expTitleClean = expectedTitle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let expArtistClean = expectedArtist.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        var bestCandidate: [String: Any]? = nil
+        var bestScore = -1
+
         for item in arr {
-            if let parsed = parseLrcResponse(item), (parsed.isSynced || !parsed.plainLyrics.isEmpty) {
-                return parsed
+            let resTrack = ((item["trackName"] as? String) ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+            let resArtist = ((item["artistName"] as? String) ?? "").lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let titleMatches = resTrack.contains(expTitleClean) || expTitleClean.contains(resTrack) ||
+                shareSignificantWord(resTrack, expTitleClean)
+
+            if !titleMatches { continue }
+
+            let isGenericArtist = expArtistClean.isEmpty || expArtistClean.contains("topic") || expArtistClean.contains("vevo")
+            var artistMatches = true
+            if !isGenericArtist {
+                artistMatches = resArtist.contains(expArtistClean) || expArtistClean.contains(resArtist) ||
+                    shareSignificantWord(resArtist, expArtistClean)
+            }
+
+            if !artistMatches {
+                continue
+            }
+
+            let hasSynced = !((item["syncedLyrics"] as? String) ?? "").isEmpty
+            let hasPlain = !((item["plainLyrics"] as? String) ?? "").isEmpty
+            if !hasSynced && !hasPlain { continue }
+
+            var score = 0
+            if hasSynced { score += 20 }
+            if hasPlain { score += 5 }
+            if resArtist == expArtistClean { score += 30 }
+            if resTrack == expTitleClean { score += 30 }
+
+            if score > bestScore {
+                bestScore = score
+                bestCandidate = item
             }
         }
+
+        if let best = bestCandidate {
+            return parseLrcResponse(best)
+        }
         return nil
+    }
+
+    private func shareSignificantWord(_ s1: String, _ s2: String) -> Bool {
+        let stopwords: Set<String> = ["the", "and", "official", "audio", "video", "feat", "with", "prod"]
+        let delimiters = CharacterSet(charactersIn: " -_./&|()")
+        let w1 = s1.components(separatedBy: delimiters).map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { $0.count > 2 && !stopwords.contains($0) }
+        let w2 = s2.components(separatedBy: delimiters).map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { $0.count > 2 && !stopwords.contains($0) }
+        return w1.contains { w2.contains($0) }
     }
 
     private func parseLrcResponse(_ json: [String: Any]) -> LyricsResult? {

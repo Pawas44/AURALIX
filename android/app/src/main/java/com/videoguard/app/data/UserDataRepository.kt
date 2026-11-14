@@ -224,31 +224,28 @@ object UserDataRepository {
                     val streamUrl = audioFormat.url
                     val totalLen = if (audioFormat.contentLength > 0) audioFormat.contentLength else 4_500_000L
                     var downloaded = 0L
-                    val chunkSize = 256 * 1024L
                     val userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
 
-                    java.io.FileOutputStream(targetFile).use { output ->
-                        var lastUpdate = 0L
-                        if (audioFormat.contentLength > 0) {
-                            // High-speed chunked range download (immune to GVS throttling & 403 blocks)
-                            while (downloaded < totalLen) {
-                                val end = minOf(downloaded + chunkSize - 1, totalLen - 1)
-                                val chunkConn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
-                                    connectTimeout = 15000
-                                    readTimeout = 20000
-                                    setRequestProperty("User-Agent", userAgent)
-                                    setRequestProperty("Range", "bytes=$downloaded-$end")
-                                    setRequestProperty("Accept", "*/*")
-                                }
-                                val chunk = chunkConn.inputStream.use { it.readBytes() }
-                                if (chunk.isEmpty()) break
-                                output.write(chunk)
-                                downloaded += chunk.size
+                    val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 15000
+                        readTimeout = 25000
+                        setRequestProperty("User-Agent", userAgent)
+                        setRequestProperty("Accept", "*/*")
+                    }
+
+                    conn.inputStream.use { input ->
+                        java.io.FileOutputStream(targetFile).use { output ->
+                            val buffer = ByteArray(32768)
+                            var read: Int
+                            var lastUpdate = 0L
+                            while (input.read(buffer).also { read = it } != -1) {
+                                output.write(buffer, 0, read)
+                                downloaded += read
 
                                 val now = System.currentTimeMillis()
-                                if (now - lastUpdate > 150 || downloaded >= totalLen) {
+                                if (now - lastUpdate > 150 || (totalLen > 0 && downloaded >= totalLen)) {
                                     lastUpdate = now
-                                    val percent = ((downloaded * 100) / totalLen).toInt().coerceIn(0, 100)
+                                    val percent = if (totalLen > 0) ((downloaded * 100) / totalLen).toInt().coerceIn(0, 100) else minOf(95, (downloaded / 50000).toInt())
                                     val mbNow = String.format(java.util.Locale.US, "%.1f", downloaded / (1024f * 1024f))
                                     val mbTotal = String.format(java.util.Locale.US, "%.1f", totalLen / (1024f * 1024f))
 
@@ -273,38 +270,16 @@ object UserDataRepository {
                                     } catch (e: Exception) {}
                                 }
                             }
-                        } else {
-                            // Direct stream fallback
-                            val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
-                                connectTimeout = 15000
-                                readTimeout = 20000
-                                setRequestProperty("User-Agent", userAgent)
-                            }
-                            conn.inputStream.use { input ->
-                                val buffer = ByteArray(16384)
-                                var read: Int
-                                while (input.read(buffer).also { read = it } != -1) {
-                                    output.write(buffer, 0, read)
-                                    downloaded += read
-                                    val percent = ((downloaded * 100) / totalLen).toInt().coerceIn(0, 99)
-                                    val mbNow = String.format(java.util.Locale.US, "%.1f", downloaded / (1024f * 1024f))
-                                    _currentDownload.value = DownloadTask(
-                                        videoId = video.id,
-                                        title = video.title,
-                                        progress = percent,
-                                        bytesText = "$mbNow MB",
-                                        isComplete = false
-                                    )
-                                }
-                            }
                         }
-                    }
-                    if (targetFile.exists() && targetFile.length() > 30000) {
-                        isRealStreamDownloaded = true
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
+            }
+
+            // CRITICAL FIX: If targetFile has valid audio data (> 50KB), mark it downloaded!
+            if (targetFile.exists() && targetFile.length() > 50000L) {
+                isRealStreamDownloaded = true
             }
 
             if (!isRealStreamDownloaded) {
@@ -314,15 +289,16 @@ object UserDataRepository {
                     if (!fallbackUrl.isNullOrBlank()) {
                         val conn = (URL(fallbackUrl).openConnection() as HttpURLConnection).apply {
                             connectTimeout = 15000
-                            readTimeout = 20000
-                            setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 12L; Quest 3) AppleWebKit/537.36")
+                            readTimeout = 25000
+                            setRequestProperty("User-Agent", "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)")
+                            setRequestProperty("Accept", "*/*")
                         }
                         conn.inputStream.use { input ->
                             java.io.FileOutputStream(targetFile).use { output ->
                                 input.copyTo(output)
                             }
                         }
-                        if (targetFile.exists() && targetFile.length() > 30000) {
+                        if (targetFile.exists() && targetFile.length() > 50000L) {
                             isRealStreamDownloaded = true
                         }
                     }
@@ -343,6 +319,15 @@ object UserDataRepository {
                 _currentDownload.value = null
                 return@launch
             }
+
+            // Mark download as 100% complete
+            _currentDownload.value = DownloadTask(
+                videoId = video.id,
+                title = video.title,
+                progress = 100,
+                bytesText = "Complete",
+                isComplete = true
+            )
 
             try {
                 val completeNotif = androidx.core.app.NotificationCompat.Builder(context, channelId)

@@ -229,25 +229,7 @@ fun MusicLibraryScreen(
                                 modifier = Modifier.padding(vertical = 2.dp)
                             )
 
-                            // 2. Apple Music
-                            ServiceRow(
-                                title = "Apple Music",
-                                brandColor = Color(0xFFFA243C),
-                                icon = Icons.Default.Headphones,
-                                onClick = {
-                                    selectedImportService = "Apple Music"
-                                    importUrlInput = ""
-                                    importProgress = null
-                                    importedPlaylistResult = null
-                                }
-                            )
-
-                            HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.07f),
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
-
-                            // 3. Amazon Music
+                            // 2. Amazon Music
                             ServiceRow(
                                 title = "Amazon Music",
                                 brandColor = Color(0xFF00A8E1),
@@ -260,46 +242,10 @@ fun MusicLibraryScreen(
                                 }
                             )
 
-                            HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.07f),
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
-
-                            // 4. YouTube
-                            ServiceRow(
-                                title = "YouTube",
-                                brandColor = Color(0xFFFF0000),
-                                icon = Icons.Default.PlayArrow,
-                                onClick = {
-                                    selectedImportService = "YouTube"
-                                    importUrlInput = ""
-                                    importProgress = null
-                                    importedPlaylistResult = null
-                                }
-                            )
-
-                            HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.07f),
-                                modifier = Modifier.padding(vertical = 2.dp)
-                            )
-
-                            // 5. More Services
-                            ServiceRow(
-                                title = "More Services",
-                                brandColor = Color(0xFF9C27B0),
-                                icon = Icons.Default.ContentPaste,
-                                onClick = {
-                                    selectedImportService = "More Services"
-                                    importUrlInput = ""
-                                    importProgress = null
-                                    importedPlaylistResult = null
-                                }
-                            )
-
                             Spacer(modifier = Modifier.height(14.dp))
 
                             Text(
-                                text = "By selecting a service above, you are choosing to transfer your followed artists, liked tracks, albums and playlists to AURALIX.",
+                                text = "Select Spotify or Amazon Music to import your playlists and albums directly via link.",
                                 color = Color(0xFF888B9E),
                                 fontSize = 11.sp,
                                 lineHeight = 15.sp
@@ -846,38 +792,10 @@ fun MusicLibraryScreen(
         )
     }
 
-    // Modal: Service Import & Sign-in Sheet
+    // Modal: Link-based Service Import Dialog
     val currentService = selectedImportService
     if (currentService != null) {
-        val brandColor = when (currentService) {
-            "Spotify" -> Color(0xFF1DB954)
-            "Apple Music" -> Color(0xFFFA243C)
-            "YouTube" -> Color(0xFFFF0000)
-            "Tidal" -> Color(0xFF00E5FF)
-            "SoundCloud" -> Color(0xFFFF5500)
-            "Amazon Music" -> Color(0xFF00A8E1)
-            else -> YTMusicRedAccent
-        }
-
-        val authUrl = when (currentService) {
-            "Spotify" -> com.videoguard.app.data.SpotifyOAuthEngine.createAuthUrl()
-            "Apple Music" -> "https://music.apple.com"
-            "YouTube" -> "https://music.youtube.com"
-            "Tidal" -> "https://login.tidal.com"
-            "SoundCloud" -> "https://soundcloud.com/signin"
-            "Amazon Music" -> "https://music.amazon.com"
-            else -> "https://www.tunemymusic.com"
-        }
-
-        val tuneMyMusicUrl = when (currentService) {
-            "Spotify" -> "https://www.tunemymusic.com/spotify"
-            "Apple Music" -> "https://www.tunemymusic.com/apple-music"
-            "YouTube" -> "https://www.tunemymusic.com/youtube"
-            "Tidal" -> "https://www.tunemymusic.com/tidal"
-            "SoundCloud" -> "https://www.tunemymusic.com/soundcloud"
-            "Amazon Music" -> "https://www.tunemymusic.com/amazon-music"
-            else -> "https://www.tunemymusic.com"
-        }
+        val brandColor = if (currentService == "Spotify") Color(0xFF1DB954) else Color(0xFF00A8E1)
 
         AlertDialog(
             onDismissRequest = {
@@ -897,10 +815,7 @@ fun MusicLibraryScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = when (currentService) {
-                                "Spotify" -> Icons.Default.MusicNote
-                                else -> Icons.Default.Headphones
-                            },
+                            imageVector = Icons.Default.MusicNote,
                             contentDescription = null,
                             tint = brandColor,
                             modifier = Modifier.size(18.dp)
@@ -917,211 +832,13 @@ fun MusicLibraryScreen(
             },
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    if (currentService == "Spotify" && isSpotifyConnected) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = brandColor.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, brandColor.copy(alpha = 0.4f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = brandColor, modifier = Modifier.size(20.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text("Connected to Spotify", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                        Text(spotifyUserName ?: "Authorized Account", color = Color.LightGray, fontSize = 11.sp)
-                                    }
-                                }
-                                TextButton(onClick = { com.videoguard.app.data.SpotifyOAuthEngine.disconnect() }) {
-                                    Text("Disconnect", color = Color(0xFFFF6B6B), fontSize = 11.sp)
-                                }
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        if (spotifyPlaylists.isEmpty()) {
-                            Button(
-                                onClick = {
-                                    scope.launch {
-                                        com.videoguard.app.data.SpotifyOAuthEngine.fetchUserPlaylists()
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = brandColor),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Fetch My Playlists", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-                        } else {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("${spotifyPlaylists.size} Playlists Found", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                TextButton(
-                                    onClick = {
-                                        selectedPlaylistIds = if (selectedPlaylistIds.size == spotifyPlaylists.size) {
-                                            emptySet()
-                                        } else {
-                                            spotifyPlaylists.map { it.id }.toSet()
-                                        }
-                                    }
-                                ) {
-                                    Text(
-                                        if (selectedPlaylistIds.size == spotifyPlaylists.size) "Deselect All" else "Select All",
-                                        color = brandColor,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            }
-
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 200.dp)
-                                    .verticalScroll(rememberScrollState()),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                spotifyPlaylists.forEach { pl ->
-                                    val isSelected = selectedPlaylistIds.contains(pl.id)
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(if (isSelected) brandColor.copy(alpha = 0.2f) else Color(0xFF1E202E))
-                                            .clickable {
-                                                selectedPlaylistIds = if (isSelected) {
-                                                    selectedPlaylistIds - pl.id
-                                                } else {
-                                                    selectedPlaylistIds + pl.id
-                                                }
-                                            }
-                                            .padding(8.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Checkbox(
-                                            checked = isSelected,
-                                            onCheckedChange = { checked ->
-                                                selectedPlaylistIds = if (checked) selectedPlaylistIds + pl.id else selectedPlaylistIds - pl.id
-                                            },
-                                            colors = CheckboxDefaults.colors(checkedColor = brandColor)
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        AsyncImage(
-                                            model = pl.coverUrl,
-                                            contentDescription = null,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.size(36.dp).clip(RoundedCornerShape(4.dp)).background(Color.DarkGray)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(pl.title, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                            Text("${pl.trackCount} tracks", color = Color.Gray, fontSize = 11.sp)
-                                        }
-                                    }
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.height(10.dp))
-
-                            Button(
-                                onClick = {
-                                    val targets = spotifyPlaylists.filter { selectedPlaylistIds.contains(it.id) }
-                                    if (targets.isNotEmpty()) {
-                                        isImporting = true
-                                        scope.launch {
-                                            for (p in targets) {
-                                                com.videoguard.app.data.MusicImportEngine.importRemotePlaylist(p) { prog ->
-                                                    importProgress = prog
-                                                }
-                                            }
-                                            isImporting = false
-                                        }
-                                    }
-                                },
-                                enabled = selectedPlaylistIds.isNotEmpty() && !isImporting,
-                                colors = ButtonDefaults.buttonColors(containerColor = brandColor),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    if (isImporting) "Importing Playlists..." else "Import Selected (${selectedPlaylistIds.size})",
-                                    color = Color.Black,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                            }
-                        }
-                    } else {
-                        if (currentService == "Amazon Music") {
-                            Surface(
-                                shape = RoundedCornerShape(10.dp),
-                                color = Color(0xFF161A26),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-                                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Text("Official Amazon Music Partner Notice", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        "Amazon restricts playlist export APIs to enterprise whitelisted partners. Use TuneMyMusic (Official Partner) or open Amazon Music web below to transfer seamlessly.",
-                                        color = Color(0xFFAAAAAA),
-                                        fontSize = 10.sp,
-                                        lineHeight = 14.sp
-                                    )
-                                }
-                            }
-                        }
-
-                        Text(
-                            text = "Import playlists directly from $currentService by browsing the web player or pasting a link:",
-                            color = Color(0xFFCCCCCC),
-                            fontSize = 12.sp
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Button(
-                            onClick = {
-                                webSheetCurrentUrl = authUrl
-                                showInAppWebSheet = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = brandColor),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Language, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Browse $currentService Web & Sync", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                    }
+                    Text(
+                        text = "Paste any $currentService playlist or album link to import all tracks directly into AURALIX:",
+                        color = Color(0xFFCCCCCC),
+                        fontSize = 12.sp
+                    )
 
                     Spacer(modifier = Modifier.height(14.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        HorizontalDivider(modifier = Modifier.weight(1f), color = Color.White.copy(alpha = 0.15f))
-                        Text(
-                            text = " OR PASTE LINK ",
-                            color = Color.Gray,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        HorizontalDivider(modifier = Modifier.weight(1f), color = Color.White.copy(alpha = 0.15f))
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
 
                     OutlinedTextField(
                         value = importUrlInput,
@@ -1129,12 +846,10 @@ fun MusicLibraryScreen(
                         modifier = Modifier.fillMaxWidth(),
                         placeholder = {
                             Text(
-                                text = when (currentService) {
-                                    "Spotify" -> "https://open.spotify.com/playlist/..."
-                                    "Apple Music" -> "https://music.apple.com/playlist/..."
-                                    "YouTube" -> "https://www.youtube.com/playlist?list=..."
-                                    "Amazon Music" -> "https://music.amazon.com/playlists/..."
-                                    else -> "Paste playlist link or paste list of song titles..."
+                                text = if (currentService == "Spotify") {
+                                    "https://open.spotify.com/playlist/..."
+                                } else {
+                                    "https://music.amazon.com/playlists/..."
                                 },
                                 fontSize = 12.sp,
                                 color = Color(0xFF666666)
@@ -1178,27 +893,18 @@ fun MusicLibraryScreen(
                         }
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = if (progress.total > 0) "${progress.stage} (${progress.current}/${progress.total})" else progress.stage,
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
+                            text = if (progress.isComplete) {
+                                "✓ Done! Matched ${progress.total} tracks"
+                            } else if (progress.error != null) {
+                                "Error: ${progress.error}"
+                            } else if (progress.total > 0) {
+                                "${progress.stage} (${progress.current}/${progress.total})"
+                            } else {
+                                progress.stage
+                            },
+                            color = if (progress.error != null) Color(0xFFFF5252) else Color(0xFFAAAAAA),
+                            fontSize = 11.sp
                         )
-                        if (progress.currentTrackName.isNotBlank()) {
-                            Text(
-                                text = progress.currentTrackName,
-                                color = Color(0xFFAAAAAA),
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        if (progress.error != null) {
-                            Text(
-                                text = "Error: ${progress.error}",
-                                color = Color(0xFFFF5252),
-                                fontSize = 11.sp
-                            )
-                        }
                     }
 
                     val result = importedPlaylistResult
@@ -1258,7 +964,7 @@ fun MusicLibraryScreen(
                         enabled = importUrlInput.isNotBlank() && !isImporting,
                         colors = ButtonDefaults.buttonColors(containerColor = brandColor)
                     ) {
-                        Text(if (isImporting) "Syncing..." else "Start Sync", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text(if (isImporting) "Importing..." else "Start Import", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             },
@@ -1276,218 +982,6 @@ fun MusicLibraryScreen(
             },
             containerColor = Color(0xFF1B1D28)
         )
-    }
-
-    // In-App Web Browser Sheet for Sign-In & Sync
-    if (showInAppWebSheet && currentService != null) {
-        val authUrl = when (currentService) {
-            "Spotify" -> "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
-            "Amazon Music" -> "https://www.amazon.com/ap/signin?openid.return_to=https%3A%2F%2Fmusic.amazon.com"
-            else -> "https://www.tunemymusic.com"
-        }
-        val brandColor = when (currentService) {
-            "Spotify" -> Color(0xFF1DB954)
-            "Amazon Music" -> Color(0xFF00A8E1)
-            else -> YTMusicRedAccent
-        }
-        var currentWebUrl by remember { mutableStateOf(authUrl) }
-        var webViewInstance by remember { mutableStateOf<WebView?>(null) }
-
-        Dialog(
-            onDismissRequest = { showInAppWebSheet = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFF0C0E14))
-            ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    // Header
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .statusBarsPadding()
-                            .height(52.dp)
-                            .background(Color(0xFF141620))
-                            .padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(onClick = {
-                            if (webViewInstance?.canGoBack() == true) {
-                                webViewInstance?.goBack()
-                            } else {
-                                showInAppWebSheet = false
-                            }
-                        }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "$currentService Connect",
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = currentWebUrl,
-                                color = Color.Gray,
-                                fontSize = 10.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        IconButton(onClick = {
-                            try {
-                                val target = currentWebUrl.ifBlank { webSheetCurrentUrl }
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(target))
-                                context.startActivity(intent)
-                            } catch (e: Exception) {}
-                        }) {
-                            Icon(Icons.Default.OpenInBrowser, contentDescription = "Open in Chrome", tint = Color.White)
-                        }
-                        IconButton(onClick = { showInAppWebSheet = false }) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
-                        }
-                    }
-
-                    // WebView
-                    AndroidView(
-                        factory = { ctx ->
-                            WebView(ctx).apply {
-                                webViewInstance = this
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                settings.databaseEnabled = true
-                                settings.useWideViewPort = true
-                                settings.loadWithOverviewMode = true
-                                settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                                settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
-                                settings.javaScriptCanOpenWindowsAutomatically = true
-                                settings.setSupportMultipleWindows(false)
-                                settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Mobile Safari/537.36"
-                                webChromeClient = android.webkit.WebChromeClient()
-                                android.webkit.CookieManager.getInstance().setAcceptCookie(true)
-                                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                                webViewClient = object : WebViewClient() {
-                                    override fun onPageFinished(view: WebView?, url: String?) {
-                                        super.onPageFinished(view, url)
-                                        url?.let {
-                                            currentWebUrl = it
-                                            if (currentService == "Spotify" && com.videoguard.app.data.SpotifyOAuthEngine.handleAuthCallback(it)) {
-                                                showInAppWebSheet = false
-                                                scope.launch {
-                                                    com.videoguard.app.data.SpotifyOAuthEngine.fetchCurrentUserProfile()
-                                                    com.videoguard.app.data.SpotifyOAuthEngine.fetchUserPlaylists()
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                loadUrl(webSheetCurrentUrl.ifBlank { authUrl })
-                            }
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                    )
-
-                    // Bottom Floating Action Pill for In-App Sync
-                    Surface(
-                        color = Color(0xFF141620),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Browse to playlist & tap Sync:",
-                                color = Color(0xFFCCCCCC),
-                                fontSize = 12.sp,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Button(
-                                onClick = {
-                                    webViewInstance?.evaluateJavascript(
-                                        """
-                                        (function() {
-                                            var title = document.querySelector('h1')?.innerText || document.title || '';
-                                            title = title.replace(/\s*\|\s*Spotify.*$/i, '').replace(/on Amazon Music.*$/i, '').trim();
-                                            var tracks = [];
-                                            var spItems = document.querySelectorAll('[data-testid="tracklist-row"]');
-                                            spItems.forEach(function(row) {
-                                                var t = row.querySelector('[data-testid="internal-track-link"]')?.innerText || '';
-                                                var a = row.querySelector('a[href*="/artist/"]')?.innerText || '';
-                                                if (t) tracks.push(t + ' - ' + a);
-                                            });
-                                            if (tracks.length === 0) {
-                                                var amItems = document.querySelectorAll('music-vertical-item, music-horizontal-item, [role="row"]');
-                                                amItems.forEach(function(row) {
-                                                    var primary = row.querySelector('.primary-text, [primary-text], [slot="primaryText"]')?.innerText || '';
-                                                    var secondary = row.querySelector('.secondary-text, [secondary-text], [slot="secondaryText"]')?.innerText || '';
-                                                    if (primary && primary !== 'Library') tracks.push(primary + ' - ' + secondary);
-                                                });
-                                            }
-                                            if (tracks.length === 0) {
-                                                var appleItems = document.querySelectorAll('.songs-list-row, [data-testid="track-cell"], .tracklist-item');
-                                                appleItems.forEach(function(row) {
-                                                    var t = row.querySelector('.songs-list-row__song-name, [data-testid="track-title"], .track-lockup__title')?.innerText || '';
-                                                    var a = row.querySelector('.songs-list-row__by-line, [data-testid="track-artist"], .track-lockup__sub-title, a[href*="/artist/"]')?.innerText || '';
-                                                    if (t) tracks.push(t + ' - ' + a);
-                                                });
-                                            }
-                                            return JSON.stringify({ title: title, tracks: tracks });
-                                        })();
-                                        """.trimIndent()
-                                    ) { jsResult ->
-                                        var cleanPayload = jsResult ?: ""
-                                        if (cleanPayload.startsWith("\"") && cleanPayload.endsWith("\"")) {
-                                            try {
-                                                cleanPayload = org.json.JSONTokener(cleanPayload).nextValue().toString()
-                                            } catch (e: Exception) {}
-                                        }
-                                        val payloadToUse = if (cleanPayload.contains("\"tracks\":[") && !cleanPayload.contains("\"tracks\":[]")) {
-                                            cleanPayload
-                                        } else {
-                                            currentWebUrl
-                                        }
-                                        importUrlInput = payloadToUse
-                                        showInAppWebSheet = false
-                                        isImporting = true
-                                        importProgress = null
-                                        importedPlaylistResult = null
-                                        scope.launch {
-                                            val res = MusicImportEngine.importPlaylistFromUrl(payloadToUse) { prog ->
-                                                importProgress = prog
-                                            }
-                                            isImporting = false
-                                            res.onSuccess { pl ->
-                                                importedPlaylistResult = pl
-                                                selectedImportService = currentService
-                                            }
-                                        }
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = brandColor),
-                                shape = RoundedCornerShape(16.dp)
-                            ) {
-                                Icon(Icons.Default.Sync, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("⚡ Sync This", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     // Playlist 3-Dots Options BottomSheet (Delete & Clear All Songs)

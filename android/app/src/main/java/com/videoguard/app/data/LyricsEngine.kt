@@ -55,14 +55,14 @@ object LyricsEngine {
         if (result == null || result.lines.isEmpty()) {
             val q = "$cleanTitle $cleanArtist".trim()
             if (q.isNotBlank()) {
-                result = trySearchLrc(q)
+                result = trySearchLrc(q, cleanTitle, cleanArtist)
             }
         }
 
-        // 3. LRCLib Search: query = title only
+        // 3. LRCLib Search: query = title only (Strictly verified against expected artist/title)
         if (result == null || result.lines.isEmpty()) {
             if (cleanTitle.isNotBlank()) {
-                result = trySearchLrc(cleanTitle)
+                result = trySearchLrc(cleanTitle, cleanTitle, cleanArtist)
             }
         }
 
@@ -89,25 +89,74 @@ object LyricsEngine {
         }
     }
 
-    private fun trySearchLrc(query: String): LyricsResult? {
+    private fun trySearchLrc(query: String, expectedTitle: String, expectedArtist: String): LyricsResult? {
         return try {
             val encodedQ = URLEncoder.encode(query, "UTF-8")
             val searchUrl = "https://lrclib.net/api/search?q=$encodedQ"
             val jsonStr = httpGet(searchUrl)
             if (jsonStr.isNotBlank() && jsonStr.startsWith("[")) {
                 val arr = JSONArray(jsonStr)
+                var bestCandidate: JSONObject? = null
+                var bestScore = -1
+
+                val expTitleClean = expectedTitle.lowercase().trim()
+                val expArtistClean = expectedArtist.lowercase().trim()
+
                 for (i in 0 until arr.length()) {
                     val obj = arr.optJSONObject(i) ?: continue
-                    val parsed = parseLrcResponse(obj)
-                    if (parsed != null && (parsed.isSynced || parsed.plainLyrics.isNotBlank())) {
-                        return parsed
+                    val resTrack = obj.optString("trackName", "").lowercase().trim()
+                    val resArtist = obj.optString("artistName", "").lowercase().trim()
+
+                    // Title must have significant overlap
+                    val titleMatches = resTrack.contains(expTitleClean) || expTitleClean.contains(resTrack) ||
+                            shareSignificantWord(resTrack, expTitleClean)
+
+                    if (!titleMatches) continue
+
+                    // Artist validation: if we have an expected artist, ensure results do NOT belong to an unrelated artist
+                    val isGenericArtist = expArtistClean.isBlank() || expArtistClean.contains("topic") || expArtistClean.contains("vevo")
+                    var artistMatches = true
+                    if (!isGenericArtist) {
+                        artistMatches = resArtist.contains(expArtistClean) || expArtistClean.contains(resArtist) ||
+                                shareSignificantWord(resArtist, expArtistClean)
                     }
+
+                    if (!artistMatches) {
+                        // Do NOT use lyrics from a completely different artist!
+                        continue
+                    }
+
+                    val hasSynced = obj.optString("syncedLyrics", "").isNotBlank()
+                    val hasPlain = obj.optString("plainLyrics", "").isNotBlank()
+                    if (!hasSynced && !hasPlain) continue
+
+                    var score = 0
+                    if (hasSynced) score += 20
+                    if (hasPlain) score += 5
+                    if (resArtist == expArtistClean) score += 30
+                    if (resTrack == expTitleClean) score += 30
+
+                    if (score > bestScore) {
+                        bestScore = score
+                        bestCandidate = obj
+                    }
+                }
+
+                if (bestCandidate != null) {
+                    return parseLrcResponse(bestCandidate)
                 }
             }
             null
         } catch (e: Exception) {
             null
         }
+    }
+
+    private fun shareSignificantWord(s1: String, s2: String): Boolean {
+        val stopwords = setOf("the", "and", "official", "audio", "video", "feat", "with", "prod")
+        val w1 = s1.split(Regex("[\\s\\-_,./&|()]+")).map { it.trim().lowercase() }.filter { it.length > 2 && it !in stopwords }
+        val w2 = s2.split(Regex("[\\s\\-_,./&|()]+")).map { it.trim().lowercase() }.filter { it.length > 2 && it !in stopwords }
+        return w1.any { it in w2 }
     }
 
     private fun parseLrcResponse(json: JSONObject): LyricsResult? {

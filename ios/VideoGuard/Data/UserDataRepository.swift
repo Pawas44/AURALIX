@@ -155,11 +155,32 @@ class UserDataRepository: ObservableObject {
                             )
                         }
                     }
-                    try fileData.write(to: fileUrl)
-                    isRealStreamDownloaded = true
+                    if fileData.count > 50000 {
+                        try fileData.write(to: fileUrl)
+                        isRealStreamDownloaded = true
+                    }
                 } catch {
                     print("Stream download failed: \(error)")
                 }
+            }
+
+            if FileManager.default.fileExists(atPath: fileUrl.path),
+               let attrs = try? FileManager.default.attributesOfItem(atPath: fileUrl.path),
+               let size = attrs[.size] as? Int64, size > 50000 {
+                isRealStreamDownloaded = true
+            }
+
+            guard isRealStreamDownloaded else {
+                self.currentDownload = DownloadTask(
+                    videoId: video.id,
+                    title: video.title,
+                    progress: 0,
+                    bytesText: "Download failed (network error)",
+                    isComplete: true
+                )
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                self.currentDownload = nil
+                return
             }
 
             self.currentDownload = DownloadTask(

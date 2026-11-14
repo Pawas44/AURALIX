@@ -99,46 +99,13 @@ struct MusicLibraryView: View {
 
                             Divider().background(Color.white.opacity(0.08))
 
-                            // 2. Apple Music
-                            importServiceRow(
-                                title: "Apple Music",
-                                brandColor: Color(hex: 0xFA243C),
-                                iconName: "headphones"
-                            ) {
-                                openServiceImport(service: "Apple Music")
-                            }
-
-                            Divider().background(Color.white.opacity(0.08))
-
-                            // 3. Amazon Music
+                            // 2. Amazon Music
                             importServiceRow(
                                 title: "Amazon Music",
                                 brandColor: Color(hex: 0x00A8E1),
                                 iconName: "music.note"
                             ) {
                                 openServiceImport(service: "Amazon Music")
-                            }
-
-                            Divider().background(Color.white.opacity(0.08))
-
-                            // 4. YouTube
-                            importServiceRow(
-                                title: "YouTube",
-                                brandColor: Color(hex: 0xFF0000),
-                                iconName: "play.circle.fill"
-                            ) {
-                                openServiceImport(service: "YouTube")
-                            }
-
-                            Divider().background(Color.white.opacity(0.08))
-
-                            // 5. More Services
-                            importServiceRow(
-                                title: "More Services",
-                                brandColor: Color(hex: 0x9C27B0),
-                                iconName: "doc.on.clipboard"
-                            ) {
-                                openServiceImport(service: "More Services")
                             }
                         }
                         .background(Color(hex: 0x141622))
@@ -148,7 +115,7 @@ struct MusicLibraryView: View {
                                 .stroke(Color.white.opacity(0.07), lineWidth: 1)
                         )
 
-                        Text("By selecting a service above, you are choosing to transfer your followed artists, liked tracks, albums and playlists to AURALIX.")
+                        Text("Select Spotify or Amazon Music to import your playlists and albums directly via link.")
                             .font(.system(size: 11))
                             .foregroundColor(Color(hex: 0x888B9E))
                             .lineSpacing(4)
@@ -565,240 +532,27 @@ struct MusicLibraryView: View {
 
     @ViewBuilder
     private func serviceImportSheetView(service: String) -> some View {
-        let brandColor: Color = {
-            switch service {
-            case "Spotify": return Color(hex: 0x1DB954)
-            case "Apple Music": return Color(hex: 0xFA243C)
-            case "YouTube": return Color(hex: 0xFF0000)
-            case "Tidal": return Color(hex: 0x00E5FF)
-            case "SoundCloud": return Color(hex: 0xFF5500)
-            case "Amazon Music": return Color(hex: 0x00A8E1)
-            default: return AppTheme.ytMusicRedAccent
-            }
-        }()
-
-        let authUrlStr: String = {
-            switch service {
-            case "Spotify": return SpotifyImportEngine.shared.createAuthUrl()
-            case "Apple Music": return "https://music.apple.com"
-            case "YouTube": return "https://music.youtube.com"
-            case "Tidal": return "https://login.tidal.com"
-            case "SoundCloud": return "https://soundcloud.com/signin"
-            case "Amazon Music": return "https://music.amazon.com"
-            default: return "https://www.tunemymusic.com"
-            }
-        }()
-
-        let tuneMyMusicUrlStr: String = {
-            switch service {
-            case "Spotify": return "https://www.tunemymusic.com/spotify"
-            case "Apple Music": return "https://www.tunemymusic.com/apple-music"
-            case "YouTube": return "https://www.tunemymusic.com/youtube"
-            case "Tidal": return "https://www.tunemymusic.com/tidal"
-            case "SoundCloud": return "https://www.tunemymusic.com/soundcloud"
-            case "Amazon Music": return "https://www.tunemymusic.com/amazon-music"
-            default: return "https://www.tunemymusic.com"
-            }
-        }()
+        let brandColor: Color = service == "Spotify" ? Color(hex: 0x1DB954) : Color(hex: 0x00A8E1)
 
         NavigationView {
             VStack(alignment: .leading, spacing: 16) {
-                if service == "Spotify" && isSpotifyConnected {
-                    HStack {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(brandColor)
-                            .font(.system(size: 18))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Connected to Spotify")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(.white)
-                            Text(spotifyUserName ?? "Authorized Account")
-                                .font(.system(size: 11))
-                                .foregroundColor(Color.gray)
-                        }
-                        Spacer()
-                        Button("Disconnect") {
-                            SpotifyImportEngine.shared.disconnect()
-                            isSpotifyConnected = false
-                            spotifyUserName = nil
-                            spotifyPlaylists = []
-                        }
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Color.red.opacity(0.8))
-                    }
-                    .padding(12)
-                    .background(brandColor.opacity(0.15))
-                    .cornerRadius(12)
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(brandColor.opacity(0.4), lineWidth: 1))
-
-                    if spotifyPlaylists.isEmpty {
-                        Button(action: {
-                            Task {
-                                let pls = await SpotifyImportEngine.shared.fetchUserPlaylists()
-                                await MainActor.run { self.spotifyPlaylists = pls }
-                            }
-                        }) {
-                            HStack {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Fetch My Playlists")
-                                    .fontWeight(.bold)
-                            }
-                            .font(.system(size: 13))
-                            .foregroundColor(.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(brandColor)
-                            .cornerRadius(12)
-                        }
-                    } else {
-                        HStack {
-                            Text("\(spotifyPlaylists.count) Playlists Found")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(.white)
-                            Spacer()
-                            Button(selectedPlaylistIds.count == spotifyPlaylists.count ? "Deselect All" : "Select All") {
-                                if selectedPlaylistIds.count == spotifyPlaylists.count {
-                                    selectedPlaylistIds = []
-                                } else {
-                                    selectedPlaylistIds = Set(spotifyPlaylists.map { $0.id })
-                                }
-                            }
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(brandColor)
-                        }
-
-                        ScrollView {
-                            VStack(spacing: 8) {
-                                ForEach(spotifyPlaylists) { pl in
-                                    let isSelected = selectedPlaylistIds.contains(pl.id)
-                                    Button(action: {
-                                        if isSelected {
-                                            selectedPlaylistIds.remove(pl.id)
-                                        } else {
-                                            selectedPlaylistIds.insert(pl.id)
-                                        }
-                                    }) {
-                                        HStack(spacing: 10) {
-                                            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                                                .foregroundColor(isSelected ? brandColor : Color.gray)
-                                                .font(.system(size: 18))
-                                            if let urlStr = pl.coverUrl, let url = URL(string: urlStr) {
-                                                AsyncImage(url: url) { phase in
-                                                    if let img = phase.image {
-                                                        img.resizable().scaledToFill()
-                                                    } else {
-                                                        Color.gray.opacity(0.3)
-                                                    }
-                                                }
-                                                .frame(width: 36, height: 36)
-                                                .cornerRadius(6)
-                                            }
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(pl.title)
-                                                    .font(.system(size: 13, weight: .semibold))
-                                                    .foregroundColor(.white)
-                                                    .lineLimit(1)
-                                                Text("\(pl.trackCount) tracks")
-                                                    .font(.system(size: 11))
-                                                    .foregroundColor(Color.gray)
-                                            }
-                                            Spacer()
-                                        }
-                                        .padding(8)
-                                        .background(isSelected ? brandColor.opacity(0.15) : Color(hex: 0x1E202E))
-                                        .cornerRadius(8)
-                                    }
-                                }
-                            }
-                        }
-                        .frame(maxHeight: 200)
-
-                        Button(action: {
-                            let targets = spotifyPlaylists.filter { selectedPlaylistIds.contains($0.id) }
-                            guard !targets.isEmpty && !isImporting else { return }
-                            isImporting = true
-                            importProgress = nil
-                            Task {
-                                for target in targets {
-                                    _ = await SpotifyImportEngine.shared.importRemotePlaylist(summary: target) { prog in
-                                        DispatchQueue.main.async {
-                                            self.importProgress = prog
-                                        }
-                                    }
-                                }
-                                await MainActor.run {
-                                    self.isImporting = false
-                                }
-                            }
-                        }) {
-                            Text(isImporting ? "Importing Playlists..." : "Import Selected (\(selectedPlaylistIds.count))")
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.black)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(selectedPlaylistIds.isEmpty ? Color.gray : brandColor)
-                                .cornerRadius(12)
-                        }
-                        .disabled(selectedPlaylistIds.isEmpty || isImporting)
-                    }
-                } else {
-                    if service == "Amazon Music" {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Official Amazon Music Partner Notice")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.white)
-                            Text("Amazon restricts playlist export APIs to enterprise whitelisted partners. Use TuneMyMusic (Official Partner) or Amazon Music Web below to transfer seamlessly.")
-                                .font(.system(size: 10))
-                                .foregroundColor(Color(hex: 0xAAAAAA))
-                                .lineSpacing(3)
-                        }
-                        .padding(10)
-                        .background(Color(hex: 0x161A26))
-                        .cornerRadius(10)
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.08), lineWidth: 1))
-                    }
-
-                    Text("Connect with TuneMyMusic to sync your playlists and library directly, or paste a link below:")
-                        .font(.system(size: 13))
-                        .foregroundColor(Color(hex: 0xCCCCCC))
-
-                    // Connect & Sign In (TuneMyMusic) - Exactly 1 primary button
-                    Button(action: {
-                        inAppBrowserUrl = tuneMyMusicUrlStr
-                        showInAppBrowser = true
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 16, weight: .bold))
-                            Text("Connect & Sign In (TuneMyMusic)")
-                                .font(.system(size: 14, weight: .bold))
-                        }
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(brandColor)
-                        .cornerRadius(12)
-                    }
-                }
+                Text("Paste any \(service) playlist or album link to import all tracks directly into AURALIX:")
+                    .font(.system(size: 13))
+                    .foregroundColor(Color(hex: 0xCCCCCC))
 
                 HStack {
-                    Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
-                    Text("OR PASTE LINK")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.gray)
-                    Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
-                }
+                    TextField(service == "Spotify" ? "https://open.spotify.com/playlist/..." : "https://music.amazon.com/playlists/...", text: $importUrlInput)
+                        .font(.system(size: 13))
+                        .foregroundColor(.white)
+                        .autocapitalization(.none)
+                        .disableAutocorrection(true)
 
-                VStack(alignment: .trailing, spacing: 8) {
-                    TextField(
-                        service == "Spotify" ? "https://open.spotify.com/playlist/..." :
-                        "https://music.amazon.com/playlists/...",
-                        text: $importUrlInput
-                    )
-                    .padding(12)
-                    .background(Color.white.opacity(0.08))
-                    .cornerRadius(10)
-                    .foregroundColor(.white)
+                    if !importUrlInput.isEmpty {
+                        Button(action: { importUrlInput = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.gray)
+                        }
+                    }
 
                     Button(action: {
                         if let clip = UIPasteboard.general.string {
@@ -807,43 +561,37 @@ struct MusicLibraryView: View {
                     }) {
                         HStack(spacing: 4) {
                             Image(systemName: "doc.on.clipboard")
-                            Text("Paste from Clipboard")
+                            Text("Paste")
                         }
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(brandColor)
                     }
                 }
+                .padding(12)
+                .background(Color(hex: 0x1E202E))
+                .cornerRadius(10)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.1), lineWidth: 1))
 
                 if let prog = importProgress {
                     VStack(alignment: .leading, spacing: 6) {
                         if isImporting {
-                            ProgressView(value: prog.total > 0 ? Double(prog.current) / Double(prog.total) : 0)
-                                .tint(brandColor)
+                            ProgressView()
+                                .progressViewStyle(LinearProgressViewStyle(tint: brandColor))
                         }
-
-                        Text(prog.total > 0 ? "\(prog.stage) (\(prog.current)/\(prog.total))" : prog.stage)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white)
-
-                        if !prog.currentTrackName.isEmpty {
-                            Text(prog.currentTrackName)
-                                .font(.system(size: 11))
-                                .foregroundColor(Color(hex: 0xAAAAAA))
-                                .lineLimit(1)
-                        }
+                        Text(prog.isComplete ? "✓ Done! Matched \(prog.total) tracks" : (prog.error != nil ? "Error: \(prog.error!)" : prog.stage))
+                            .font(.system(size: 12))
+                            .foregroundColor(prog.error != nil ? Color.red : Color(hex: 0xAAAAAA))
                     }
-                    .padding(12)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(10)
+                    .padding(.top, 4)
                 }
 
                 if let res = importedPlaylistResult {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("✓ Successfully Imported!")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundColor(brandColor)
-                        Text("\(res.title) • \(res.videoCount) tracks")
-                            .font(.system(size: 13))
+                        Text("\(res.title) • \(res.videos.count) tracks")
+                            .font(.system(size: 12))
                             .foregroundColor(.white)
 
                         Button(action: {
@@ -863,6 +611,7 @@ struct MusicLibraryView: View {
                     .padding(12)
                     .background(brandColor.opacity(0.15))
                     .cornerRadius(10)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(brandColor.opacity(0.3), lineWidth: 1))
                 }
 
                 Spacer()
@@ -872,22 +621,23 @@ struct MusicLibraryView: View {
                         guard !importUrlInput.isEmpty && !isImporting else { return }
                         isImporting = true
                         importProgress = nil
+                        importedPlaylistResult = nil
                         Task {
-                            let result = await SpotifyImportEngine.shared.importPlaylist(from: importUrlInput) { prog in
+                            let res = await SpotifyImportEngine.shared.importPlaylist(from: importUrlInput) { prog in
                                 DispatchQueue.main.async {
                                     self.importProgress = prog
                                 }
                             }
                             await MainActor.run {
                                 self.isImporting = false
-                                if case .success(let pl) = result {
+                                if case .success(let pl) = res {
                                     self.importedPlaylistResult = pl
                                 }
                             }
                         }
                     }) {
-                        Text(isImporting ? "Syncing..." : "Start Sync")
-                            .font(.system(size: 16, weight: .bold))
+                        Text(isImporting ? "Importing..." : "Start Import")
+                            .font(.system(size: 14, weight: .bold))
                             .foregroundColor(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
@@ -897,227 +647,16 @@ struct MusicLibraryView: View {
                     .disabled(importUrlInput.isEmpty || isImporting)
                 }
             }
-            .padding(20)
-            .background(Color(hex: 0x10121C).ignoresSafeArea())
+            .padding(16)
+            .background(Color(hex: 0x0E1019).ignoresSafeArea())
             .navigationTitle("Import from \(service)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        selectedService = nil
-                        importProgress = nil
-                        importedPlaylistResult = nil
-                    }
-                    .foregroundColor(.white)
-                }
-            }
-            .sheet(isPresented: $showInAppBrowser) {
-                InAppWebTransferSheet(
-                    initialUrl: inAppBrowserUrl,
-                    serviceName: service,
-                    brandColor: brandColor,
-                    onSyncUrl: { detectedUrl in
-                        importUrlInput = detectedUrl
-                        showInAppBrowser = false
-                        isImporting = true
-                        importProgress = nil
-                        importedPlaylistResult = nil
-                        Task {
-                            let result = await SpotifyImportEngine.shared.importPlaylist(from: detectedUrl) { prog in
-                                DispatchQueue.main.async {
-                                    self.importProgress = prog
-                                }
-                            }
-                            await MainActor.run {
-                                self.isImporting = false
-                                if case .success(let pl) = result {
-                                    self.importedPlaylistResult = pl
-                                }
-                            }
-                        }
-                    }
-                )
-            }
-            .onChange(of: showInAppBrowser) { isOpen in
-                if !isOpen && service == "Spotify" && SpotifyImportEngine.shared.isConnected {
-                    self.isSpotifyConnected = true
-                    Task {
-                        _ = await SpotifyImportEngine.shared.fetchUserProfile()
-                        let pls = await SpotifyImportEngine.shared.fetchUserPlaylists()
-                        await MainActor.run {
-                            self.spotifyUserName = SpotifyImportEngine.shared.userDisplayName
-                            self.spotifyPlaylists = pls
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct InAppWebTransferSheet: View {
-    let initialUrl: String
-    let serviceName: String
-    let brandColor: Color
-    let onSyncUrl: (String) -> Void
-
-    @Environment(\.dismiss) var dismiss
-    @State private var currentUrl: String = ""
-    @State private var webViewInstance: WKWebView? = nil
-
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                InAppWKWebView(
-                    urlString: initialUrl,
-                    onUrlChange: { url in
-                        currentUrl = url
-                        if serviceName == "Spotify" && SpotifyImportEngine.shared.handleAuthCallback(url: url) {
-                            dismiss()
-                        }
-                    },
-                    webViewRef: $webViewInstance
-                )
-
-                VStack(spacing: 8) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Active Page:")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(Color.gray)
-                            Text(currentUrl.isEmpty ? initialUrl : currentUrl)
-                                .font(.system(size: 11))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        Button(action: {
-                            let jsCode = """
-                            (function() {
-                                var title = document.querySelector('h1')?.innerText || document.title || '';
-                                title = title.replace(/\\s*\\|\\s*Spotify.*$/i, '').replace(/on Amazon Music.*$/i, '').trim();
-                                var tracks = [];
-                                var spItems = document.querySelectorAll('[data-testid="tracklist-row"]');
-                                spItems.forEach(function(row) {
-                                    var t = row.querySelector('[data-testid="internal-track-link"]')?.innerText || '';
-                                    var a = row.querySelector('a[href*="/artist/"]')?.innerText || '';
-                                    if (t) tracks.push(t + ' - ' + a);
-                                });
-                                if (tracks.length === 0) {
-                                    var amItems = document.querySelectorAll('music-vertical-item, music-horizontal-item, [role="row"]');
-                                    amItems.forEach(function(row) {
-                                        var primary = row.querySelector('.primary-text, [primary-text], [slot="primaryText"]')?.innerText || '';
-                                        var secondary = row.querySelector('.secondary-text, [secondary-text], [slot="secondaryText"]')?.innerText || '';
-                                        if (primary && primary !== 'Library') tracks.push(primary + ' - ' + secondary);
-                                    });
-                                }
-                                if (tracks.length === 0) {
-                                    var appleItems = document.querySelectorAll('.songs-list-row, [data-testid="track-cell"], .tracklist-item');
-                                    appleItems.forEach(function(row) {
-                                        var t = row.querySelector('.songs-list-row__song-name, [data-testid="track-title"], .track-lockup__title')?.innerText || '';
-                                        var a = row.querySelector('.songs-list-row__by-line, [data-testid="track-artist"], .track-lockup__sub-title, a[href*="/artist/"]')?.innerText || '';
-                                        if (t) tracks.push(t + ' - ' + a);
-                                    });
-                                }
-                                return JSON.stringify({ title: title, tracks: tracks });
-                            })();
-                            """
-                            webViewInstance?.evaluateJavaScript(jsCode) { result, _ in
-                                if let jsonStr = result as? String,
-                                   jsonStr.contains("\"tracks\":[") && !jsonStr.contains("\"tracks\":[]") {
-                                    onSyncUrl(jsonStr)
-                                } else {
-                                    let urlToSync = currentUrl.isEmpty ? initialUrl : currentUrl
-                                    onSyncUrl(urlToSync)
-                                }
-                            }
-                        }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "bolt.fill")
-                                Text("Sync This")
-                                    .fontWeight(.bold)
-                            }
-                            .font(.system(size: 13))
-                            .foregroundColor(.black)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 9)
-                            .background(brandColor)
-                            .cornerRadius(18)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                }
-                .background(Color(hex: 0x161824))
-            }
-            .background(Color.black.ignoresSafeArea())
-            .navigationTitle("\(serviceName) Connect")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+                    Button("Close") { selectedService = nil }
                         .foregroundColor(.white)
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button(action: {
-                        let target = currentUrl.isEmpty ? initialUrl : currentUrl
-                        if let u = URL(string: target) {
-                            UIApplication.shared.open(u)
-                        }
-                    }) {
-                        Image(systemName: "safari")
-                            .foregroundColor(.white)
-                    }
-                }
             }
         }
     }
-}
-
-struct InAppWKWebView: UIViewRepresentable {
-    let urlString: String
-    let onUrlChange: (String) -> Void
-    @Binding var webViewRef: WKWebView?
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onUrlChange: onUrlChange)
-    }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.defaultWebpagePreferences.allowsContentJavaScript = true
-        config.websiteDataStore = WKWebsiteDataStore.default()
-        let webView = WKWebView(frame: .zero, configuration: config)
-        webView.customUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15"
-        webView.navigationDelegate = context.coordinator
-        webView.allowsBackForwardNavigationGestures = true
-        DispatchQueue.main.async {
-            self.webViewRef = webView
-        }
-        if let url = URL(string: urlString) {
-            webView.load(URLRequest(url: url))
-        }
-        return webView
-    }
-
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
-
-    class Coordinator: NSObject, WKNavigationDelegate {
-        let onUrlChange: (String) -> Void
-
-        init(onUrlChange: @escaping (String) -> Void) {
-            self.onUrlChange = onUrlChange
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            if let urlStr = webView.url?.absoluteString {
-                onUrlChange(urlStr)
-            }
-        }
-    }
-}
-
-private struct ServiceItem: Identifiable {
-    var id: String { name }
-    let name: String
 }
