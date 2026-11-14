@@ -75,6 +75,7 @@ fun MainScreen() {
 
     val coroutineScope = rememberCoroutineScope()
     val playerDragOffsetY = remember { Animatable(0f) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
 
     val onDragDelta: (Float) -> Unit = { delta ->
         coroutineScope.launch {
@@ -85,7 +86,7 @@ fun MainScreen() {
 
     val onDragEnd: (Float) -> Unit = { velocityY ->
         coroutineScope.launch {
-            val threshold = 90.dp.toPx()
+            val threshold = with(density) { 90.dp.toPx() }
             val shouldDismiss = playerDragOffsetY.value > threshold || velocityY > 800f
             if (shouldDismiss) {
                 playerDragOffsetY.animateTo(
