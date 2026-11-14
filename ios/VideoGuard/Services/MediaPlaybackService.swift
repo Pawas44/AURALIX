@@ -140,7 +140,10 @@ class MediaPlaybackService: ObservableObject {
                   let typeVal = info[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: typeVal) else { return }
 
-            if type == .ended {
+            if type == .began {
+                // Incoming phone call, FaceTime, or system audio interruption -> auto pause
+                self.pause()
+            } else if type == .ended {
                 let optionsVal = info[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
                 let options = AVAudioSession.InterruptionOptions(rawValue: optionsVal)
                 if options.contains(.shouldResume) && self.currentTrack != nil {

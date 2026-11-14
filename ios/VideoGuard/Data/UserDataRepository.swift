@@ -136,24 +136,23 @@ class UserDataRepository: ObservableObject {
                    let httpResp = response as? HTTPURLResponse,
                    (200...299).contains(httpResp.statusCode) {
                     if let attrs = try? FileManager.default.attributesOfItem(atPath: tempUrl.path),
-                       let size = attrs[.size] as? Int64, size > 600_000 {
+                       let size = attrs[.size] as? Int64, size > 1_200_000 {
                         try? FileManager.default.removeItem(at: fileUrl)
                         try? FileManager.default.moveItem(at: tempUrl, to: fileUrl)
                         isRealStreamDownloaded = true
                     }
                 }
 
-                // Strategy 2: Chunked range download if direct download returned < 600KB
+                // Strategy 2: Chunked resumed range download if direct download returned < 1.2MB
                 if !isRealStreamDownloaded {
                     let chunkSize: Int64 = 512 * 1024
                     var downloaded: Int64 = 0
                     let totalLen: Int64 = 4_500_000
                     var fileData = Data()
                     var hasMore = true
-                    var chunkIdx = 0
-                    let maxChunks = 50
+                    var retries = 0
 
-                    while hasMore && chunkIdx < maxChunks && downloaded < totalLen {
+                    while hasMore && retries < 15 && downloaded < totalLen {
                         let start = downloaded
                         let end = min(totalLen - 1, start + chunkSize - 1)
                         var chunkReq = URLRequest(url: streamUrl)
@@ -163,12 +162,11 @@ class UserDataRepository: ObservableObject {
                         chunkReq.setValue("*/*", forHTTPHeaderField: "Accept")
 
                         if let (chunkBytes, response) = try? await URLSession.shared.data(for: chunkReq),
-                           let httpResp = response as? HTTPURLResponse,
-                           (200...299).contains(httpResp.statusCode) {
-                            if !chunkBytes.isEmpty {
+                           let httpResp = response as? HTTPURLResponse {
+                            if (200...299).contains(httpResp.statusCode) && !chunkBytes.isEmpty {
                                 fileData.append(chunkBytes)
                                 downloaded += Int64(chunkBytes.count)
-                                chunkIdx += 1
+                                retries = 0
 
                                 let percent = min(99, max(5, Int((downloaded * 100) / totalLen)))
                                 let mbNow = String(format: "%.1f", Double(downloaded) / (1024.0 * 1024.0))
@@ -185,15 +183,19 @@ class UserDataRepository: ObservableObject {
                                 if downloaded >= totalLen {
                                     hasMore = false
                                 }
-                            } else {
+                            } else if httpResp.statusCode == 416 {
                                 hasMore = false
+                            } else {
+                                retries += 1
+                                try? await Task.sleep(nanoseconds: 600_000_000)
                             }
                         } else {
-                            hasMore = false
+                            retries += 1
+                            try? await Task.sleep(nanoseconds: 600_000_000)
                         }
                     }
 
-                    if fileData.count > 600_000 {
+                    if fileData.count > 1_200_000 {
                         try? FileManager.default.removeItem(at: fileUrl)
                         try? fileData.write(to: fileUrl)
                         isRealStreamDownloaded = true
@@ -203,7 +205,7 @@ class UserDataRepository: ObservableObject {
 
             if FileManager.default.fileExists(atPath: fileUrl.path),
                let attrs = try? FileManager.default.attributesOfItem(atPath: fileUrl.path),
-               let size = attrs[.size] as? Int64, size > 600_000 {
+               let size = attrs[.size] as? Int64, size > 1_200_000 {
                 isRealStreamDownloaded = true
             }
 
