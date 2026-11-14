@@ -538,12 +538,12 @@ struct MusicLibraryView: View {
 
         NavigationView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("Paste any \(service) playlist or album link to import all tracks directly into AURALIX:")
+                Text(service == "Spotify" ? "Paste any Spotify playlist or album link to import all tracks directly into AURALIX:" : "Paste Amazon Music share link, or paste song titles (e.g. Title - Artist) directly:")
                     .font(.system(size: 13))
                     .foregroundColor(Color(hex: 0xCCCCCC))
 
                 HStack {
-                    TextField(service == "Spotify" ? "https://open.spotify.com/playlist/..." : "https://music.amazon.com/playlists/...", text: $importUrlInput)
+                    TextField(service == "Spotify" ? "https://open.spotify.com/playlist/..." : "https://music.amazon.com/playlists/... or song names", text: $importUrlInput)
                         .font(.system(size: 13))
                         .foregroundColor(.white)
                         .autocapitalization(.none)

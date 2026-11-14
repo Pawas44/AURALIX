@@ -22,11 +22,12 @@ final class LyricsEngine {
     func getLyrics(
         trackTitle: String,
         artistName: String,
-        durationSeconds: Int = 0
+        durationSeconds: Int = 0,
+        videoId: String = ""
     ) async -> LyricsResult? {
         let cleanTitle = cleanTrackName(trackTitle)
         let cleanArtist = cleanArtistName(artistName)
-        let cacheKey = "\(cleanTitle.lowercased())_\(cleanArtist.lowercased())"
+        let cacheKey = "\(cleanTitle.lowercased())_\(cleanArtist.lowercased())_\(videoId)"
 
         lock.lock()
         if let cached = memoryCache[cacheKey] {
@@ -41,27 +42,38 @@ final class LyricsEngine {
         result = await tryGetLrc(title: cleanTitle, artist: cleanArtist, duration: durationSeconds)
 
         // 1b. If YouTube title has "Artist - Track" format
-        if (result == nil || result?.lines.isEmpty == true) && trackTitle.contains(" - ") {
+        if (result == nil || result?.isSynced == false) && trackTitle.contains(" - ") {
             let parts = trackTitle.components(separatedBy: " - ")
             if parts.count >= 2 {
                 let guessedArtist = cleanArtistName(parts[0])
                 let guessedTitle = cleanTrackName(parts[1])
-                result = await tryGetLrc(title: guessedTitle, artist: guessedArtist, duration: durationSeconds)
+                let alt = await tryGetLrc(title: guessedTitle, artist: guessedArtist, duration: durationSeconds)
+                if alt?.isSynced == true {
+                    result = alt
+                } else if result == nil {
+                    result = alt
+                }
             }
         }
 
         // 2. LRCLib Search: query = title + artist
-        if result == nil || result?.lines.isEmpty == true {
+        if result == nil || result?.isSynced == false {
             let q = "\(cleanTitle) \(cleanArtist)".trimmingCharacters(in: .whitespacesAndNewlines)
             if !q.isEmpty {
-                result = await trySearchLrc(query: q, expectedTitle: cleanTitle, expectedArtist: cleanArtist)
+                if let searched = await trySearchLrc(query: q, expectedTitle: cleanTitle, expectedArtist: cleanArtist) {
+                    if searched.isSynced {
+                        result = searched
+                    } else if result == nil {
+                        result = searched
+                    }
+                }
             }
         }
 
-        // 3. LRCLib Search: query = title alone (Strictly verified against expected artist/title)
-        if result == nil || result?.lines.isEmpty == true {
-            if !cleanTitle.isEmpty {
-                result = await trySearchLrc(query: cleanTitle, expectedTitle: cleanTitle, expectedArtist: cleanArtist)
+        // 3. Fallback to Official YouTube Music Native Lyrics if LRCLib did not provide synced lyrics
+        if (result == nil || result?.isSynced == false) && !videoId.isEmpty {
+            if let ytmLyrics = await fetchYouTubeMusicOfficialLyrics(videoId: videoId) {
+                result = ytmLyrics
             }
         }
 
@@ -70,6 +82,125 @@ final class LyricsEngine {
         lock.unlock()
 
         return result
+    }
+
+    func fetchYouTubeMusicOfficialLyrics(videoId: String) async -> LyricsResult? {
+        guard !videoId.isEmpty else { return nil }
+        guard let nextUrl = URL(string: "https://music.youtube.com/youtubei/v1/next") else { return nil }
+
+        var nextReq = URLRequest(url: nextUrl, timeoutInterval: 8.0)
+        nextReq.httpMethod = "POST"
+        nextReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        nextReq.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        nextReq.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
+
+        let nextPayload: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1.20231214.01.00",
+                    "hl": "en",
+                    "gl": "US"
+                ]
+            ],
+            "videoId": videoId
+        ]
+        nextReq.httpBody = try? JSONSerialization.data(withJSONObject: nextPayload)
+
+        guard let (nextData, nextResp) = try? await URLSession.shared.data(for: nextReq),
+              let httpNext = nextResp as? HTTPURLResponse, httpNext.statusCode == 200,
+              let nextJson = (try? JSONSerialization.jsonObject(with: nextData)) as? [String: Any],
+              let contents = nextJson["contents"] as? [String: Any],
+              let watchNext = contents["singleColumnMusicWatchNextResultsRenderer"] as? [String: Any],
+              let tabbed = watchNext["tabbedRenderer"] as? [String: Any],
+              let watchNextTabbed = tabbed["watchNextTabbedResultsRenderer"] as? [String: Any],
+              let tabs = watchNextTabbed["tabs"] as? [[String: Any]] else {
+            return nil
+        }
+
+        var browseId: String? = nil
+        var lyricsParams: String? = nil
+
+        for tab in tabs {
+            guard let tabRenderer = tab["tabRenderer"] as? [String: Any] else { continue }
+            let title = (tabRenderer["title"] as? String)?.lowercased() ?? ""
+            if let endpoint = tabRenderer["endpoint"] as? [String: Any],
+               let browseEndpoint = endpoint["browseEndpoint"] as? [String: Any],
+               let bId = browseEndpoint["browseId"] as? String {
+                if bId.hasPrefix("MPLYt") || title.contains("lyrics") {
+                    browseId = bId
+                    lyricsParams = browseEndpoint["params"] as? String
+                    break
+                }
+            }
+        }
+
+        if browseId == nil && tabs.count > 1 {
+            if let tabRenderer = tabs[1]["tabRenderer"] as? [String: Any],
+               let endpoint = tabRenderer["endpoint"] as? [String: Any],
+               let browseEndpoint = endpoint["browseEndpoint"] as? [String: Any],
+               let bId = browseEndpoint["browseId"] as? String {
+                browseId = bId
+                lyricsParams = browseEndpoint["params"] as? String
+            }
+        }
+
+        guard let validBrowseId = browseId, !validBrowseId.isEmpty else { return nil }
+
+        guard let browseUrl = URL(string: "https://music.youtube.com/youtubei/v1/browse") else { return nil }
+        var browseReq = URLRequest(url: browseUrl, timeoutInterval: 8.0)
+        browseReq.httpMethod = "POST"
+        browseReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        browseReq.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        browseReq.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
+
+        var browsePayload: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1.20231214.01.00",
+                    "hl": "en",
+                    "gl": "US"
+                ]
+            ],
+            "browseId": validBrowseId
+        ]
+        if let params = lyricsParams, !params.isEmpty {
+            browsePayload["params"] = params
+        }
+        browseReq.httpBody = try? JSONSerialization.data(withJSONObject: browsePayload)
+
+        guard let (browseData, browseResp) = try? await URLSession.shared.data(for: browseReq),
+              let httpBrowse = browseResp as? HTTPURLResponse, httpBrowse.statusCode == 200,
+              let browseJson = (try? JSONSerialization.jsonObject(with: browseData)) as? [String: Any],
+              let bContents = browseJson["contents"] as? [String: Any],
+              let sectionList = bContents["sectionListRenderer"] as? [String: Any],
+              let sectionItems = sectionList["contents"] as? [[String: Any]] else {
+            return nil
+        }
+
+        for item in sectionItems {
+            guard let shelf = item["musicDescriptionShelfRenderer"] as? [String: Any],
+                  let desc = shelf["description"] as? [String: Any],
+                  let runs = desc["runs"] as? [[String: Any]] else { continue }
+
+            var plainText = ""
+            for run in runs {
+                plainText += (run["text"] as? String) ?? ""
+            }
+            let trimmed = plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                let rawLines = trimmed.components(separatedBy: .newlines)
+                let lines = rawLines.enumerated().compactMap { idx, line -> LyricLine? in
+                    let l = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !l.isEmpty else { return nil }
+                    return LyricLine(timestampMs: Double(idx * 3000), text: l)
+                }
+                return LyricsResult(lines: lines, plainLyrics: trimmed, isSynced: false)
+            }
+        }
+
+        return nil
     }
 
     private func tryGetLrc(title: String, artist: String, duration: Int) async -> LyricsResult? {

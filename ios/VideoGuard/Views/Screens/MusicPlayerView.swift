@@ -226,7 +226,8 @@ struct MusicPlayerView: View {
             lyricsResult = await LyricsEngine.shared.getLyrics(
                 trackTitle: track.title,
                 artistName: track.artist.isEmpty ? track.channelName : track.artist,
-                durationSeconds: Int(playbackService.durationSeconds)
+                durationSeconds: Int(playbackService.durationSeconds),
+                videoId: track.id
             )
             isLoadingLyrics = false
         }

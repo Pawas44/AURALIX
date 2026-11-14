@@ -1951,6 +1951,34 @@ final class SpotifyImportEngine {
             }
         }
 
+        // 5. Intelligent URL slug & title fallback
+        if tracks.isEmpty {
+            let pathPart = url.components(separatedBy: "?").first ?? url
+            let lastSegment = pathPart.components(separatedBy: "/").last ?? ""
+            let cleanSlug = lastSegment
+                .replacingOccurrences(of: "^B0[A-Z0-9]+-?", with: "", options: .regularExpression)
+                .replacingOccurrences(of: "-", with: " ")
+                .replacingOccurrences(of: "_", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            let candidateTitle: String
+            if title != "Amazon Music Playlist" && !title.isEmpty && !title.lowercased().contains("amazon music") {
+                candidateTitle = title
+            } else if !cleanSlug.isEmpty && cleanSlug.count > 2 && !cleanSlug.hasPrefix("B0") {
+                candidateTitle = cleanSlug
+            } else {
+                candidateTitle = ""
+            }
+
+            if !candidateTitle.isEmpty {
+                title = candidateTitle
+                let searchItems = await YouTubeSearchEngine.searchVideos(query: "\(candidateTitle) songs", isMusicOnly: true)
+                for item in searchItems.prefix(25) {
+                    tracks.append(ImportTrackMeta(title: item.title, artist: item.artist.isEmpty ? item.channelName : item.artist))
+                }
+            }
+        }
+
         // Deduplicate tracks while preserving order
         var uniqueTracks: [ImportTrackMeta] = []
         var seen = Set<String>()

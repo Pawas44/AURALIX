@@ -259,7 +259,7 @@ object MusicImportEngine {
         return Pair(playlistTitle, tracks)
     }
 
-    private fun parseAmazonMusic(url: String, onProgress: (ImportProgress) -> Unit): Pair<String, List<ImportTrackMeta>> {
+    private suspend fun parseAmazonMusic(url: String, onProgress: (ImportProgress) -> Unit): Pair<String, List<ImportTrackMeta>> {
         val html = httpGet(url)
         var title = "Amazon Music Playlist"
 
@@ -317,7 +317,6 @@ object MusicImportEngine {
         }
 
         // 2. Parse Amazon Web Client embedded track JSON blobs:
-        // Amazon Music embeds tracks as primaryText (title) & secondaryText / secondaryText1 (artist)
         if (tracks.isEmpty()) {
             val ptRegex = Pattern.compile("\"primaryText\"\\s*:\\s*\"([^\"]+)\"[^}]*?\"secondaryText(?:1)?\"\\s*:\\s*\"([^\"]+)\"")
             val ptMatcher = ptRegex.matcher(html)
@@ -353,6 +352,28 @@ object MusicImportEngine {
                 if (songName.isNotBlank()) {
                     tracks.add(ImportTrackMeta(songName, ""))
                 }
+            }
+        }
+
+        // 5. Intelligent URL slug fallback (if Amazon Web Client gates unauthenticated HTML)
+        if (tracks.isEmpty()) {
+            val pathPart = url.substringBefore("?").trimEnd('/')
+            val lastSegment = pathPart.substringAfterLast("/")
+            val cleanSlug = lastSegment.replace(Regex("^B0[A-Z0-9]+-?"), "").replace("-", " ").replace("_", " ").trim()
+            val candidateTitle = if (title != "Amazon Music Playlist" && title.isNotBlank() && !title.equals("Amazon Music", ignoreCase = true)) {
+                title
+            } else if (cleanSlug.isNotBlank() && cleanSlug.length > 2 && !cleanSlug.startsWith("B0")) {
+                cleanSlug
+            } else ""
+
+            if (candidateTitle.isNotBlank()) {
+                title = candidateTitle
+                try {
+                    val searchItems = YouTubeSearchEngine.searchVideos("$candidateTitle songs", isMusicOnly = true)
+                    for (item in searchItems.take(25)) {
+                        tracks.add(ImportTrackMeta(item.title, item.artist.ifBlank { item.channelName }))
+                    }
+                } catch (e: Exception) {}
             }
         }
 

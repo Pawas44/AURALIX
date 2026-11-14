@@ -292,7 +292,7 @@ object YouTubeSearchEngine {
             isMusicTrack = isMusic || title.contains("Music", ignoreCase = true) || title.contains("Song", ignoreCase = true),
             artist = channel,
             album = "YouTube Single",
-            lyrics = "[Lyrics available on YouTube Music]",
+            lyrics = "",
             category = if (isMusic) "Music" else "YouTube",
             channelId = cid
         )

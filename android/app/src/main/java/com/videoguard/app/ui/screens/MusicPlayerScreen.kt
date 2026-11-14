@@ -157,7 +157,8 @@ fun MusicPlayerScreen(
         lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
             trackTitle = track.title,
             artistName = track.artist.ifBlank { track.channelName },
-            durationSeconds = duration.toInt()
+            durationSeconds = duration.toInt(),
+            videoId = track.id
         )
         isLoadingLyrics = false
     }

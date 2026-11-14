@@ -833,7 +833,11 @@ fun MusicLibraryScreen(
             text = {
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "Paste any $currentService playlist or album link to import all tracks directly into AURALIX:",
+                        text = if (currentService == "Spotify") {
+                            "Paste any Spotify playlist or album link to import all tracks directly into AURALIX:"
+                        } else {
+                            "Paste Amazon Music share link, or paste song titles (e.g. Title - Artist) directly:"
+                        },
                         color = Color(0xFFCCCCCC),
                         fontSize = 12.sp
                     )
@@ -849,7 +853,7 @@ fun MusicLibraryScreen(
                                 text = if (currentService == "Spotify") {
                                     "https://open.spotify.com/playlist/..."
                                 } else {
-                                    "https://music.amazon.com/playlists/..."
+                                    "https://music.amazon.com/playlists/... or song names"
                                 },
                                 fontSize = 12.sp,
                                 color = Color(0xFF666666)

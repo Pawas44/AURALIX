@@ -224,27 +224,38 @@ object UserDataRepository {
                     val streamUrl = audioFormat.url
                     val totalLen = if (audioFormat.contentLength > 0) audioFormat.contentLength else 4_500_000L
                     var downloaded = 0L
-                    val userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+                    val userAgent = "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)"
+                    val chunkSize = 256 * 1024 // 256 KB slices to avoid GVS 403 throttles
 
-                    val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
-                        connectTimeout = 15000
-                        readTimeout = 25000
-                        setRequestProperty("User-Agent", userAgent)
-                        setRequestProperty("Accept", "*/*")
-                    }
+                    java.io.FileOutputStream(targetFile).use { output ->
+                        var hasMore = true
+                        var chunkIdx = 0
+                        val maxChunks = if (totalLen > 0) ((totalLen / chunkSize) + 10).toInt() else 150
 
-                    conn.inputStream.use { input ->
-                        java.io.FileOutputStream(targetFile).use { output ->
-                            val buffer = ByteArray(32768)
-                            var read: Int
-                            var lastUpdate = 0L
-                            while (input.read(buffer).also { read = it } != -1) {
-                                output.write(buffer, 0, read)
-                                downloaded += read
+                        while (hasMore && chunkIdx < maxChunks) {
+                            val start = downloaded
+                            val end = if (totalLen > 0 && totalLen > start) {
+                                minOf(totalLen - 1, start + chunkSize - 1)
+                            } else {
+                                start + chunkSize - 1
+                            }
 
-                                val now = System.currentTimeMillis()
-                                if (now - lastUpdate > 150 || (totalLen > 0 && downloaded >= totalLen)) {
-                                    lastUpdate = now
+                            val conn = (URL(streamUrl).openConnection() as HttpURLConnection).apply {
+                                connectTimeout = 12000
+                                readTimeout = 15000
+                                setRequestProperty("User-Agent", userAgent)
+                                setRequestProperty("Range", "bytes=$start-$end")
+                                setRequestProperty("Accept", "*/*")
+                            }
+
+                            val code = conn.responseCode
+                            if (code in 200..299) {
+                                val chunkBytes = conn.inputStream.use { it.readBytes() }
+                                if (chunkBytes.isNotEmpty()) {
+                                    output.write(chunkBytes)
+                                    downloaded += chunkBytes.size
+                                    chunkIdx++
+
                                     val percent = if (totalLen > 0) ((downloaded * 100) / totalLen).toInt().coerceIn(0, 100) else minOf(95, (downloaded / 50000).toInt())
                                     val mbNow = String.format(java.util.Locale.US, "%.1f", downloaded / (1024f * 1024f))
                                     val mbTotal = String.format(java.util.Locale.US, "%.1f", totalLen / (1024f * 1024f))
@@ -268,7 +279,18 @@ object UserDataRepository {
                                             .build()
                                         notifManager?.notify(notifId, notif)
                                     } catch (e: Exception) {}
+
+                                    if (totalLen > 0 && downloaded >= totalLen) {
+                                        hasMore = false
+                                    }
+                                    if (chunkBytes.size < (end - start + 1)) {
+                                        hasMore = false
+                                    }
+                                } else {
+                                    hasMore = false
                                 }
+                            } else {
+                                hasMore = false
                             }
                         }
                     }
@@ -359,7 +381,62 @@ object UserDataRepository {
     )
 
     private suspend fun fetchRealYouTubeAudioFormat(videoId: String): AudioStreamFormat? = withContext(Dispatchers.IO) {
-        // 1. Primary Client: VISIONOS (Fastest guest stream, full range downloads without 403)
+        // 1. Primary Client: IOS 21.03.3 (Guaranteed audio stream for all music & VEVO tracks)
+        try {
+            val payload = JSONObject().apply {
+                put("videoId", videoId)
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "IOS")
+                        put("clientVersion", "21.03.3")
+                        put("clientId", "5")
+                        put("osName", "iPadOS")
+                        put("osVersion", "17.7.10.21H450")
+                        put("deviceMake", "Apple")
+                        put("deviceModel", "iPad7,6")
+                        put("hl", "en")
+                        put("gl", "US")
+                    })
+                })
+            }
+            val conn = (URL("https://www.youtube.com/youtubei/v1/player").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 12000
+                readTimeout = 12000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("User-Agent", "com.google.ios.youtube/21.03.3 (iPad7,6; U; CPU iPadOS 17_7_10 like Mac OS X; en-US)")
+            }
+            conn.outputStream.use { os ->
+                os.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+            if (conn.responseCode in 200..299) {
+                val respText = conn.inputStream.bufferedReader().use { it.readText() }
+                val root = JSONObject(respText)
+                val streamingData = root.optJSONObject("streamingData")
+                val adaptiveFormats = streamingData?.optJSONArray("adaptiveFormats")
+                if (adaptiveFormats != null) {
+                    var bestFormat: AudioStreamFormat? = null
+                    for (i in 0 until adaptiveFormats.length()) {
+                        val fmt = adaptiveFormats.optJSONObject(i) ?: continue
+                        val mime = fmt.optString("mimeType", "")
+                        val audioUrl = fmt.optString("url", "")
+                        val bitrate = fmt.optInt("bitrate", 0)
+                        val clen = fmt.optLong("contentLength", 0L)
+                        if (mime.startsWith("audio/") && audioUrl.isNotBlank()) {
+                            if (bestFormat == null || mime.contains("mp4") || bitrate > bestFormat.bitrate) {
+                                bestFormat = AudioStreamFormat(audioUrl, clen, mime, bitrate)
+                            }
+                        }
+                    }
+                    if (bestFormat != null) return@withContext bestFormat
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. Secondary Client: VISIONOS
         try {
             val payload = JSONObject().apply {
                 put("videoId", videoId)

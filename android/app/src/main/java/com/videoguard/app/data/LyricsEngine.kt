@@ -26,11 +26,12 @@ object LyricsEngine {
     suspend fun getLyrics(
         trackTitle: String,
         artistName: String,
-        durationSeconds: Int = 0
+        durationSeconds: Int = 0,
+        videoId: String = ""
     ): LyricsResult? = withContext(Dispatchers.IO) {
         val cleanTitle = cleanTrackName(trackTitle)
         val cleanArtist = cleanArtistName(artistName)
-        val cacheKey = "${cleanTitle.lowercase()}_${cleanArtist.lowercase()}"
+        val cacheKey = "${cleanTitle.lowercase()}_${cleanArtist.lowercase()}_$videoId"
 
         if (memoryCache.containsKey(cacheKey)) {
             return@withContext memoryCache[cacheKey]
@@ -38,31 +39,44 @@ object LyricsEngine {
 
         var result: LyricsResult? = null
 
-        // 1. Direct LRCLib GET endpoint
+        // 1. Direct LRCLib GET endpoint (for synced lyrics)
         result = tryGetLrc(cleanTitle, cleanArtist, durationSeconds)
 
         // 1b. If YouTube title has "Artist - Track" format
-        if ((result == null || result.lines.isEmpty()) && trackTitle.contains(" - ")) {
+        if ((result == null || !result.isSynced) && trackTitle.contains(" - ")) {
             val parts = trackTitle.split(" - ")
             if (parts.size >= 2) {
                 val guessedArtist = cleanArtistName(parts[0])
                 val guessedTitle = cleanTrackName(parts[1])
-                result = tryGetLrc(guessedTitle, guessedArtist, durationSeconds)
+                val alt = tryGetLrc(guessedTitle, guessedArtist, durationSeconds)
+                if (alt != null && alt.isSynced) {
+                    result = alt
+                } else if (result == null) {
+                    result = alt
+                }
             }
         }
 
         // 2. LRCLib Search: query = title + artist
-        if (result == null || result.lines.isEmpty()) {
+        if (result == null || !result.isSynced) {
             val q = "$cleanTitle $cleanArtist".trim()
             if (q.isNotBlank()) {
-                result = trySearchLrc(q, cleanTitle, cleanArtist)
+                val searched = trySearchLrc(q, cleanTitle, cleanArtist)
+                if (searched != null) {
+                    if (searched.isSynced) {
+                        result = searched
+                    } else if (result == null) {
+                        result = searched
+                    }
+                }
             }
         }
 
-        // 3. LRCLib Search: query = title only (Strictly verified against expected artist/title)
-        if (result == null || result.lines.isEmpty()) {
-            if (cleanTitle.isNotBlank()) {
-                result = trySearchLrc(cleanTitle, cleanTitle, cleanArtist)
+        // 3. Fallback to Official YouTube Music Native Lyrics if LRCLib did not provide synced lyrics
+        if ((result == null || !result.isSynced) && videoId.isNotBlank()) {
+            val ytmLyrics = fetchYouTubeMusicOfficialLyrics(videoId)
+            if (ytmLyrics != null) {
+                result = ytmLyrics
             }
         }
 
@@ -218,6 +232,121 @@ object LyricsEngine {
             .replace(Regex("(?i) - Topic|Official|VEVO"), "")
             .replace(Regex("(?i)\\[.*?\\]|\\(.*?\\)"), "")
             .trim()
+    }
+
+    private fun fetchYouTubeMusicOfficialLyrics(videoId: String): LyricsResult? {
+        if (videoId.isBlank()) return null
+        return try {
+            val nextPayload = JSONObject().apply {
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "WEB_REMIX")
+                        put("clientVersion", "1.20231214.01.00")
+                        put("hl", "en")
+                        put("gl", "US")
+                    })
+                })
+                put("videoId", videoId)
+            }
+            val nextResStr = httpPostJson("https://music.youtube.com/youtubei/v1/next", nextPayload.toString())
+            if (nextResStr.isBlank()) return null
+            val nextJson = JSONObject(nextResStr)
+            val tabs = nextJson.optJSONObject("contents")
+                ?.optJSONObject("singleColumnMusicWatchNextResultsRenderer")
+                ?.optJSONObject("tabbedRenderer")
+                ?.optJSONObject("watchNextTabbedResultsRenderer")
+                ?.optJSONArray("tabs") ?: return null
+
+            var browseId: String? = null
+            var params: String? = null
+
+            for (i in 0 until tabs.length()) {
+                val tab = tabs.optJSONObject(i)?.optJSONObject("tabRenderer") ?: continue
+                val ep = tab.optJSONObject("endpoint")?.optJSONObject("browseEndpoint")
+                val bId = ep?.optString("browseId") ?: ""
+                val title = tab.optString("title", "").lowercase()
+                if (bId.startsWith("MPLYt") || title.contains("lyrics")) {
+                    browseId = bId
+                    params = ep?.optString("params")
+                    break
+                }
+            }
+
+            if (browseId.isNullOrBlank() && tabs.length() > 1) {
+                val tab = tabs.optJSONObject(1)?.optJSONObject("tabRenderer")
+                val ep = tab?.optJSONObject("endpoint")?.optJSONObject("browseEndpoint")
+                browseId = ep?.optString("browseId")
+                params = ep?.optString("params")
+            }
+
+            if (browseId.isNullOrBlank()) return null
+
+            val browsePayload = JSONObject().apply {
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "WEB_REMIX")
+                        put("clientVersion", "1.20231214.01.00")
+                        put("hl", "en")
+                        put("gl", "US")
+                    })
+                })
+                put("browseId", browseId)
+                if (!params.isNullOrBlank()) {
+                    put("params", params)
+                }
+            }
+
+            val browseResStr = httpPostJson("https://music.youtube.com/youtubei/v1/browse", browsePayload.toString())
+            if (browseResStr.isBlank()) return null
+            val browseJson = JSONObject(browseResStr)
+            val contents = browseJson.optJSONObject("contents")
+                ?.optJSONObject("sectionListRenderer")
+                ?.optJSONArray("contents") ?: return null
+
+            for (i in 0 until contents.length()) {
+                val item = contents.optJSONObject(i) ?: continue
+                val shelf = item.optJSONObject("musicDescriptionShelfRenderer") ?: continue
+                val runs = shelf.optJSONObject("description")?.optJSONArray("runs") ?: continue
+                val sb = StringBuilder()
+                for (r in 0 until runs.length()) {
+                    sb.append(runs.optJSONObject(r)?.optString("text") ?: "")
+                }
+                val lyricsText = sb.toString().trim()
+                if (lyricsText.isNotBlank()) {
+                    val lines = lyricsText.lines().mapIndexed { idx, line ->
+                        LyricLine(timestampMs = idx * 3000L, text = line.trim())
+                    }.filter { it.text.isNotBlank() }
+                    return LyricsResult(lines = lines, plainLyrics = lyricsText, isSynced = false)
+                }
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun httpPostJson(urlStr: String, jsonBody: String): String {
+        return try {
+            val url = URL(urlStr)
+            val conn = url.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 6000
+            conn.readTimeout = 6000
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+            conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            conn.setRequestProperty("Referer", "https://music.youtube.com/")
+            conn.outputStream.use { os ->
+                os.write(jsonBody.toByteArray(Charsets.UTF_8))
+            }
+            if (conn.responseCode in 200..299) {
+                conn.inputStream.bufferedReader().use { it.readText() }
+            } else {
+                ""
+            }
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     private fun httpGet(urlStr: String): String {
