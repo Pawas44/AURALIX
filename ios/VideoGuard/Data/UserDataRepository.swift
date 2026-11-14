@@ -87,12 +87,64 @@ class UserDataRepository: ObservableObject {
         if let data = defaults.data(forKey: keyOfflineTracks),
            let decoded = try? JSONDecoder().decode([VideoItem].self, from: data) {
             self.offlineTracks = decoded
+
+            // Auto-heal placeholder titles
+            Task { @MainActor in
+                var modified = false
+                for i in 0..<self.offlineTracks.count {
+                    let trk = self.offlineTracks[i]
+                    if trk.title.contains("YouTube Video") || trk.title.contains(trk.id) {
+                        if let real = await self.fetchRealVideoMeta(videoId: trk.id) {
+                            modified = true
+                            self.offlineTracks[i] = VideoItem(
+                                id: trk.id,
+                                title: real.title,
+                                channelName: (trk.channelName == "YouTube Channel" || trk.channelName.isEmpty) ? real.author : trk.channelName,
+                                channelAvatarUrl: trk.channelAvatarUrl,
+                                subscriberCount: trk.subscriberCount,
+                                thumbnailUrl: trk.thumbnailUrl.isEmpty ? real.thumb : trk.thumbnailUrl,
+                                views: trk.views,
+                                uploadTime: trk.uploadTime,
+                                duration: trk.duration,
+                                description: trk.description,
+                                likes: trk.likes,
+                                isMusicTrack: trk.isMusicTrack,
+                                artist: (trk.artist.isEmpty || trk.artist == "Artist" || trk.artist == "YouTube Channel") ? real.author : trk.artist,
+                                album: trk.album,
+                                lyrics: trk.lyrics,
+                                category: trk.category,
+                                channelId: trk.channelId
+                            )
+                        }
+                    }
+                }
+                if modified {
+                    self.saveOfflineTracks()
+                }
+            }
         }
     }
 
     // MARK: - Offline Tracks
     func isDownloaded(id: String) -> Bool {
         offlineTracks.contains { $0.id == id }
+    }
+
+    func fetchRealVideoMeta(videoId: String) async -> (title: String, author: String, thumb: String)? {
+        guard !videoId.isEmpty, let url = URL(string: "https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=\(videoId)&format=json") else { return nil }
+        var req = URLRequest(url: url, timeoutInterval: 5.0)
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)", forHTTPHeaderField: "User-Agent")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            if let http = response as? HTTPURLResponse, http.statusCode == 200,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let title = (json["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+                let author = (json["author_name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let thumb = (json["thumbnail_url"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "https://img.youtube.com/vi/\(videoId)/hqdefault.jpg"
+                return (title, author, thumb)
+            }
+        } catch { }
+        return nil
     }
 
     func startDownload(video: VideoItem) {
@@ -109,9 +161,38 @@ class UserDataRepository: ObservableObject {
         }
 
         Task { @MainActor in
+            var targetVideo = video
+            if targetVideo.title.contains("YouTube Video") ||
+               targetVideo.title.contains(targetVideo.id) ||
+               targetVideo.title.isEmpty ||
+               targetVideo.artist == "Artist" ||
+               targetVideo.artist == "YouTube Channel" {
+                if let real = await self.fetchRealVideoMeta(videoId: targetVideo.id) {
+                    targetVideo = VideoItem(
+                        id: targetVideo.id,
+                        title: real.title,
+                        channelName: (targetVideo.channelName == "YouTube Channel" || targetVideo.channelName.isEmpty) ? real.author : targetVideo.channelName,
+                        channelAvatarUrl: targetVideo.channelAvatarUrl,
+                        subscriberCount: targetVideo.subscriberCount,
+                        thumbnailUrl: targetVideo.thumbnailUrl.isEmpty ? real.thumb : targetVideo.thumbnailUrl,
+                        views: targetVideo.views,
+                        uploadTime: targetVideo.uploadTime,
+                        duration: targetVideo.duration,
+                        description: targetVideo.description,
+                        likes: targetVideo.likes,
+                        isMusicTrack: targetVideo.isMusicTrack,
+                        artist: (targetVideo.artist.isEmpty || targetVideo.artist == "Artist" || targetVideo.artist == "YouTube Channel") ? real.author : targetVideo.artist,
+                        album: targetVideo.album,
+                        lyrics: targetVideo.lyrics,
+                        category: targetVideo.category,
+                        channelId: targetVideo.channelId
+                    )
+                }
+            }
+
             self.currentDownload = DownloadTask(
-                videoId: video.id,
-                title: video.title,
+                videoId: targetVideo.id,
+                title: targetVideo.title,
                 progress: 5,
                 bytesText: "Connecting...",
                 isComplete: false
@@ -214,8 +295,8 @@ class UserDataRepository: ObservableObject {
 
             guard isRealStreamDownloaded else {
                 self.currentDownload = DownloadTask(
-                    videoId: video.id,
-                    title: video.title,
+                    videoId: targetVideo.id,
+                    title: targetVideo.title,
                     progress: 0,
                     bytesText: "Download failed (network error)",
                     isComplete: true
@@ -226,15 +307,15 @@ class UserDataRepository: ObservableObject {
             }
 
             self.currentDownload = DownloadTask(
-                videoId: video.id,
-                title: video.title,
+                videoId: targetVideo.id,
+                title: targetVideo.title,
                 progress: 100,
                 bytesText: "Complete",
                 isComplete: true
             )
 
-            self.offlineTracks.removeAll { $0.id == video.id }
-            self.offlineTracks.insert(video, at: 0)
+            self.offlineTracks.removeAll { $0.id == targetVideo.id }
+            self.offlineTracks.insert(targetVideo, at: 0)
             self.saveOfflineTracks()
 
             try? await Task.sleep(nanoseconds: 1_200_000_000)

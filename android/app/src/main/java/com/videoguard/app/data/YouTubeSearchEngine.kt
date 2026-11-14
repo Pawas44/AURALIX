@@ -70,7 +70,7 @@ object YouTubeSearchEngine {
 
             if (conn.responseCode == 200) {
                 val html = conn.inputStream.bufferedReader().use { it.readText() }
-                val parsed = parseSearchResults(html, isMusicOnly)
+                val parsed = parseSearchResults(html, isMusicOnly, query)
                 if (parsed.isNotEmpty()) {
                     return@withContext parsed
                 }
@@ -83,54 +83,64 @@ object YouTubeSearchEngine {
         if (isMusicOnly) VideoRepository.searchMusic(query) else VideoRepository.searchVideos(query)
     }
 
-    private fun parseSearchResults(html: String, isMusic: Boolean): List<VideoItem> {
+    private fun parseSearchResults(html: String, isMusic: Boolean, query: String = ""): List<VideoItem> {
         val results = mutableListOf<VideoItem>()
         try {
-            val marker = "var ytInitialData = "
-            val startIdx = html.indexOf(marker)
-            if (startIdx != -1) {
-                val jsonStart = startIdx + marker.length
-                val endIdx = html.indexOf(";</script>", jsonStart)
-                if (endIdx != -1) {
-                    val jsonStr = html.substring(jsonStart, endIdx)
-                    val root = JSONObject(jsonStr)
-                    val contents = root.optJSONObject("contents")
-                        ?.optJSONObject("twoColumnSearchResultsRenderer")
-                        ?.optJSONObject("primaryContents")
-                        ?.optJSONObject("sectionListRenderer")
-                        ?.optJSONArray("contents")
+            val markers = listOf("var ytInitialData = ", "ytInitialData = ", "window[\"ytInitialData\"] = ")
+            var jsonStr: String? = null
+            for (marker in markers) {
+                val startIdx = html.indexOf(marker)
+                if (startIdx != -1) {
+                    val jsonStart = startIdx + marker.length
+                    var endIdx = html.indexOf(";</script>", jsonStart)
+                    if (endIdx == -1) {
+                        endIdx = html.indexOf("</script>", jsonStart)
+                    }
+                    if (endIdx != -1) {
+                        jsonStr = html.substring(jsonStart, endIdx).trim().trimEnd(';')
+                        break
+                    }
+                }
+            }
 
-                    if (contents != null) {
-                        for (i in 0 until contents.length()) {
-                            val section = contents.optJSONObject(i)
-                            val itemSection = section?.optJSONObject("itemSectionRenderer")?.optJSONArray("contents")
-                            if (itemSection != null) {
-                                for (j in 0 until itemSection.length()) {
-                                    val item = itemSection.optJSONObject(j) ?: continue
+            if (!jsonStr.isNullOrBlank()) {
+                val root = JSONObject(jsonStr)
+                val contents = root.optJSONObject("contents")
+                    ?.optJSONObject("twoColumnSearchResultsRenderer")
+                    ?.optJSONObject("primaryContents")
+                    ?.optJSONObject("sectionListRenderer")
+                    ?.optJSONArray("contents")
 
-                                    // 1. Channel result card (channelRenderer)
-                                    val cr = item.optJSONObject("channelRenderer")
-                                    if (cr != null && !isMusic) {
-                                        parseChannelRenderer(cr)?.let { results.add(it) }
-                                    }
+                if (contents != null) {
+                    for (i in 0 until contents.length()) {
+                        val section = contents.optJSONObject(i)
+                        val itemSection = section?.optJSONObject("itemSectionRenderer")?.optJSONArray("contents")
+                        if (itemSection != null) {
+                            for (j in 0 until itemSection.length()) {
+                                val item = itemSection.optJSONObject(j) ?: continue
 
-                                    // 2. Video item (videoRenderer)
-                                    val vr = item.optJSONObject("videoRenderer")
-                                    if (vr != null) {
-                                        parseVideoRenderer(vr, isMusic)?.let { results.add(it) }
-                                    }
+                                // 1. Channel result card (channelRenderer)
+                                val cr = item.optJSONObject("channelRenderer")
+                                if (cr != null && !isMusic) {
+                                    parseChannelRenderer(cr)?.let { results.add(it) }
+                                }
 
-                                    // 3. Compact video item (compactVideoRenderer)
-                                    val cvr = item.optJSONObject("compactVideoRenderer")
-                                    if (cvr != null) {
-                                        parseVideoRenderer(cvr, isMusic)?.let { results.add(it) }
-                                    }
+                                // 2. Video item (videoRenderer)
+                                val vr = item.optJSONObject("videoRenderer")
+                                if (vr != null) {
+                                    parseVideoRenderer(vr, isMusic)?.let { results.add(it) }
+                                }
 
-                                    // 4. Lockup View Model (lockupViewModel)
-                                    val lvm = item.optJSONObject("lockupViewModel")
-                                    if (lvm != null) {
-                                        parseLockupViewModel(lvm, isMusic)?.let { results.add(it) }
-                                    }
+                                // 3. Compact video item (compactVideoRenderer)
+                                val cvr = item.optJSONObject("compactVideoRenderer")
+                                if (cvr != null) {
+                                    parseVideoRenderer(cvr, isMusic)?.let { results.add(it) }
+                                }
+
+                                // 4. Lockup View Model (lockupViewModel)
+                                val lvm = item.optJSONObject("lockupViewModel")
+                                if (lvm != null) {
+                                    parseLockupViewModel(lvm, isMusic)?.let { results.add(it) }
                                 }
                             }
                         }
@@ -146,21 +156,25 @@ object YouTubeSearchEngine {
             val vidRegex = Regex("\"videoId\":\"([a-zA-Z0-9_-]{11})\"")
             val matches = vidRegex.findAll(html).map { it.groupValues[1] }.distinct().take(15).toList()
             for (vid in matches) {
+                var cleanTitle = query.replace(" song", "", ignoreCase = true).trim()
+                if (cleanTitle.isBlank()) cleanTitle = "Song Track"
+                val cleanArtist = "YouTube Music"
+
                 results.add(
                     VideoItem(
                         id = vid,
-                        title = "YouTube Video ($vid)",
-                        channelName = "YouTube Channel",
+                        title = cleanTitle,
+                        channelName = cleanArtist,
                         channelAvatarUrl = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
                         subscriberCount = "1M subscribers",
                         thumbnailUrl = "https://img.youtube.com/vi/$vid/hqdefault.jpg",
                         views = "500K views",
                         uploadTime = "Recently",
                         duration = "3:45",
-                        description = "YouTube stream playback",
+                        description = cleanTitle,
                         likes = "50K",
                         isMusicTrack = isMusic,
-                        artist = "Artist",
+                        artist = cleanArtist,
                         album = "Single",
                         lyrics = "",
                         category = if (isMusic) "Music" else "YouTube"

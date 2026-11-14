@@ -470,12 +470,30 @@ fun MusicLibraryScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 offlineTracks.forEach { track ->
+                                    val cleanDisplayTitle = if (track.title.contains("YouTube Video", ignoreCase = true) || track.title.contains(track.id)) {
+                                        if (track.artist.isNotBlank() && track.artist != "Artist" && track.artist != "YouTube Channel") {
+                                            track.artist
+                                        } else {
+                                            "Downloaded Track"
+                                        }
+                                    } else {
+                                        track.title
+                                    }
+                                    val cleanDisplayArtist = if (track.artist == "Artist" || track.artist == "YouTube Channel" || track.artist.isBlank()) {
+                                        track.channelName.takeIf { it.isNotBlank() && it != "YouTube Channel" } ?: "Offline Audio"
+                                    } else {
+                                        track.artist
+                                    }
+
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(10.dp))
                                             .background(Color(0xFF141620))
-                                            .clickable { onTrackSelected(track, offlineTracks) }
+                                            .clickable {
+                                                val playTrack = if (track.title != cleanDisplayTitle) track.copy(title = cleanDisplayTitle, artist = cleanDisplayArtist) else track
+                                                onTrackSelected(playTrack, offlineTracks)
+                                            }
                                             .padding(10.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -490,7 +508,7 @@ fun MusicLibraryScreen(
                                         Spacer(modifier = Modifier.width(12.dp))
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = track.title,
+                                                text = cleanDisplayTitle,
                                                 color = Color.White,
                                                 fontSize = 13.sp,
                                                 fontWeight = FontWeight.SemiBold,
@@ -498,7 +516,7 @@ fun MusicLibraryScreen(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
-                                                text = "${track.artist.ifBlank { track.channelName }} • Offline",
+                                                text = "$cleanDisplayArtist • Offline",
                                                 color = Color.Gray,
                                                 fontSize = 11.sp,
                                                 maxLines = 1,

@@ -76,7 +76,7 @@ struct YouTubeSearchEngine {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 if let http = response as? HTTPURLResponse, http.statusCode == 200,
                    let html = String(data: data, encoding: .utf8) {
-                    let parsed = parseSearchResults(html: html, isMusic: isMusicOnly)
+                    let parsed = parseSearchResults(html: html, isMusic: isMusicOnly, query: trimmed)
                     if !parsed.isEmpty {
                         return parsed
                     }
@@ -120,49 +120,67 @@ struct YouTubeSearchEngine {
     }
 
     // MARK: - Parsing HTML ytInitialData
-    private static func parseSearchResults(html: String, isMusic: Bool) -> [VideoItem] {
+    private static func parseSearchResults(html: String, isMusic: Bool, query: String = "") -> [VideoItem] {
         var results: [VideoItem] = []
 
-        let marker = "var ytInitialData = "
-        if let startRange = html.range(of: marker),
-           let endRange = html.range(of: ";</script>", range: startRange.upperBound..<html.endIndex) {
-            let jsonStr = String(html[startRange.upperBound..<endRange.lowerBound])
-            if let data = jsonStr.data(using: .utf8),
-               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let contents = (((root["contents"] as? [String: Any])?["twoColumnSearchResultsRenderer"] as? [String: Any])?["primaryContents"] as? [String: Any])?["sectionListRenderer"] as? [String: Any],
-               let sections = contents["contents"] as? [[String: Any]] {
+        let markers = ["var ytInitialData = ", "ytInitialData = ", "window[\"ytInitialData\"] = "]
+        var jsonStr: String? = nil
 
-                for section in sections {
-                    if let itemSection = (section["itemSectionRenderer"] as? [String: Any])?["contents"] as? [[String: Any]] {
-                        for item in itemSection {
-                            if !isMusic, let cr = item["channelRenderer"] as? [String: Any],
-                               let parsed = YouTubeSyncEngine.parseChannelRenderer(cr) {
-                                results.append(parsed)
+        for marker in markers {
+            if let startRange = html.range(of: marker) {
+                let startPos = startRange.upperBound
+                var endPos: String.Index? = nil
+                if let endRange = html.range(of: ";</script>", range: startPos..<html.endIndex) {
+                    endPos = endRange.lowerBound
+                } else if let endRange2 = html.range(of: "</script>", range: startPos..<html.endIndex) {
+                    endPos = endRange2.lowerBound
+                }
+                if let endPos = endPos {
+                    jsonStr = String(html[startPos..<endPos]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if jsonStr?.hasSuffix(";") == true {
+                        jsonStr?.removeLast()
+                    }
+                    break
+                }
+            }
+        }
+
+        if let jsonStr = jsonStr,
+           let data = jsonStr.data(using: .utf8),
+           let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let contents = (((root["contents"] as? [String: Any])?["twoColumnSearchResultsRenderer"] as? [String: Any])?["primaryContents"] as? [String: Any])?["sectionListRenderer"] as? [String: Any],
+           let sections = contents["contents"] as? [[String: Any]] {
+
+            for section in sections {
+                if let itemSection = (section["itemSectionRenderer"] as? [String: Any])?["contents"] as? [[String: Any]] {
+                    for item in itemSection {
+                        if !isMusic, let cr = item["channelRenderer"] as? [String: Any],
+                           let parsed = YouTubeSyncEngine.parseChannelRenderer(cr) {
+                            results.append(parsed)
+                        }
+                        if let vr = item["videoRenderer"] as? [String: Any],
+                           var parsed = YouTubeSyncEngine.parseVideoRenderer(vr) {
+                            if isMusic {
+                                parsed.isMusicTrack = true
+                                parsed.category = "Music"
                             }
-                            if let vr = item["videoRenderer"] as? [String: Any],
-                               var parsed = YouTubeSyncEngine.parseVideoRenderer(vr) {
-                                if isMusic {
-                                    parsed.isMusicTrack = true
-                                    parsed.category = "Music"
-                                }
-                                results.append(parsed)
+                            results.append(parsed)
+                        }
+                        if let cvr = item["compactVideoRenderer"] as? [String: Any],
+                           var parsed = YouTubeSyncEngine.parseVideoRenderer(cvr) {
+                            if isMusic {
+                                parsed.isMusicTrack = true
+                                parsed.category = "Music"
                             }
-                            if let cvr = item["compactVideoRenderer"] as? [String: Any],
-                               var parsed = YouTubeSyncEngine.parseVideoRenderer(cvr) {
-                                if isMusic {
-                                    parsed.isMusicTrack = true
-                                    parsed.category = "Music"
-                                }
-                                results.append(parsed)
+                            results.append(parsed)
+                        }
+                        if let lvm = item["lockupViewModel"] as? [String: Any],
+                           var parsed = YouTubeSyncEngine.parseLockupViewModel(lvm) {
+                            if isMusic {
+                                parsed.isMusicTrack = true
+                                parsed.category = "Music"
                             }
-                            if let lvm = item["lockupViewModel"] as? [String: Any],
-                               var parsed = YouTubeSyncEngine.parseLockupViewModel(lvm) {
-                                if isMusic {
-                                    parsed.isMusicTrack = true
-                                    parsed.category = "Music"
-                                }
-                                results.append(parsed)
-                            }
+                            results.append(parsed)
                         }
                     }
                 }
@@ -176,6 +194,10 @@ struct YouTubeSearchEngine {
                 let nsHtml = html as NSString
                 let matches = regex.matches(in: html, range: NSRange(location: 0, length: nsHtml.length))
                 var seen = Set<String>()
+                var cleanTitle = query.replacingOccurrences(of: " song", with: "", options: .caseInsensitive).trimmingCharacters(in: .whitespacesAndNewlines)
+                if cleanTitle.isEmpty { cleanTitle = "Song Track" }
+                let cleanArtist = "YouTube Music"
+
                 for match in matches {
                     if match.numberOfRanges > 1 {
                         let vid = nsHtml.substring(with: match.range(at: 1))
@@ -183,18 +205,18 @@ struct YouTubeSearchEngine {
                             seen.insert(vid)
                             results.append(VideoItem(
                                 id: vid,
-                                title: "YouTube Video (\(vid))",
-                                channelName: "YouTube Channel",
+                                title: cleanTitle,
+                                channelName: cleanArtist,
                                 channelAvatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
                                 subscriberCount: "1M subscribers",
                                 thumbnailUrl: "https://img.youtube.com/vi/\(vid)/hqdefault.jpg",
                                 views: "500K views",
                                 uploadTime: "Recently",
                                 duration: "3:45",
-                                description: "YouTube stream playback",
+                                description: cleanTitle,
                                 likes: "50K",
                                 isMusicTrack: isMusic,
-                                artist: "Artist",
+                                artist: cleanArtist,
                                 album: "Single",
                                 lyrics: "",
                                 category: isMusic ? "Music" : "YouTube"

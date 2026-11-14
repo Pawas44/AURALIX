@@ -277,8 +277,15 @@ struct MusicLibraryView: View {
 
                             VStack(spacing: 8) {
                                 ForEach(userData.offlineTracks) { track in
+                                    let cleanTitle = (track.title.contains("YouTube Video") || track.title.contains(track.id)) ? (!track.artist.isEmpty && track.artist != "Artist" ? track.artist : "Downloaded Track") : track.title
+                                    let cleanArtist = (track.artist.isEmpty || track.artist == "Artist" || track.artist == "YouTube Channel") ? (!track.channelName.isEmpty && track.channelName != "YouTube Channel" ? track.channelName : "Offline Audio") : track.artist
                                     Button(action: {
-                                        onTrackSelected(track, userData.offlineTracks)
+                                        var playTrack = track
+                                        if playTrack.title != cleanTitle {
+                                            playTrack.title = cleanTitle
+                                            playTrack.artist = cleanArtist
+                                        }
+                                        onTrackSelected(playTrack, userData.offlineTracks)
                                     }) {
                                         HStack(spacing: 12) {
                                             AsyncImage(url: URL(string: track.thumbnailUrl)) { img in
@@ -290,11 +297,11 @@ struct MusicLibraryView: View {
                                             .cornerRadius(6)
 
                                             VStack(alignment: .leading, spacing: 2) {
-                                                Text(track.title)
+                                                Text(cleanTitle)
                                                     .font(.system(size: 13, weight: .semibold))
                                                     .foregroundColor(.white)
                                                     .lineLimit(1)
-                                                Text("\(track.artist.isEmpty ? track.channelName : track.artist) • Offline")
+                                                Text("\(cleanArtist) • Offline")
                                                     .font(.system(size: 11))
                                                     .foregroundColor(Color.gray)
                                                     .lineLimit(1)

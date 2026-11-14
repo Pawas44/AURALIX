@@ -168,6 +168,29 @@ object UserDataRepository {
                     arr.optJSONObject(i)?.let { list.add(jsonToVideo(it)) }
                 }
                 _offlineTracks.value = list
+
+                // Auto-healing: If any track has placeholder title like "YouTube Video (id)", fetch real song title asynchronously
+                repoScope.launch {
+                    var modified = false
+                    val healed = _offlineTracks.value.map { trk ->
+                        if (trk.title.contains("YouTube Video", ignoreCase = true) || trk.title.contains(trk.id)) {
+                            val real = fetchRealVideoMeta(trk.id)
+                            if (real != null && real.first.isNotBlank()) {
+                                modified = true
+                                trk.copy(
+                                    title = real.first,
+                                    artist = if (trk.artist.isBlank() || trk.artist == "Artist" || trk.artist == "YouTube Channel") real.second else trk.artist,
+                                    channelName = if (trk.channelName == "YouTube Channel" || trk.channelName.isBlank()) real.second else trk.channelName,
+                                    thumbnailUrl = if (trk.thumbnailUrl.isBlank()) real.third else trk.thumbnailUrl
+                                )
+                            } else trk
+                        } else trk
+                    }
+                    if (modified) {
+                        _offlineTracks.value = healed
+                        saveOfflineTracks()
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -176,6 +199,34 @@ object UserDataRepository {
 
     // --- Offline Tracks Management ---
     fun isDownloaded(id: String): Boolean = _offlineTracks.value.any { it.id == id }
+
+    fun fetchRealVideoMeta(videoId: String): Triple<String, String, String>? {
+        if (videoId.isBlank()) return null
+        return try {
+            val url = URL("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=$videoId&format=json")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 5000
+                readTimeout = 5000
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                setRequestProperty("Accept", "application/json")
+            }
+            if (conn.responseCode == 200) {
+                val raw = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(raw)
+                val rawTitle = json.optString("title", "").trim()
+                val author = json.optString("author_name", "").trim()
+                val thumb = json.optString("thumbnail_url", "").trim().ifBlank {
+                    "https://img.youtube.com/vi/$videoId/hqdefault.jpg"
+                }
+                if (rawTitle.isNotBlank()) {
+                    Triple(rawTitle, author, thumb)
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     fun startDownload(context: Context, video: VideoItem) {
         val isAlready = isDownloaded(video.id)
@@ -192,9 +243,28 @@ object UserDataRepository {
         }
 
         repoScope.launch {
+            // Guarantee real metadata before initiating download and task notifications
+            var targetVideo = video
+            if (targetVideo.title.contains("YouTube Video", ignoreCase = true) ||
+                targetVideo.title.contains(targetVideo.id) ||
+                targetVideo.title.isBlank() ||
+                targetVideo.artist == "Artist" ||
+                targetVideo.artist == "YouTube Channel"
+            ) {
+                val realMeta = fetchRealVideoMeta(targetVideo.id)
+                if (realMeta != null && realMeta.first.isNotBlank()) {
+                    targetVideo = targetVideo.copy(
+                        title = realMeta.first,
+                        artist = if (targetVideo.artist.isBlank() || targetVideo.artist == "Artist" || targetVideo.artist == "YouTube Channel") realMeta.second else targetVideo.artist,
+                        channelName = if (targetVideo.channelName == "YouTube Channel" || targetVideo.channelName.isBlank()) realMeta.second else targetVideo.channelName,
+                        thumbnailUrl = if (targetVideo.thumbnailUrl.isBlank()) realMeta.third else targetVideo.thumbnailUrl
+                    )
+                }
+            }
+
             val dir = File(context.filesDir, "downloads")
             if (!dir.exists()) dir.mkdirs()
-            val targetFile = File(dir, "${video.id}.m4a")
+            val targetFile = File(dir, "${targetVideo.id}.m4a")
 
             val notifManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
             val channelId = "downloads_channel"
@@ -206,11 +276,11 @@ object UserDataRepository {
                 )
                 notifManager?.createNotificationChannel(channel)
             }
-            val notifId = video.id.hashCode()
+            val notifId = targetVideo.id.hashCode()
 
             _currentDownload.value = DownloadTask(
-                videoId = video.id,
-                title = video.title,
+                videoId = targetVideo.id,
+                title = targetVideo.title,
                 progress = 5,
                 bytesText = "Connecting...",
                 isComplete = false
@@ -220,19 +290,19 @@ object UserDataRepository {
             val candidateFormats = mutableListOf<AudioStreamFormat>()
 
             // 1. Fetch primary format (checks ANDROID muxed format 18, IPADOS itag 140/251, ANDROID_VR)
-            val primary = fetchRealYouTubeAudioFormat(video.id)
+            val primary = fetchRealYouTubeAudioFormat(targetVideo.id)
             if (primary != null) {
                 candidateFormats.add(primary)
             }
 
             // 2. Always guarantee ANDROID Format 18 (mp4 with AAC audio) is in candidate list as unthrottled fallback
             if (candidateFormats.none { it.isMuxed }) {
-                fetchMuxedFormat18(video.id)?.let { candidateFormats.add(it) }
+                fetchMuxedFormat18(targetVideo.id)?.let { candidateFormats.add(it) }
             }
 
             for (format in candidateFormats) {
                 if (targetFile.exists()) targetFile.delete()
-                val ok = downloadStreamToFile(context, video, format, targetFile, notifManager, channelId, notifId)
+                val ok = downloadStreamToFile(context, targetVideo, format, targetFile, notifManager, channelId, notifId)
                 if (ok && targetFile.exists() && targetFile.length() > 200_000L) {
                     isRealStreamDownloaded = true
                     break
@@ -243,8 +313,8 @@ object UserDataRepository {
 
             if (!isRealStreamDownloaded) {
                 _currentDownload.value = DownloadTask(
-                    videoId = video.id,
-                    title = video.title,
+                    videoId = targetVideo.id,
+                    title = targetVideo.title,
                     progress = 0,
                     bytesText = "Download failed (network error)",
                     isComplete = true
@@ -256,8 +326,8 @@ object UserDataRepository {
 
             // Mark download as 100% complete
             _currentDownload.value = DownloadTask(
-                videoId = video.id,
-                title = video.title,
+                videoId = targetVideo.id,
+                title = targetVideo.title,
                 progress = 100,
                 bytesText = "Complete",
                 isComplete = true
@@ -266,7 +336,7 @@ object UserDataRepository {
             try {
                 val completeNotif = androidx.core.app.NotificationCompat.Builder(context, channelId)
                     .setContentTitle("Download Complete")
-                    .setContentText("${video.title} is ready for offline playback")
+                    .setContentText("${targetVideo.title} is ready for offline playback")
                     .setSmallIcon(android.R.drawable.stat_sys_download_done)
                     .setProgress(0, 0, false)
                     .setAutoCancel(true)
@@ -275,8 +345,8 @@ object UserDataRepository {
             } catch (e: Exception) {}
 
             val current = _offlineTracks.value.toMutableList()
-            current.removeAll { it.id == video.id }
-            current.add(0, video)
+            current.removeAll { it.id == targetVideo.id }
+            current.add(0, targetVideo)
             _offlineTracks.value = current
             saveOfflineTracks()
 
@@ -663,6 +733,31 @@ object UserDataRepository {
             current.add(0, video)
             _offlineTracks.value = current
             saveOfflineTracks()
+
+            if (video.title.contains("YouTube Video", ignoreCase = true) ||
+                video.title.contains(video.id) ||
+                video.title.isBlank() ||
+                video.artist == "Artist" ||
+                video.artist == "YouTube Channel"
+            ) {
+                repoScope.launch {
+                    val realMeta = fetchRealVideoMeta(video.id)
+                    if (realMeta != null && realMeta.first.isNotBlank()) {
+                        val updated = _offlineTracks.value.map { trk ->
+                            if (trk.id == video.id) {
+                                trk.copy(
+                                    title = realMeta.first,
+                                    artist = if (trk.artist.isBlank() || trk.artist == "Artist" || trk.artist == "YouTube Channel") realMeta.second else trk.artist,
+                                    channelName = if (trk.channelName == "YouTube Channel" || trk.channelName.isBlank()) realMeta.second else trk.channelName,
+                                    thumbnailUrl = if (trk.thumbnailUrl.isBlank()) realMeta.third else trk.thumbnailUrl
+                                )
+                            } else trk
+                        }
+                        _offlineTracks.value = updated
+                        saveOfflineTracks()
+                    }
+                }
+            }
             true
         }
     }

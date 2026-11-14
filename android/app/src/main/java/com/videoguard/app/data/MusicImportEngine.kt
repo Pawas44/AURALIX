@@ -163,7 +163,23 @@ object MusicImportEngine {
                 val resolved = resolvedBatch[idx]
                 val meta = batch[idx]
                 if (resolved != null) {
-                    matchedVideos.add(resolved)
+                    val cleanTitle = if (resolved.title.contains("YouTube Video", ignoreCase = true) || resolved.title.contains(resolved.id) || resolved.title.isBlank()) {
+                        meta.title
+                    } else {
+                        resolved.title
+                    }
+                    val cleanArtist = if (resolved.artist.isBlank() || resolved.artist == "Artist" || resolved.artist == "YouTube Channel") {
+                        meta.artist.ifBlank { resolved.channelName }
+                    } else {
+                        resolved.artist
+                    }
+                    matchedVideos.add(
+                        resolved.copy(
+                            title = cleanTitle,
+                            artist = cleanArtist,
+                            album = if (resolved.album.isBlank() || resolved.album == "Single") meta.album.ifBlank { resolved.album } else resolved.album
+                        )
+                    )
                 }
                 val currentDone = minOf(i + idx + 1, total)
                 onProgress(
