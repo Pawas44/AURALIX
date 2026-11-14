@@ -214,44 +214,12 @@ struct MusicLibraryView: View {
                             .foregroundColor(.white)
                             .padding(.horizontal, 16)
 
+                        let sampleTracks = Array(userData.watchHistory.prefix(8))
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 12) {
-                                ForEach(userData.watchHistory.shuffled().prefix(8)) { track in
-                                    Button(action: { onTrackSelected(track, userData.watchHistory) }) {
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            ZStack(alignment: .bottomTrailing) {
-                                                AsyncImage(url: URL(string: track.thumbnailUrl)) { img in
-                                                    img.resizable().aspectRatio(contentMode: .fill)
-                                                } placeholder: {
-                                                    Rectangle().fill(AppTheme.ytMusicCardBg)
-                                                }
-                                                .frame(width: 120, height: 120)
-                                                .cornerRadius(8)
-                                                .clipped()
-
-                                                Circle()
-                                                    .fill(Color.black.opacity(0.7))
-                                                    .frame(width: 28, height: 28)
-                                                    .overlay(
-                                                        Image(systemName: "play.fill")
-                                                            .font(.system(size: 12))
-                                                            .foregroundColor(.white)
-                                                    )
-                                                    .padding(6)
-                                            }
-
-                                            Text(track.title)
-                                                .font(.system(size: 12, weight: .medium))
-                                                .foregroundColor(.white)
-                                                .lineLimit(1)
-                                                .frame(width: 120, alignment: .leading)
-
-                                            Text("Mix • \(track.channelName)")
-                                                .font(.system(size: 11))
-                                                .foregroundColor(Color(hex: 0xAAAAAA))
-                                                .lineLimit(1)
-                                                .frame(width: 120, alignment: .leading)
-                                        }
+                                ForEach(sampleTracks) { track in
+                                    MadeForYouTrackCard(track: track) {
+                                        onTrackSelected(track, userData.watchHistory)
                                     }
                                 }
                             }
@@ -277,45 +245,8 @@ struct MusicLibraryView: View {
 
                             VStack(spacing: 8) {
                                 ForEach(userData.offlineTracks) { track in
-                                    let cleanTitle = (track.title.contains("YouTube Video") || track.title.contains(track.id)) ? (!track.artist.isEmpty && track.artist != "Artist" ? track.artist : "Downloaded Track") : track.title
-                                    let cleanArtist = (track.artist.isEmpty || track.artist == "Artist" || track.artist == "YouTube Channel") ? (!track.channelName.isEmpty && track.channelName != "YouTube Channel" ? track.channelName : "Offline Audio") : track.artist
-                                    Button(action: {
-                                        var playTrack = track
-                                        if playTrack.title != cleanTitle {
-                                            playTrack.title = cleanTitle
-                                            playTrack.artist = cleanArtist
-                                        }
+                                    OfflineTrackRow(track: track) { playTrack in
                                         onTrackSelected(playTrack, userData.offlineTracks)
-                                    }) {
-                                        HStack(spacing: 12) {
-                                            AsyncImage(url: URL(string: track.thumbnailUrl)) { img in
-                                                img.resizable().aspectRatio(contentMode: .fill)
-                                            } placeholder: {
-                                                Color(hex: 0x222222)
-                                            }
-                                            .frame(width: 44, height: 44)
-                                            .cornerRadius(6)
-
-                                            VStack(alignment: .leading, spacing: 2) {
-                                                Text(cleanTitle)
-                                                    .font(.system(size: 13, weight: .semibold))
-                                                    .foregroundColor(.white)
-                                                    .lineLimit(1)
-                                                Text("\(cleanArtist) • Offline")
-                                                    .font(.system(size: 11))
-                                                    .foregroundColor(Color.gray)
-                                                    .lineLimit(1)
-                                            }
-
-                                            Spacer()
-
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .font(.system(size: 17))
-                                                .foregroundColor(AppTheme.ytMusicRedAccent)
-                                        }
-                                        .padding(10)
-                                        .background(Color(hex: 0x141620))
-                                        .cornerRadius(10)
                                     }
                                 }
                             }
@@ -651,6 +582,111 @@ struct MusicLibraryView: View {
                         .foregroundColor(.white)
                 }
             }
+        }
+    }
+}
+
+// MARK: - Subcomponents to ensure fast Swift type-checking
+struct MadeForYouTrackCard: View {
+    let track: VideoItem
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            VStack(alignment: .leading, spacing: 6) {
+                ZStack(alignment: .bottomTrailing) {
+                    AsyncImage(url: URL(string: track.thumbnailUrl)) { img in
+                        img.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Rectangle().fill(AppTheme.ytMusicCardBg)
+                    }
+                    .frame(width: 120, height: 120)
+                    .cornerRadius(8)
+                    .clipped()
+
+                    Circle()
+                        .fill(Color.black.opacity(0.7))
+                        .frame(width: 28, height: 28)
+                        .overlay(
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white)
+                        )
+                        .padding(6)
+                }
+
+                Text(track.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .frame(width: 120, alignment: .leading)
+
+                Text("Mix • \(track.channelName)")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(hex: 0xAAAAAA))
+                    .lineLimit(1)
+                    .frame(width: 120, alignment: .leading)
+            }
+        }
+    }
+}
+
+struct OfflineTrackRow: View {
+    let track: VideoItem
+    let onSelect: (VideoItem) -> Void
+
+    private var cleanTitle: String {
+        if track.title.contains("YouTube Video") || track.title.contains(track.id) {
+            return (!track.artist.isEmpty && track.artist != "Artist") ? track.artist : "Downloaded Track"
+        }
+        return track.title
+    }
+
+    private var cleanArtist: String {
+        if track.artist.isEmpty || track.artist == "Artist" || track.artist == "YouTube Channel" {
+            return (!track.channelName.isEmpty && track.channelName != "YouTube Channel") ? track.channelName : "Offline Audio"
+        }
+        return track.artist
+    }
+
+    var body: some View {
+        Button(action: {
+            var playTrack = track
+            if playTrack.title != cleanTitle {
+                playTrack.title = cleanTitle
+                playTrack.artist = cleanArtist
+            }
+            onSelect(playTrack)
+        }) {
+            HStack(spacing: 12) {
+                AsyncImage(url: URL(string: track.thumbnailUrl)) { img in
+                    img.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Color(hex: 0x222222)
+                }
+                .frame(width: 44, height: 44)
+                .cornerRadius(6)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(cleanTitle)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    Text("\(cleanArtist) • Offline")
+                        .font(.system(size: 11))
+                        .foregroundColor(Color.gray)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 17))
+                    .foregroundColor(AppTheme.ytMusicRedAccent)
+            }
+            .padding(10)
+            .background(Color(hex: 0x141620))
+            .cornerRadius(10)
         }
     }
 }

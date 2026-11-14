@@ -19,6 +19,18 @@ final class LyricsEngine {
 
     private init() {}
 
+    private func getCached(key: String) -> LyricsResult? {
+        lock.lock()
+        defer { lock.unlock() }
+        return memoryCache[key]
+    }
+
+    private func setCached(key: String, result: LyricsResult?) {
+        lock.lock()
+        defer { lock.unlock() }
+        memoryCache[key] = result
+    }
+
     func getLyrics(
         trackTitle: String,
         artistName: String,
@@ -29,12 +41,9 @@ final class LyricsEngine {
         let cleanArtist = cleanArtistName(artistName)
         let cacheKey = "\(cleanTitle.lowercased())_\(cleanArtist.lowercased())_\(videoId)"
 
-        lock.lock()
-        if let cached = memoryCache[cacheKey] {
-            lock.unlock()
+        if let cached = getCached(key: cacheKey) {
             return cached
         }
-        lock.unlock()
 
         var result: LyricsResult? = nil
 
@@ -77,10 +86,7 @@ final class LyricsEngine {
             }
         }
 
-        lock.lock()
-        memoryCache[cacheKey] = result
-        lock.unlock()
-
+        setCached(key: cacheKey, result: result)
         return result
     }
 
