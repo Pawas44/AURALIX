@@ -236,8 +236,13 @@ fun PlaylistDetailScreen(
                     ) {
                         Button(
                             onClick = {
-                                if (currentVideos.isNotEmpty()) {
-                                    onVideoSelected(currentVideos.first(), currentVideos)
+                                try {
+                                    val safeList = currentVideos.filter { it.id.isNotBlank() }
+                                    if (safeList.isNotEmpty()) {
+                                        onVideoSelected(safeList.first(), safeList)
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
@@ -261,9 +266,14 @@ fun PlaylistDetailScreen(
 
                         Button(
                             onClick = {
-                                if (currentVideos.isNotEmpty()) {
-                                    val shuffled = currentVideos.shuffled()
-                                    onVideoSelected(shuffled.first(), shuffled)
+                                try {
+                                    val safeList = currentVideos.filter { it.id.isNotBlank() }
+                                    if (safeList.isNotEmpty()) {
+                                        val shuffled = safeList.shuffled()
+                                        onVideoSelected(shuffled.first(), shuffled)
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(

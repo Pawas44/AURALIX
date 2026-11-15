@@ -394,8 +394,12 @@ fun MainScreen() {
                             initialPlaylist = activePlaylist,
                             onBack = { activePlaylist = null },
                             onVideoSelected = { video, queue ->
-                                PlaybackController.playTrack(video, queue)
-                                isPlayerExpanded = true
+                                try {
+                                    PlaybackController.playTrack(video, queue)
+                                    isPlayerExpanded = true
+                                } catch (e: Exception) {
+                                    android.util.Log.e("MainScreen", "Error playing track", e)
+                                }
                             }
                         )
                     }

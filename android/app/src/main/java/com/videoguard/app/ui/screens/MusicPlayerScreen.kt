@@ -268,25 +268,33 @@ fun MusicPlayerScreen(
             listOf(track)
         }
     }
-    val initialIndex = remember(activeQueue, track.id) {
-        activeQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+    val safeActiveQueue = remember(activeQueue) {
+        if (activeQueue.isNotEmpty()) activeQueue else listOf(track)
     }
-    val pagerState = rememberPagerState(
-        initialPage = initialIndex
-    ) {
-        activeQueue.size
+    val initialIndex = remember(safeActiveQueue, track.id) {
+        val idx = safeActiveQueue.indexOfFirst { it.id == track.id }
+        if (idx >= 0) idx else 0
+    }
+    val pagerState = key(safeActiveQueue.firstOrNull()?.id ?: track.id) {
+        rememberPagerState(
+            initialPage = initialIndex.coerceIn(0, (safeActiveQueue.size - 1).coerceAtLeast(0))
+        ) {
+            safeActiveQueue.size.coerceAtLeast(1)
+        }
     }
 
     // Guard against recursive re-triggers between programmatic page changes and user swipe gestures
     var isProgrammaticScroll by remember { mutableStateOf(false) }
 
     // Sync pager when track changes externally (Next/Prev buttons, auto-play)
-    LaunchedEffect(track.id, activeQueue) {
-        val targetIdx = activeQueue.indexOfFirst { it.id == track.id }
-        if (targetIdx >= 0 && targetIdx != pagerState.currentPage) {
+    LaunchedEffect(track.id, safeActiveQueue) {
+        val targetIdx = safeActiveQueue.indexOfFirst { it.id == track.id }
+        if (targetIdx >= 0 && targetIdx != pagerState.currentPage && targetIdx < safeActiveQueue.size) {
             isProgrammaticScroll = true
             try {
                 pagerState.scrollToPage(targetIdx)
+            } catch (e: Exception) {
+                // Ignore transient pager scroll race
             } finally {
                 isProgrammaticScroll = false
             }
@@ -297,10 +305,14 @@ fun MusicPlayerScreen(
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.settledPage }.collect { settledPage ->
             if (!isProgrammaticScroll && !pagerState.isScrollInProgress) {
-                if (settledPage in activeQueue.indices) {
-                    val settledTrack = activeQueue[settledPage]
+                if (settledPage in safeActiveQueue.indices) {
+                    val settledTrack = safeActiveQueue[settledPage]
                     if (settledTrack.id != track.id) {
-                        com.videoguard.app.service.PlaybackController.playTrack(settledTrack, activeQueue)
+                        try {
+                            com.videoguard.app.service.PlaybackController.playTrack(settledTrack, safeActiveQueue)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                     }
                 }
             }
@@ -308,27 +320,28 @@ fun MusicPlayerScreen(
     }
 
     // Dynamic Ambient Background Interpolation (YouTube Music — Swipe Bg Transition)
-    val page = pagerState.currentPage.coerceIn(0, (activeQueue.size - 1).coerceAtLeast(0))
+    val page = pagerState.currentPage.coerceIn(0, (safeActiveQueue.size - 1).coerceAtLeast(0))
     val offsetFraction = pagerState.currentPageOffsetFraction
 
     val (fromIdx, toIdx, blend) = if (offsetFraction >= 0f) {
-        val next = (page + 1).coerceAtMost(activeQueue.lastIndex.coerceAtLeast(0))
+        val next = (page + 1).coerceAtMost(safeActiveQueue.lastIndex.coerceAtLeast(0))
         Triple(page, next, offsetFraction)
     } else {
         val prev = (page - 1).coerceAtLeast(0)
         Triple(page, prev, -offsetFraction)
     }
 
-    val fromPalette = remember(fromIdx, activeQueue) {
-        if (fromIdx in activeQueue.indices) getTrackPalette(activeQueue[fromIdx]) else getTrackPalette(track)
+    val fromPalette = remember(fromIdx, safeActiveQueue) {
+        if (fromIdx in safeActiveQueue.indices) getTrackPalette(safeActiveQueue[fromIdx]) else getTrackPalette(track)
     }
-    val toPalette = remember(toIdx, activeQueue) {
-        if (toIdx in activeQueue.indices) getTrackPalette(activeQueue[toIdx]) else getTrackPalette(track)
+    val toPalette = remember(toIdx, safeActiveQueue) {
+        if (toIdx in safeActiveQueue.indices) getTrackPalette(safeActiveQueue[toIdx]) else getTrackPalette(track)
     }
 
-    val dynamicPrimary = androidx.compose.ui.graphics.lerp(fromPalette.primary, toPalette.primary, blend)
-    val dynamicSecondary = androidx.compose.ui.graphics.lerp(fromPalette.secondary, toPalette.secondary, blend)
-    val dynamicDeep = androidx.compose.ui.graphics.lerp(fromPalette.deep, toPalette.deep, blend)
+    val safeBlend = if (blend.isNaN()) 0f else blend.coerceIn(0f, 1f)
+    val dynamicPrimary = androidx.compose.ui.graphics.lerp(fromPalette.primary, toPalette.primary, safeBlend)
+    val dynamicSecondary = androidx.compose.ui.graphics.lerp(fromPalette.secondary, toPalette.secondary, safeBlend)
+    val dynamicDeep = androidx.compose.ui.graphics.lerp(fromPalette.deep, toPalette.deep, safeBlend)
 
     val ambientGradient = remember(dynamicPrimary, dynamicSecondary, dynamicDeep) {
         Brush.verticalGradient(
@@ -613,7 +626,7 @@ fun MusicPlayerScreen(
                 pageSpacing = 16.dp,
                 modifier = Modifier.fillMaxSize()
             ) { pageIndex ->
-                val itemTrack = activeQueue.getOrNull(pageIndex) ?: track
+                val itemTrack = safeActiveQueue.getOrNull(pageIndex) ?: track
                 val pageOffset = abs((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction).coerceIn(0f, 1f)
                 val scale = 0.88f + (1f - 0.88f) * (1f - pageOffset)
                 val alpha = 0.45f + (1f - 0.45f) * (1f - pageOffset)
