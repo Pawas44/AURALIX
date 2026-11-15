@@ -42,9 +42,12 @@ import coil.compose.AsyncImage
 import com.videoguard.app.data.AccountRepository
 import com.videoguard.app.data.ImportProgress
 import com.videoguard.app.data.MusicImportEngine
+import com.videoguard.app.data.RemotePlaylistSummary
+import com.videoguard.app.data.SpotifyConnectEngine
 import com.videoguard.app.data.UserDataRepository
 import com.videoguard.app.model.UserPlaylist
 import com.videoguard.app.model.VideoItem
+import com.videoguard.app.ui.components.SpotifyLoginDialog
 import com.videoguard.app.ui.theme.YTMusicRedAccent
 import kotlinx.coroutines.launch
 
@@ -76,6 +79,13 @@ fun MusicLibraryScreen(
     var isImporting by remember { mutableStateOf(false) }
     var importedPlaylistResult by remember { mutableStateOf<UserPlaylist?>(null) }
     val clipboardManager = LocalClipboardManager.current
+
+    // Spotify Connect States
+    val isSpotifyConnected by SpotifyConnectEngine.isConnected.collectAsState()
+    val spotifyUserName by SpotifyConnectEngine.userDisplayName.collectAsState()
+    val spotifyPlaylists by SpotifyConnectEngine.userPlaylists.collectAsState()
+    val isSpotifySyncing by SpotifyConnectEngine.isSyncing.collectAsState()
+    var showSpotifyLoginDialog by remember { mutableStateOf(false) }
 
     val likedPlaylist = playlists.find { it.id == "liked_videos" }
     val likedCount = likedPlaylist?.videoCount ?: 0
@@ -156,7 +166,7 @@ fun MusicLibraryScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("All", "Playlists", "Liked Songs", "Recently Played", "Downloads").forEach { chip ->
+                    listOf("All", "Playlists", "Spotify", "Liked Songs", "Recently Played", "Downloads").forEach { chip ->
                         val isSelected = selectedFilter == chip
                         FilterChip(
                             selected = isSelected,
@@ -175,58 +185,348 @@ fun MusicLibraryScreen(
                 }
             }
 
-            // 1. "Import your music" Section (Matching user reference image)
-            if (selectedFilter == "All" || selectedFilter == "Playlists") {
+            // 1. Spotify Connect & Import Section
+            if (selectedFilter == "All" || selectedFilter == "Playlists" || selectedFilter == "Spotify") {
                 item {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFF0E1019)),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
-                    ) {
-                        Column(
+                    if (!isSpotifyConnected) {
+                        Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp)
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0C1610)),
+                            border = BorderStroke(1.dp, Color(0xFF1DB954).copy(alpha = 0.25f))
                         ) {
-                            Text(
-                                text = "Import your music",
-                                color = Color.White,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Move your Spotify library and playlists seamlessly to AURALIX",
-                                color = Color(0xFFAAAAAA),
-                                fontSize = 12.sp
-                            )
-
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            // Spotify
-                            ServiceRow(
-                                title = "Spotify",
-                                brandColor = Color(0xFF1DB954),
-                                icon = Icons.Default.MusicNote,
-                                onClick = {
-                                    selectedImportService = "Spotify"
-                                    importUrlInput = ""
-                                    importProgress = null
-                                    importedPlaylistResult = null
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF1DB954).copy(alpha = 0.2f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MusicNote,
+                                            contentDescription = "Spotify",
+                                            tint = Color(0xFF1DB954),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Connect Spotify",
+                                            color = Color.White,
+                                            fontSize = 17.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Sync your Liked Songs & Playlists to AURALIX",
+                                            color = Color(0xFFAAAAAA),
+                                            fontSize = 11.sp
+                                        )
+                                    }
                                 }
-                            )
 
-                            Spacer(modifier = Modifier.height(10.dp))
+                                Spacer(modifier = Modifier.height(14.dp))
 
-                            Text(
-                                text = "Paste any Spotify playlist link to import all tracks directly into your AURALIX library.",
-                                color = Color(0xFF888B9E),
-                                fontSize = 11.sp,
-                                lineHeight = 15.sp
-                            )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Button(
+                                        onClick = { showSpotifyLoginDialog = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Connect", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            selectedImportService = "Spotify"
+                                            importUrlInput = ""
+                                            importProgress = null
+                                            importedPlaylistResult = null
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = BorderStroke(1.dp, Color(0xFF444444)),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(Icons.Default.ContentPaste, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Paste Link", color = Color.White, fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Connected Spotify Hub
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFF0C1811)),
+                            border = BorderStroke(1.dp, Color(0xFF1DB954).copy(alpha = 0.4f))
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp)
+                            ) {
+                                // Header
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(36.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF1DB954).copy(alpha = 0.2f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MusicNote,
+                                            contentDescription = "Spotify",
+                                            tint = Color(0xFF1DB954),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Connected to Spotify",
+                                            color = Color.White,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "Logged in as ${spotifyUserName ?: "Spotify Listener"}",
+                                            color = Color(0xFF1DB954),
+                                            fontSize = 12.sp
+                                        )
+                                    }
+
+                                    // Refresh / Sync
+                                    IconButton(
+                                        onClick = {
+                                            scope.launch { SpotifyConnectEngine.syncAll() }
+                                        },
+                                        enabled = !isSpotifySyncing
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Sync",
+                                            tint = if (isSpotifySyncing) Color(0xFF1DB954) else Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    // Disconnect
+                                    IconButton(
+                                        onClick = { SpotifyConnectEngine.disconnect() }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Disconnect",
+                                            tint = Color(0xFF888888),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                // Spotify Liked Songs Card
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val summary = RemotePlaylistSummary(
+                                                id = "liked",
+                                                title = "Spotify Liked Songs",
+                                                description = "Imported from Spotify Liked Songs",
+                                                trackCount = 0,
+                                                coverUrl = null
+                                            )
+                                            selectedImportService = "Spotify"
+                                            isImporting = true
+                                            importProgress = ImportProgress("Reading Spotify Liked Songs...", 0, 0)
+                                            scope.launch {
+                                                val res = MusicImportEngine.importRemotePlaylist(summary) { prog ->
+                                                    importProgress = prog
+                                                }
+                                                isImporting = false
+                                                res.onSuccess { pl ->
+                                                    importedPlaylistResult = pl
+                                                }.onFailure { err ->
+                                                    importProgress = ImportProgress("Failed", 0, 0, error = err.message ?: "Failed")
+                                                }
+                                            }
+                                        },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF122218)),
+                                    border = BorderStroke(1.dp, Color(0xFF1DB954).copy(alpha = 0.3f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(
+                                                    Brush.linearGradient(
+                                                        colors = listOf(Color(0xFF1DB954), Color(0xFF0F5A2C))
+                                                    )
+                                                ),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Favorite,
+                                                contentDescription = "Spotify Liked Songs",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.width(12.dp))
+
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Liked Songs (Spotify)",
+                                                color = Color.White,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "Tap to import & sync to AURALIX",
+                                                color = Color(0xFFAAAAAA),
+                                                fontSize = 11.sp
+                                            )
+                                        }
+
+                                        Icon(
+                                            imageVector = Icons.Default.PlayCircle,
+                                            contentDescription = "Import",
+                                            tint = Color(0xFF1DB954),
+                                            modifier = Modifier.size(26.dp)
+                                        )
+                                    }
+                                }
+
+                                // Spotify User Playlists
+                                if (spotifyPlaylists.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Text(
+                                        text = "Your Playlists (${spotifyPlaylists.size})",
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    LazyRow(
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        items(spotifyPlaylists) { pl ->
+                                            Column(
+                                                modifier = Modifier
+                                                    .width(105.dp)
+                                                    .clickable {
+                                                        selectedImportService = "Spotify"
+                                                        isImporting = true
+                                                        importProgress = ImportProgress("Reading ${pl.title}...", 0, 0)
+                                                        scope.launch {
+                                                            val res = MusicImportEngine.importRemotePlaylist(pl) { prog ->
+                                                                importProgress = prog
+                                                            }
+                                                            isImporting = false
+                                                            res.onSuccess { imported ->
+                                                                importedPlaylistResult = imported
+                                                            }.onFailure { err ->
+                                                                importProgress = ImportProgress("Failed", 0, 0, error = err.message ?: "Failed")
+                                                            }
+                                                        }
+                                                    }
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(105.dp)
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .background(Color(0xFF1C1C1C)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    if (!pl.coverUrl.isNullOrBlank()) {
+                                                        AsyncImage(
+                                                            model = pl.coverUrl,
+                                                            contentDescription = pl.title,
+                                                            contentScale = ContentScale.Crop,
+                                                            modifier = Modifier.fillMaxSize()
+                                                        )
+                                                    } else {
+                                                        Icon(
+                                                            imageVector = Icons.Default.MusicNote,
+                                                            contentDescription = null,
+                                                            tint = Color(0xFF1DB954),
+                                                            modifier = Modifier.size(36.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = pl.title,
+                                                    color = Color.White,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = pl.description.ifBlank { "Playlist" },
+                                                    color = Color(0xFF888888),
+                                                    fontSize = 10.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    TextButton(
+                                        onClick = {
+                                            selectedImportService = "Spotify"
+                                            importUrlInput = ""
+                                            importProgress = null
+                                            importedPlaylistResult = null
+                                        },
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("+ Import another link", color = Color(0xFF1DB954), fontSize = 11.sp)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -719,6 +1019,16 @@ fun MusicLibraryScreen(
                 Spacer(modifier = Modifier.height(90.dp))
             }
         }
+    }
+
+    // Spotify Login Dialog
+    if (showSpotifyLoginDialog) {
+        SpotifyLoginDialog(
+            onDismiss = { showSpotifyLoginDialog = false },
+            onLoginSuccess = {
+                showSpotifyLoginDialog = false
+            }
+        )
     }
 
     // Modal: New Playlist Dialog

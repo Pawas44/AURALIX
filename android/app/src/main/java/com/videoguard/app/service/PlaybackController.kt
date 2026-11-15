@@ -254,7 +254,7 @@ object PlaybackController {
         appContext = appCtx
         com.videoguard.app.data.UserDataRepository.init(context)
         com.videoguard.app.data.AccountRepository.init(context)
-        com.videoguard.app.data.SpotifyOAuthEngine.init(context)
+        com.videoguard.app.data.SpotifyConnectEngine.init(context)
         com.videoguard.app.recommendation.RecommendationEngine.init(context)
         registerNoisyReceiver()
     }

@@ -18,7 +18,9 @@ import java.util.regex.Pattern
 data class ImportTrackMeta(
     val title: String,
     val artist: String,
-    val album: String = ""
+    val album: String = "",
+    val durationSeconds: Int = 0,
+    val spotifyId: String = ""
 )
 
 data class ImportProgress(
@@ -101,7 +103,9 @@ object MusicImportEngine {
         try {
             onProgress(ImportProgress("Fetching tracks from ${summary.sourceProvider}...", 0, summary.trackCount))
             val tracks = if (summary.sourceProvider == "Spotify") {
-                SpotifyOAuthEngine.fetchPlaylistTracks(summary.id)
+                SpotifyConnectEngine.fetchPlaylistTracks(summary.id) { prog ->
+                    onProgress(prog)
+                }
             } else {
                 emptyList()
             }
@@ -151,7 +155,9 @@ object MusicImportEngine {
                             if (results.isEmpty() && meta.artist.isNotBlank()) {
                                 results = YouTubeSearchEngine.searchVideos(meta.title, isMusicOnly = true)
                             }
-                            results.firstOrNull()
+                            // Pick best match using ByTune scoring
+                            val bestCandidate = results.maxByOrNull { scoreTrackMatch(meta, it) }
+                            bestCandidate ?: results.firstOrNull()
                         } catch (e: Exception) {
                             null
                         }
@@ -216,16 +222,17 @@ object MusicImportEngine {
         }
 
         if (isPlaylist) {
-            val token = SpotifyOAuthEngine.getAccessToken()
-            if (!token.isNullOrBlank()) {
+            if (SpotifyConnectEngine.isConnected.value || !SpotifyConnectEngine.getSpDcCookie().isNullOrBlank()) {
                 try {
-                    val (pTitle, oauthTracks) = kotlinx.coroutines.runBlocking {
-                        val title = SpotifyOAuthEngine.fetchPlaylistTitle(id)
-                        val tracks = SpotifyOAuthEngine.fetchPlaylistTracks(id)
+                    val (pTitle, connectedTracks) = kotlinx.coroutines.runBlocking {
+                        val title = SpotifyConnectEngine.fetchPlaylistTitle(id)
+                        val tracks = SpotifyConnectEngine.fetchPlaylistTracks(id) { prog ->
+                            onProgress(prog)
+                        }
                         Pair(title, tracks)
                     }
-                    if (oauthTracks.isNotEmpty()) {
-                        return Pair(pTitle, oauthTracks)
+                    if (connectedTracks.isNotEmpty()) {
+                        return Pair(pTitle, connectedTracks)
                     }
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -666,5 +673,75 @@ object MusicImportEngine {
         } catch (e: Exception) {
             ""
         }
+    }
+
+    private val VERSION_REGEX = Regex("""(?i)\b(remix|live|acoustic|instrumental|unplugged|karaoke|slowed|reverb|sped|nightcore|lo-?fi|cover|reprise|mashup)\b""")
+
+    private fun extractVersionMarkers(title: String): Set<String> {
+        return VERSION_REGEX.findAll(title.lowercase()).map { it.value.replace("-", "") }.toSet()
+    }
+
+    private fun cleanTitleWords(title: String): String {
+        return title.replace(Regex("""[([{【「『][^)\]}】」』]*[)\]}】」』]"""), " ")
+            .replace(Regex("""\s[-–—]\s.*$"""), " ")
+            .replace(Regex("""[^a-zA-Z0-9\s]"""), "")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .lowercase()
+    }
+
+    private fun diceSimilarity(a: String, b: String): Float {
+        val x = a.replace(" ", "")
+        val y = b.replace(" ", "")
+        if (x == y) return 1f
+        if (x.length < 2 || y.length < 2) return if (x.contains(y) || y.contains(x)) 0.8f else 0f
+        val pairs = mutableMapOf<String, Int>()
+        for (i in 0 until x.length - 1) {
+            val pair = x.substring(i, i + 2)
+            pairs[pair] = (pairs[pair] ?: 0) + 1
+        }
+        var shared = 0
+        for (i in 0 until y.length - 1) {
+            val pair = y.substring(i, i + 2)
+            val count = pairs[pair] ?: 0
+            if (count > 0) {
+                shared++
+                pairs[pair] = count - 1
+            }
+        }
+        return (2f * shared) / (x.length - 1 + y.length - 1)
+    }
+
+    private fun scoreTrackMatch(meta: ImportTrackMeta, candidate: VideoItem): Int {
+        val metaTitle = cleanTitleWords(meta.title)
+        val candTitle = cleanTitleWords(candidate.title)
+
+        // Version markers (remix, acoustic, live) must agree
+        val metaVersions = extractVersionMarkers(meta.title)
+        val candVersions = extractVersionMarkers(candidate.title)
+        if (metaVersions != candVersions) return -100
+
+        val sim = diceSimilarity(metaTitle, candTitle)
+        if (sim < 0.60f) return -100
+
+        var score = (sim * 100).toInt()
+
+        // Artist overlap
+        if (meta.artist.isNotBlank() && (candidate.artist.isNotBlank() || candidate.channelName.isNotBlank())) {
+            val targetArtists = meta.artist.split(Regex("[,&+/;]")).map { it.trim().lowercase().replace(" ", "") }.filter { it.isNotBlank() }
+            val candArtistStr = "${candidate.artist} ${candidate.channelName}".lowercase().replace(" ", "")
+            val hasOverlap = targetArtists.any { it.length > 2 && candArtistStr.contains(it) }
+            if (hasOverlap) score += 30
+        }
+
+        // Duration match
+        if (meta.durationSeconds > 0 && candidate.duration > 0) {
+            val gap = kotlin.math.abs(meta.durationSeconds - candidate.duration)
+            if (gap <= 4) score += 25
+            else if (gap <= 10) score += 15
+            else if (gap > 20) score -= 30
+        }
+
+        return score
     }
 }
