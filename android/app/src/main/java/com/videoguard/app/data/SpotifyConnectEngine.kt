@@ -117,6 +117,15 @@ object SpotifyConnectEngine {
 
     fun getAccessToken(): String? = cachedAccessToken
 
+    fun saveSession(spDcCookie: String) {
+        val cleanCookie = spDcCookie.trim().removePrefix("sp_dc=").trim()
+        if (cleanCookie.isBlank()) return
+        prefs?.edit()?.putString(KEY_SP_DC, cleanCookie)?.apply()
+        cachedAccessToken = null
+        tokenExpiresAtMs = 0L
+        _isConnected.value = true
+    }
+
     fun saveAccessToken(token: String, displayName: String = "Spotify User") {
         saveSession(token)
         _userDisplayName.value = displayName

@@ -735,13 +735,24 @@ object MusicImportEngine {
         }
 
         // Duration match
-        if (meta.durationSeconds > 0 && candidate.duration > 0) {
-            val gap = kotlin.math.abs(meta.durationSeconds - candidate.duration)
+        val candSec = parseDurationSec(candidate.duration)
+        if (meta.durationSeconds > 0 && candSec > 0) {
+            val gap = kotlin.math.abs(meta.durationSeconds - candSec)
             if (gap <= 4) score += 25
             else if (gap <= 10) score += 15
             else if (gap > 20) score -= 30
         }
 
         return score
+    }
+
+    private fun parseDurationSec(str: String): Int {
+        val parts = str.trim().split(":").mapNotNull { it.toIntOrNull() }
+        return when (parts.size) {
+            1 -> parts[0]
+            2 -> parts[0] * 60 + parts[1]
+            3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
+            else -> 0
+        }
     }
 }
