@@ -63,6 +63,7 @@ import coil.compose.AsyncImage
 import com.videoguard.app.data.VideoRepository
 import com.videoguard.app.model.VideoItem
 import com.videoguard.app.ui.components.AddToPlaylistSheet
+import com.videoguard.app.ui.components.DynamicIslandDownloadPill
 import com.videoguard.app.ui.components.YouTubeVideoPlayer
 import androidx.compose.ui.draw.drawBehind
 import com.videoguard.app.ui.theme.AmbientPalette
@@ -425,6 +426,15 @@ fun MusicPlayerScreen(
                     )
                 )
         )
+
+        // Dynamic Island Download Progress Pill overlay
+        DynamicIslandDownloadPill(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 4.dp)
+                .zIndex(100f)
+        )
+
         // Main Player UI (Fixed height, generous spacing, never squashed!)
         Column(
             modifier = Modifier

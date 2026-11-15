@@ -25,6 +25,15 @@ data class DownloadTask(
     val isComplete: Boolean = false
 )
 
+data class BatchDownloadState(
+    val playlistTitle: String,
+    val currentTrackIndex: Int,
+    val totalTracks: Int,
+    val currentSongTitle: String,
+    val currentSongProgress: Int,
+    val isComplete: Boolean = false
+)
+
 object UserDataRepository {
 
     private const val PREFS_NAME = "videoguard_user_data"
@@ -55,6 +64,9 @@ object UserDataRepository {
 
     private val _currentDownload = MutableStateFlow<DownloadTask?>(null)
     val currentDownload: StateFlow<DownloadTask?> = _currentDownload.asStateFlow()
+
+    private val _batchDownload = MutableStateFlow<BatchDownloadState?>(null)
+    val batchDownload: StateFlow<BatchDownloadState?> = _batchDownload.asStateFlow()
 
     private val repoScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 
@@ -357,15 +369,53 @@ object UserDataRepository {
 
         repoScope.launch {
             var completedCount = 0
+            _batchDownload.value = BatchDownloadState(
+                playlistTitle = playlistTitle,
+                currentTrackIndex = 1,
+                totalTracks = toDownload.size,
+                currentSongTitle = toDownload.first().title,
+                currentSongProgress = 5,
+                isComplete = false
+            )
+
             for ((index, video) in toDownload.withIndex()) {
+                val currentIdx = index + 1
+                _batchDownload.value = BatchDownloadState(
+                    playlistTitle = playlistTitle,
+                    currentTrackIndex = currentIdx,
+                    totalTracks = toDownload.size,
+                    currentSongTitle = video.title,
+                    currentSongProgress = 5,
+                    isComplete = false
+                )
+
                 val ok = downloadSingleTrackDirect(
                     context = context,
                     video = video,
-                    batchIndex = index + 1,
+                    batchIndex = currentIdx,
                     batchTotal = toDownload.size
                 )
                 if (ok) completedCount++
+
+                _batchDownload.value = BatchDownloadState(
+                    playlistTitle = playlistTitle,
+                    currentTrackIndex = currentIdx,
+                    totalTracks = toDownload.size,
+                    currentSongTitle = video.title,
+                    currentSongProgress = 100,
+                    isComplete = false
+                )
             }
+
+            _batchDownload.value = BatchDownloadState(
+                playlistTitle = playlistTitle,
+                currentTrackIndex = toDownload.size,
+                totalTracks = toDownload.size,
+                currentSongTitle = "All $completedCount/${toDownload.size} songs downloaded",
+                currentSongProgress = 100,
+                isComplete = true
+            )
+
             _currentDownload.value = null
             withContext(Dispatchers.Main) {
                 android.widget.Toast.makeText(
@@ -374,6 +424,9 @@ object UserDataRepository {
                     android.widget.Toast.LENGTH_LONG
                 ).show()
             }
+
+            kotlinx.coroutines.delay(3500)
+            _batchDownload.value = null
         }
     }
 
@@ -577,6 +630,11 @@ object UserDataRepository {
                                 bytesText = "$mbNow MB / $mbTotal MB",
                                 isComplete = false
                             )
+                            if (_batchDownload.value != null) {
+                                _batchDownload.value = _batchDownload.value?.copy(
+                                    currentSongProgress = percent
+                                )
+                            }
 
                             try {
                                 val notif = androidx.core.app.NotificationCompat.Builder(context, channelId)

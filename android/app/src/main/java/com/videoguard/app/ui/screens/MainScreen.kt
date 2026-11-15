@@ -45,6 +45,7 @@ import com.videoguard.app.model.YouTubeTab
 import com.videoguard.app.service.PlaybackController
 import com.videoguard.app.ui.components.AccountBottomSheet
 import com.videoguard.app.ui.components.BottomNavBar
+import com.videoguard.app.ui.components.DynamicIslandDownloadPill
 import com.videoguard.app.ui.components.GoogleAuthDialog
 import com.videoguard.app.ui.components.MiniPlayerBar
 import com.videoguard.app.ui.components.PlayerControlsOverlay
@@ -207,13 +208,25 @@ fun MainScreen() {
             .fillMaxSize()
             .background(bgBrush)
     ) {
+        // Dynamic Island Download Progress Pill (for batch playlist downloads & single song downloads)
+        DynamicIslandDownloadPill(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 8.dp)
+                .zIndex(100f)
+        )
+
         // Floating In-App Update Banner Pill
         val updateInfo by com.videoguard.app.data.AppUpdateManager.updateInfo.collectAsState()
         val showUpdateDialog by com.videoguard.app.data.AppUpdateManager.showUpdateDialog.collectAsState()
         val isDownloadingUpdate by com.videoguard.app.data.AppUpdateManager.isDownloading.collectAsState()
+        val batchDownloadState by com.videoguard.app.data.UserDataRepository.batchDownload.collectAsState()
+        val singleDownloadState by com.videoguard.app.data.UserDataRepository.currentDownload.collectAsState()
+        val hasActiveDownload = batchDownloadState != null || (singleDownloadState != null && !singleDownloadState!!.isComplete)
 
         AnimatedVisibility(
-            visible = updateInfo != null && !showUpdateDialog && !isPlayerExpanded,
+            visible = updateInfo != null && !showUpdateDialog && !isPlayerExpanded && !hasActiveDownload,
             enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
             modifier = Modifier
