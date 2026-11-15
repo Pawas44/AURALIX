@@ -1566,6 +1566,7 @@ object MusicImportEngine {
 
     private fun artistNames(artist: String): List<String> {
         return artist
+            .replace('\u00A0', ' ')
             .split(Regex("""\s*(?:,|&|\+|\/|;|、|\sx\s|\sand\s|\s(?:feat|ft)\.?\s|\sfeaturing\s|\swith\s|\svs\.?\s)\s*""", RegexOption.IGNORE_CASE))
             .map { normalizeTitle(it).replace(" ", "") }
             .filter { it.isNotBlank() }
@@ -1602,7 +1603,8 @@ object MusicImportEngine {
             .trim()
         val vm = versionMarks(meta.title)
         val name = listOf(if (bareTitle.isNotBlank()) bareTitle else meta.title.trim(), vm).filter { it.isNotBlank() }.joinToString(" ")
-        val firstArtist = meta.artist.split(Regex("""\s*(?:,|&|\sx\s|\s(?:feat|ft)\.?\s)\s*""", RegexOption.IGNORE_CASE)).firstOrNull()?.trim() ?: ""
+        val cleanArtist = meta.artist.replace('\u00A0', ' ').trim()
+        val firstArtist = cleanArtist.split(Regex("""\s*(?:,|&|\sx\s|\s(?:feat|ft)\.?\s)\s*""", RegexOption.IGNORE_CASE)).firstOrNull()?.trim() ?: ""
 
         val queries = mutableListOf<String>()
         if (firstArtist.isNotBlank()) {

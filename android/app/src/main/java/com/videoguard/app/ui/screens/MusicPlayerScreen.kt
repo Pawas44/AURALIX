@@ -48,6 +48,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -155,34 +156,16 @@ fun MusicPlayerScreen(
         val isOffline = com.videoguard.app.service.PlaybackController.isOfflineModeActive
         val rawList = when {
             isOffline -> {
-                if (liveQueue.size > 1) {
-                    val currentIdx = liveQueue.indexOfFirst { it.id == track.id }
-                    if (currentIdx != -1) {
-                        val upcoming = liveQueue.drop(currentIdx + 1)
-                        val previous = liveQueue.take(currentIdx)
-                        upcoming + previous
-                    } else {
-                        liveQueue.filter { it.id != track.id }
-                    }
-                } else {
-                    offlineTracks.filter { it.id != track.id }
-                }
+                if (liveQueue.isNotEmpty()) liveQueue else offlineTracks
             }
-            liveQueue.size > 1 -> {
-                val currentIdx = liveQueue.indexOfFirst { it.id == track.id }
-                if (currentIdx != -1) {
-                    val upcoming = liveQueue.drop(currentIdx + 1)
-                    val previous = liveQueue.take(currentIdx)
-                    upcoming + previous
-                } else {
-                    liveQueue.filter { it.id != track.id }
-                }
+            liveQueue.isNotEmpty() -> {
+                liveQueue
             }
             dynamicRelated.isNotEmpty() -> {
-                dynamicRelated
+                listOf(track) + dynamicRelated
             }
             else -> {
-                VideoRepository.getMusicTracks().filter { it.id != track.id }
+                listOf(track) + VideoRepository.getMusicTracks().filter { it.id != track.id }
             }
         }
         rawList.distinctBy { it.id }
@@ -418,6 +401,30 @@ fun MusicPlayerScreen(
             }
             .statusBarsPadding()
     ) {
+        // Blurred Song Poster Artwork Background (Apple Music / ByTune style)
+        val posterBgUrl = track.thumbnailUrl.ifBlank { "https://img.youtube.com/vi/${track.id}/hqdefault.jpg" }
+        AsyncImage(
+            model = posterBgUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .fillMaxSize()
+                .blur(radius = 36.dp)
+                .graphicsLayer { alpha = 0.36f }
+        )
+        // Deep overlay to ensure maximum readability of foreground controls and text
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0.0f to Color.Black.copy(alpha = 0.60f),
+                        0.40f to Color.Black.copy(alpha = 0.35f),
+                        0.75f to Color.Black.copy(alpha = 0.65f),
+                        1.0f to Color(0xFF040507).copy(alpha = 0.96f)
+                    )
+                )
+        )
         // Main Player UI (Fixed height, generous spacing, never squashed!)
         Column(
             modifier = Modifier
@@ -1176,47 +1183,99 @@ fun MusicPlayerScreen(
                                             contentPadding = PaddingValues(bottom = navBarBottom + 8.dp)
                                         ) {
                                             itemsIndexed(queueTracks, key = { index, item -> "${item.id}_$index" }) { _, qTrack ->
+                                                val isCurrentlyPlaying = qTrack.id == track.id
                                                 Row(
                                                     modifier = Modifier
                                                         .fillMaxWidth()
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .background(
+                                                            if (isCurrentlyPlaying) Color(0xFF1DB954).copy(alpha = 0.16f)
+                                                            else Color.Transparent
+                                                        )
+                                                        .border(
+                                                            width = if (isCurrentlyPlaying) 1.dp else 0.dp,
+                                                            color = if (isCurrentlyPlaying) Color(0xFF1DB954).copy(alpha = 0.55f) else Color.Transparent,
+                                                            shape = RoundedCornerShape(10.dp)
+                                                        )
                                                         .clickable {
                                                             val activeQueue = if (liveQueue.size > 1) liveQueue else listOf(track) + queueTracks
                                                             com.videoguard.app.service.PlaybackController.playTrack(qTrack, activeQueue)
                                                         }
-                                                        .padding(vertical = 6.dp),
+                                                        .padding(horizontal = if (isCurrentlyPlaying) 8.dp else 4.dp, vertical = 6.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    AsyncImage(
-                                                        model = qTrack.thumbnailUrl,
-                                                        contentDescription = qTrack.title,
-                                                        contentScale = ContentScale.Crop,
-                                                        modifier = Modifier
-                                                            .size(40.dp)
-                                                            .clip(RoundedCornerShape(6.dp))
-                                                    )
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        AsyncImage(
+                                                            model = qTrack.thumbnailUrl,
+                                                            contentDescription = qTrack.title,
+                                                            contentScale = ContentScale.Crop,
+                                                            modifier = Modifier
+                                                                .size(42.dp)
+                                                                .clip(RoundedCornerShape(6.dp))
+                                                        )
+                                                        if (isCurrentlyPlaying) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(42.dp)
+                                                                    .clip(RoundedCornerShape(6.dp))
+                                                                    .background(Color.Black.copy(alpha = 0.45f)),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Default.GraphicEq,
+                                                                    contentDescription = "Playing",
+                                                                    tint = Color(0xFF1DB954),
+                                                                    modifier = Modifier.size(20.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
                                                     Spacer(modifier = Modifier.width(12.dp))
                                                     Column(modifier = Modifier.weight(1f)) {
+                                                        if (isCurrentlyPlaying) {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                modifier = Modifier.padding(bottom = 2.dp)
+                                                            ) {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .clip(RoundedCornerShape(4.dp))
+                                                                        .background(Color(0xFF1DB954))
+                                                                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                                                                ) {
+                                                                    Text(
+                                                                        text = "NOW PLAYING",
+                                                                        color = Color.Black,
+                                                                        fontSize = 9.sp,
+                                                                        fontWeight = FontWeight.ExtraBold,
+                                                                        letterSpacing = 0.5.sp
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
                                                         Text(
                                                             text = qTrack.title,
-                                                            color = Color.White,
+                                                            color = if (isCurrentlyPlaying) Color.White else Color(0xFFEEEEEE),
                                                             fontSize = 13.sp,
-                                                            fontWeight = FontWeight.Medium,
+                                                            fontWeight = if (isCurrentlyPlaying) FontWeight.Bold else FontWeight.Medium,
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis
                                                         )
                                                         Spacer(modifier = Modifier.height(2.dp))
                                                         Text(
                                                             text = qTrack.artist.ifEmpty { qTrack.channelName },
-                                                            color = Color(0xFFAAAAAA),
+                                                            color = if (isCurrentlyPlaying) Color(0xFF1DB954) else Color(0xFFAAAAAA),
                                                             fontSize = 11.sp,
+                                                            fontWeight = if (isCurrentlyPlaying) FontWeight.SemiBold else FontWeight.Normal,
                                                             maxLines = 1,
                                                             overflow = TextOverflow.Ellipsis
                                                         )
                                                     }
                                                     Text(
                                                         text = qTrack.duration,
-                                                        color = Color(0xFF888888),
-                                                        fontSize = 12.sp
+                                                        color = if (isCurrentlyPlaying) Color(0xFF1DB954) else Color(0xFF888888),
+                                                        fontSize = 12.sp,
+                                                        fontWeight = if (isCurrentlyPlaying) FontWeight.Bold else FontWeight.Normal
                                                     )
                                                     Spacer(modifier = Modifier.width(4.dp))
                                                     // "Don't play this" button (ByTune feature)

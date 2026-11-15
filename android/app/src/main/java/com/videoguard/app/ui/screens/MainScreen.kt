@@ -385,6 +385,10 @@ fun MainScreen() {
                                 isPlayerExpanded = true
                                 isSearchActive = false
                             },
+                            onPlaylistClick = { pl ->
+                                activePlaylist = pl
+                                isSearchActive = false
+                            },
                             onChannelClick = { video ->
                                 activeChannelVideo = video
                                 isSearchActive = false

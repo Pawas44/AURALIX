@@ -17,6 +17,9 @@ object DailyMixGenerator {
      * Generates up to 5 personalized Daily Mixes based on the user's actual listening history.
      */
     fun generateDailyMixes(candidatePool: List<VideoItem>): List<DailyMix> {
+        val validPool = candidatePool.filter {
+            (it.id.length == 11 || it.id.startsWith("spotify_")) && !it.id.startsWith("search_")
+        }
         val profile = UserTasteProfile.get()
         val topArtists = profile.getTopArtists(limit = 8).map { it.artistName }
         val topGenres = profile.getTopGenres(limit = 4).map { it.genre }
@@ -25,7 +28,7 @@ object DailyMixGenerator {
 
         // MIX 1: Your Heavy Rotation / Favorite Artists
         val mix1Artists = topArtists.take(4)
-        val mix1Tracks = candidatePool.filter { track ->
+        val mix1Tracks = validPool.filter { track ->
             val art = profile.extractArtist(track)
             mix1Artists.any { it.equals(art, ignoreCase = true) }
         }.distinctBy { it.id }.take(20)
@@ -38,7 +41,7 @@ object DailyMixGenerator {
                     title = "Daily Mix 1",
                     subtitle = artistSummary,
                     description = "Songs from $artistSummary and similar artists you love.",
-                    tracks = if (mix1Tracks.size >= 8) mix1Tracks else (mix1Tracks + candidatePool.take(15)).distinctBy { it.id }.take(20),
+                    tracks = if (mix1Tracks.size >= 8) mix1Tracks else (mix1Tracks + validPool.take(15)).distinctBy { it.id }.take(20),
                     coverUrl = mix1Tracks.firstOrNull()?.thumbnailUrl
                 )
             )
@@ -46,7 +49,7 @@ object DailyMixGenerator {
 
         // MIX 2: Top Genre #1
         val genre1 = topGenres.getOrNull(0) ?: "Pop"
-        val mix2Tracks = candidatePool.filter {
+        val mix2Tracks = validPool.filter {
             profile.extractGenre(it).contains(genre1, ignoreCase = true)
         }.distinctBy { it.id }.take(20)
 
@@ -66,7 +69,7 @@ object DailyMixGenerator {
 
         // MIX 3: Top Genre #2
         val genre2 = topGenres.getOrNull(1) ?: "Electronic / Dance"
-        val mix3Tracks = candidatePool.filter {
+        val mix3Tracks = validPool.filter {
             profile.extractGenre(it).contains(genre2, ignoreCase = true)
         }.distinctBy { it.id }.take(20)
 
@@ -85,7 +88,7 @@ object DailyMixGenerator {
         }
 
         // MIX 4: Chill / Relax / Focus (Mood-based)
-        val mix4Tracks = candidatePool.filter {
+        val mix4Tracks = validPool.filter {
             it.mood.equals("Relax", ignoreCase = true) ||
             it.mood.equals("Focus", ignoreCase = true) ||
             profile.extractGenre(it).contains("Lo-Fi", ignoreCase = true) ||
@@ -107,7 +110,7 @@ object DailyMixGenerator {
 
         // MIX 5: Fresh Finds / Discoveries
         val familiarArtistSet = topArtists.map { it.lowercase() }.toSet()
-        val mix5Tracks = candidatePool.filter {
+        val mix5Tracks = validPool.filter {
             val art = profile.extractArtist(it).lowercase()
             art !in familiarArtistSet && !profile.isTrackHidden(it.id) && !profile.isArtistHidden(art)
         }.distinctBy { it.id }.take(20)

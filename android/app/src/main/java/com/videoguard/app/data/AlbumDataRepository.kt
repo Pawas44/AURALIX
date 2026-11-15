@@ -4,6 +4,10 @@ import com.videoguard.app.model.UserPlaylist
 import com.videoguard.app.model.VideoItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import org.json.JSONArray
+import java.net.URL
+import java.net.HttpURLConnection
 
 data class AlbumItem(
     val id: String,
@@ -213,8 +217,143 @@ object AlbumDataRepository {
         }
     }
 
+    private const val INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+
+    suspend fun searchAlbums(query: String): List<AlbumItem> = withContext(Dispatchers.IO) {
+        val outList = mutableListOf<AlbumItem>()
+        if (query.isBlank()) return@withContext getAllAlbums()
+
+        try {
+            val endpoint = "https://music.youtube.com/youtubei/v1/search?key=$INNERTUBE_KEY"
+            val payload = JSONObject().apply {
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "WEB_REMIX")
+                        put("clientVersion", "1.20240101.01.00")
+                        put("hl", "en")
+                        put("gl", "IN")
+                    })
+                })
+                put("query", query)
+                put("params", "EgWKAQIYAWoKEAkQChAFEAMQBA==")
+            }
+
+            val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 8000
+                readTimeout = 8000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                setRequestProperty("Origin", "https://music.youtube.com")
+                setRequestProperty("Referer", "https://music.youtube.com/")
+                setRequestProperty("X-YouTube-Client-Name", "67")
+                setRequestProperty("X-YouTube-Client-Version", "1.20240101.01.00")
+            }
+
+            conn.outputStream.use { it.write(payload.toString().toByteArray(Charsets.UTF_8)) }
+
+            if (conn.responseCode in 200..299) {
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                if (text.isNotBlank()) {
+                    val root = JSONObject(text)
+                    val tabs = root.optJSONObject("contents")
+                        ?.optJSONObject("tabbedSearchResultsRenderer")
+                        ?.optJSONArray("tabs")
+                    val tab0 = tabs?.optJSONObject(0)?.optJSONObject("tabRenderer")?.optJSONObject("content")
+                    val shelves = tab0?.optJSONObject("sectionListRenderer")?.optJSONArray("contents")
+                    if (shelves != null) {
+                        for (sIdx in 0 until shelves.length()) {
+                            val items = shelves.optJSONObject(sIdx)?.optJSONObject("musicShelfRenderer")?.optJSONArray("contents") ?: continue
+                            for (i in 0 until items.length()) {
+                                val itObj = items.optJSONObject(i)?.optJSONObject("musicResponsiveListItemRenderer") ?: continue
+                                val cols = itObj.optJSONArray("flexColumns") ?: continue
+                                if (cols.length() == 0) continue
+
+                                val runs0 = cols.optJSONObject(0)?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                                    ?.optJSONObject("text")?.optJSONArray("runs")
+                                val title = runs0?.optJSONObject(0)?.optString("text", "")?.trim() ?: ""
+                                if (title.isBlank()) continue
+
+                                val itStr = itObj.toString()
+                                val pidRegex = Regex(""""playlistId":\s*"([^"]+)"""")
+                                val pidMatch = pidRegex.find(itStr)
+                                val pid = pidMatch?.groupValues?.get(1) ?: ""
+
+                                val thumbs = itObj.optJSONObject("thumbnail")?.optJSONObject("musicThumbnailRenderer")
+                                    ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                                val thumb = if (thumbs != null && thumbs.length() > 0) {
+                                    thumbs.optJSONObject(thumbs.length() - 1)?.optString("url", "") ?: ""
+                                } else ""
+
+                                var relType = "Album"
+                                var year = "2024"
+                                val artists = mutableListOf<String>()
+
+                                if (cols.length() > 1) {
+                                    val runs1 = cols.optJSONObject(1)?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                                        ?.optJSONObject("text")?.optJSONArray("runs")
+                                    if (runs1 != null) {
+                                        for (r in 0 until runs1.length()) {
+                                            val t = runs1.optJSONObject(r)?.optString("text", "")?.trim() ?: ""
+                                            if (t == "•" || t == "," || t == "&" || t.isBlank()) continue
+                                            when {
+                                                t.equals("Album", ignoreCase = true) ||
+                                                t.equals("EP", ignoreCase = true) ||
+                                                t.equals("Single", ignoreCase = true) ||
+                                                t.equals("Mixtape", ignoreCase = true) -> relType = t
+                                                t.matches(Regex("^\\d{4}$")) -> year = t
+                                                t.length > 1 -> artists.add(t)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                val artistName = if (artists.isNotEmpty()) artists.joinToString(", ") else query
+                                outList.add(
+                                    AlbumItem(
+                                        id = if (pid.isNotBlank()) pid else "album_${kotlin.math.abs(title.hashCode())}",
+                                        title = title,
+                                        artist = artistName,
+                                        coverUrl = thumb,
+                                        year = year,
+                                        releaseType = relType
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        if (outList.isNotEmpty()) {
+            outList.distinctBy { it.id }
+        } else {
+            getAllAlbums().filter {
+                it.title.contains(query, ignoreCase = true) ||
+                it.artist.contains(query, ignoreCase = true)
+            }
+        }
+    }
+
     suspend fun getOrFetchAlbumTracks(album: AlbumItem): List<VideoItem> = withContext(Dispatchers.IO) {
         if (album.tracks.isNotEmpty()) return@withContext album.tracks
+
+        // If it's a real YouTube Music album playlist (OLAK5uy_...)
+        if (album.id.startsWith("OLAK5uy_")) {
+            val plTracks = YouTubeSyncEngine.fetchPlaylistVideos(album.id)
+            if (plTracks.isNotEmpty()) {
+                return@withContext plTracks.map {
+                    it.copy(
+                        album = album.title,
+                        artist = if (it.artist.isNotBlank() && it.artist != "YouTube Music") it.artist else album.artist
+                    )
+                }
+            }
+        }
 
         val query = "${album.title} ${album.artist} full album songs"
         val results = YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)

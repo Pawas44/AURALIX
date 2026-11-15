@@ -56,6 +56,7 @@ fun SearchScreen(
     currentMode: AppMode,
     onBack: () -> Unit,
     onVideoSelected: (VideoItem, List<VideoItem>) -> Unit,
+    onPlaylistClick: (com.videoguard.app.model.UserPlaylist) -> Unit = {},
     onChannelClick: (VideoItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -140,6 +141,31 @@ fun SearchScreen(
 
         coroutineScope.launch {
             try {
+                if (category == "Albums" || category == "Mixtapes") {
+                    val albumResults = com.videoguard.app.data.AlbumDataRepository.searchAlbums(trimmed)
+                    if (albumResults.isNotEmpty()) {
+                        val albumVideos = albumResults.map { album ->
+                            VideoItem(
+                                id = album.id,
+                                title = album.title,
+                                channelName = "${album.releaseType.uppercase()} • ${album.artist} (${album.year})",
+                                channelAvatarUrl = album.coverUrl,
+                                thumbnailUrl = album.coverUrl,
+                                views = "Album",
+                                uploadTime = album.year,
+                                duration = if (album.trackCount > 0) "${album.trackCount} tracks" else "Full Album",
+                                description = "${album.releaseType} by ${album.artist}",
+                                isMusicTrack = true,
+                                artist = album.artist,
+                                album = album.title,
+                                category = "Album"
+                            )
+                        }
+                        searchResults = albumVideos
+                        seenSearchIds = albumVideos.map { it.id }.toSet()
+                        return@launch
+                    }
+                }
                 val results = YouTubeSearchEngine.searchVideos(targetQuery, isMusicOnly = isMusic, page = 0)
                 searchResults = results
                 seenSearchIds = results.map { it.id }.toSet()
@@ -400,7 +426,20 @@ fun SearchScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onVideoSelected(track, searchResults) }
+                                    .clickable {
+                                        if (track.category == "Album" || track.id.startsWith("OLAK5uy_") || track.id.startsWith("album_")) {
+                                            val album = com.videoguard.app.data.AlbumItem(
+                                                id = track.id,
+                                                title = track.title,
+                                                artist = track.artist.ifBlank { track.channelName },
+                                                coverUrl = track.thumbnailUrl,
+                                                releaseType = "Album"
+                                            )
+                                            onPlaylistClick(com.videoguard.app.data.AlbumDataRepository.toUserPlaylist(album))
+                                        } else {
+                                            onVideoSelected(track, searchResults)
+                                        }
+                                    }
                                     .padding(horizontal = 14.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {

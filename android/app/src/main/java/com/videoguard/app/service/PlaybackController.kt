@@ -338,17 +338,26 @@ object PlaybackController {
             _currentTrack.value = track
             _isPlaying.value = true
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                val resolved = com.videoguard.app.data.MusicImportEngine.resolveSingleTrack(track.title, track.artist)
-                val targetTrack = if (resolved != null && resolved.id.length == 11) {
-                    track.copy(id = resolved.id, duration = if (track.duration != "0:00" && track.duration.isNotBlank()) track.duration else resolved.duration)
-                } else {
-                    val fallbackResults = com.videoguard.app.data.YouTubeSearchEngine.searchVideos("${track.title} ${track.artist}", isMusicOnly = true)
-                    val first = fallbackResults.firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
-                    if (first != null) {
-                        track.copy(id = first.id, duration = if (track.duration != "0:00" && track.duration.isNotBlank()) track.duration else first.duration)
-                    } else null
+                val cleanTitle = track.title.trim()
+                val cleanArtist = track.artist.split(",").firstOrNull()?.trim() ?: track.artist.trim()
+                val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
+
+                // Fast instant InnerTube lookup (~200ms)
+                val fastResults = try {
+                    com.videoguard.app.data.YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true)
+                } catch (e: Exception) {
+                    emptyList()
                 }
-                if (targetTrack != null) {
+                val best = fastResults.firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
+                    ?: com.videoguard.app.data.YouTubeSearchEngine.searchVideos(query, isMusicOnly = true).firstOrNull { it.id.length == 11 }
+                    ?: com.videoguard.app.data.MusicImportEngine.resolveSingleTrack(track.title, track.artist)
+
+                if (best != null && best.id.length == 11) {
+                    val targetTrack = track.copy(
+                        id = best.id,
+                        duration = if (track.duration != "0:00" && track.duration.isNotBlank()) track.duration else best.duration,
+                        thumbnailUrl = if (track.thumbnailUrl.isNotBlank() && !track.thumbnailUrl.contains("default")) track.thumbnailUrl else best.thumbnailUrl
+                    )
                     try {
                         com.videoguard.app.data.UserDataRepository.updateTrackInPlaylists(track.id, targetTrack)
                     } catch (e: Exception) {}
@@ -759,8 +768,10 @@ object PlaybackController {
         if (isReplenishingQueue) return
         val currentQueue = _playbackQueue.value
         val idx = currentQueue.indexOfFirst { it.id == currentTrack.id }
-        val remainingAfter = if (idx >= 0) currentQueue.size - 1 - idx else 0
-        if (idx < 0 || remainingAfter <= 4 || currentQueue.size <= 4) {
+        // Playlist Queue Integrity Rule:
+        // When user is playing a playlist, ONLY replenish when current track is at the very end of the playlist!
+        // Never inject random radio/mix songs into the middle of the active playlist queue.
+        if (idx >= 0 && idx == currentQueue.lastIndex) {
             triggerQueueReplenishment(currentTrack)
         }
     }
@@ -905,20 +916,23 @@ object PlaybackController {
         if (idx in 0 until queue.lastIndex) {
             val nextTrack = queue[idx + 1]
             playTrack(nextTrack, emptyList())
-            // If nearing end of queue (4 or fewer tracks ahead), replenish in advance so queue never runs dry!
-            if (queue.size - 1 - (idx + 1) <= 4) {
+            if (idx + 1 == queue.lastIndex && _isAutoplayEnabled.value) {
                 replenishQueueIfNeeded(nextTrack)
             }
         } else {
-            // Reached the end of queue! Immediately replenish so music never halts!
-            triggerQueueReplenishment(current) { updatedQueue ->
-                val newIdx = updatedQueue.indexOfFirst { it.id == current.id }
-                if (newIdx in 0 until updatedQueue.lastIndex) {
-                    playTrack(updatedQueue[newIdx + 1], emptyList())
-                } else if (updatedQueue.isNotEmpty()) {
-                    val fallback = updatedQueue.firstOrNull { it.id != current.id } ?: updatedQueue.first()
-                    playTrack(fallback, emptyList())
+            // Reached the end of playlist queue!
+            if (_isAutoplayEnabled.value) {
+                triggerQueueReplenishment(current) { updatedQueue ->
+                    val newIdx = updatedQueue.indexOfFirst { it.id == current.id }
+                    if (newIdx in 0 until updatedQueue.lastIndex) {
+                        playTrack(updatedQueue[newIdx + 1], emptyList())
+                    } else if (updatedQueue.isNotEmpty()) {
+                        val fallback = updatedQueue.firstOrNull { it.id != current.id } ?: updatedQueue.first()
+                        playTrack(fallback, emptyList())
+                    }
                 }
+            } else {
+                _isPlaying.value = false
             }
         }
     }

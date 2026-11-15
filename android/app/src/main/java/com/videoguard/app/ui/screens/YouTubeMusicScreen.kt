@@ -312,6 +312,18 @@ fun YouTubeMusicScreen(
                         DailyMixCard(
                             mix = mix,
                             onClick = {
+                                val pl = UserPlaylist(
+                                    id = mix.id,
+                                    title = mix.title,
+                                    description = "${mix.subtitle} • ${mix.tracks.size} tracks",
+                                    videos = mix.tracks,
+                                    isSystem = false,
+                                    iconType = "playlist",
+                                    customCoverUrl = mix.coverUrl
+                                )
+                                onPlaylistClick(pl)
+                            },
+                            onPlayClick = {
                                 if (mix.tracks.isNotEmpty()) {
                                     onTrackSelected(mix.tracks.first(), mix.tracks)
                                 }
@@ -712,7 +724,8 @@ private fun DiscoverWeeklyBanner(
 @Composable
 private fun DailyMixCard(
     mix: DailyMix,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onPlayClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -743,20 +756,41 @@ private fun DailyMixCard(
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
-                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
                         )
                     )
             )
+            // Play Button
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp)
+                    .size(34.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .background(Color(0xFF1DB954))
+                    .clickable(onClick = onPlayClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play Mix",
+                    tint = Color.Black,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(10.dp)
+                    .padding(end = 36.dp)
             ) {
                 Text(
                     text = mix.title,
                     color = Color.White,
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
