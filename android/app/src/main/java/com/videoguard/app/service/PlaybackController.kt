@@ -92,6 +92,19 @@ object PlaybackController {
     // Fast in-memory cache for resolved Spotify tracks to ensure instantaneous (0ms) playback
     private val spotifyResolvedCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
+    fun getResolvedSpotifyId(id: String): String? {
+        return spotifyResolvedCache[id]
+    }
+
+    fun cacheResolvedSpotifyId(spotifyId: String, realYtId: String, title: String? = null, artist: String? = null) {
+        spotifyResolvedCache[spotifyId] = realYtId
+        if (!title.isNullOrBlank()) {
+            val cleanTitle = title.trim().lowercase()
+            val cleanArtist = (artist?.split(",")?.firstOrNull()?.trim() ?: artist?.trim() ?: "").lowercase()
+            spotifyResolvedCache["${cleanTitle}_${cleanArtist}"] = realYtId
+        }
+    }
+
     // Listener to dispatch JavaScript commands directly to the active YouTube WebView
     private var webViewCommandListener: ((String) -> Unit)? = null
 
@@ -338,11 +351,15 @@ object PlaybackController {
     }
 
     fun playTrack(track: VideoItem, queue: List<VideoItem> = emptyList()) {
-        if (track.id.startsWith("spotify_") || track.id.startsWith("pending_") || track.id.length != 11) {
+        val resolvedId = getResolvedSpotifyId(track.id)
+        val isOffline = com.videoguard.app.data.UserDataRepository.isDownloaded(track.id) ||
+                (resolvedId != null && com.videoguard.app.data.UserDataRepository.isDownloaded(resolvedId))
+
+        if (!isOffline && (track.id.startsWith("spotify_") || track.id.startsWith("pending_") || track.id.length != 11)) {
             val cleanTitle = track.title.trim()
             val cleanArtist = track.artist.split(",").firstOrNull()?.trim() ?: track.artist.trim()
             val cacheKey = "${cleanTitle.lowercase()}_${cleanArtist.lowercase()}"
-            val cachedId = spotifyResolvedCache[track.id] ?: spotifyResolvedCache[cacheKey]
+            val cachedId = resolvedId ?: spotifyResolvedCache[cacheKey]
 
             if (cachedId != null && cachedId.length == 11) {
                 val targetTrack = track.copy(id = cachedId)
@@ -431,7 +448,7 @@ object PlaybackController {
                 _playbackQueue.value = listOf(track)
             }
 
-            val isDownloaded = com.videoguard.app.data.UserDataRepository.isDownloaded(track.id)
+            val isDownloaded = isOffline || com.videoguard.app.data.UserDataRepository.isDownloaded(track.id)
 
             startOrUpdateService()
 
@@ -487,11 +504,15 @@ object PlaybackController {
             if (ctx != null) {
                 try {
                     val dir = java.io.File(ctx.filesDir, "downloads")
-                    val f = listOf(
-                        java.io.File(dir, "${track.id}.m4a"),
-                        java.io.File(dir, "${track.id}.mp4"),
-                        java.io.File(dir, "${track.id}.webm")
-                    ).firstOrNull { it.exists() && it.length() > 20_000L }
+                    val resolvedId = getResolvedSpotifyId(track.id)
+                    val candidateIds = listOfNotNull(track.id, resolvedId).distinct()
+                    val f = candidateIds.flatMap { cid ->
+                        listOf(
+                            java.io.File(dir, "$cid.m4a"),
+                            java.io.File(dir, "$cid.mp4"),
+                            java.io.File(dir, "$cid.webm")
+                        )
+                    }.firstOrNull { it.exists() && it.length() > 20_000L }
 
                     if (f != null) {
                         try { offlineFileInputStream?.close() } catch (e: Exception) {}
@@ -552,8 +573,11 @@ object PlaybackController {
                     } else {
                         // File missing or incomplete: fallback smoothly to online streaming
                         isOfflineModeActive = false
-                        sendCommand("loadVideo('${track.id}')")
-                        sendCommand("setPlaybackState(true)")
+                        val fallbackId = resolvedId ?: track.id
+                        if (fallbackId.length == 11) {
+                            sendCommand("loadVideo('$fallbackId')")
+                            sendCommand("setPlaybackState(true)")
+                        }
                     }
                 } catch (e: Exception) {
                     android.util.Log.e("PlaybackController", "Failed to start offline MediaPlayer: ${e.message}", e)
@@ -562,8 +586,11 @@ object PlaybackController {
                     try { offlineMediaPlayer?.release() } catch (ignored: Exception) {}
                     offlineMediaPlayer = null
                     isOfflineModeActive = false
-                    sendCommand("loadVideo('${track.id}')")
-                    sendCommand("setPlaybackState(true)")
+                    val fallbackId = resolvedId ?: track.id
+                    if (fallbackId.length == 11) {
+                        sendCommand("loadVideo('$fallbackId')")
+                        sendCommand("setPlaybackState(true)")
+                    }
                 }
             }
         }

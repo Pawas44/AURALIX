@@ -218,7 +218,10 @@ object UserDataRepository {
     }
 
     // --- Offline Tracks Management ---
-    fun isDownloaded(id: String): Boolean = _offlineTracks.value.any { it.id == id }
+    fun isDownloaded(id: String): Boolean {
+        val resolvedId = com.videoguard.app.service.PlaybackController.getResolvedSpotifyId(id)
+        return _offlineTracks.value.any { it.id == id || (resolvedId != null && it.id == resolvedId) }
+    }
 
     fun formatCombinedDuration(tracks: List<VideoItem>): String {
         var totalSeconds = 0L
@@ -298,20 +301,24 @@ object UserDataRepository {
     }
 
     fun startDownload(context: Context, video: VideoItem) {
-        val isAlready = isDownloaded(video.id)
+        val resolvedId = com.videoguard.app.service.PlaybackController.getResolvedSpotifyId(video.id)
+        val isAlready = isDownloaded(video.id) || (resolvedId != null && isDownloaded(resolvedId))
         if (isAlready) {
             val current = _offlineTracks.value.toMutableList()
-            current.removeAll { it.id == video.id }
+            current.removeAll { it.id == video.id || (resolvedId != null && it.id == resolvedId) }
             _offlineTracks.value = current
             saveOfflineTracks()
             try {
                 val dir = File(context.filesDir, "downloads")
-                listOf(
-                    File(dir, "${video.id}.m4a"),
-                    File(dir, "${video.id}.mp4"),
-                    File(dir, "${video.id}.webm"),
-                    File(dir, "${video.id}.tmp")
-                ).forEach { if (it.exists()) it.delete() }
+                val idsToDelete = listOfNotNull(video.id, resolvedId).distinct()
+                idsToDelete.forEach { cid ->
+                    listOf(
+                        File(dir, "$cid.m4a"),
+                        File(dir, "$cid.mp4"),
+                        File(dir, "$cid.webm"),
+                        File(dir, "$cid.tmp")
+                    ).forEach { if (it.exists()) it.delete() }
+                }
             } catch (e: Exception) {}
             repoScope.launch(Dispatchers.Main) {
                 android.widget.Toast.makeText(context, "Removed from downloads", android.widget.Toast.LENGTH_SHORT).show()
@@ -440,26 +447,32 @@ object UserDataRepository {
 
         // 1. Resolve placeholder IDs (e.g. spotify_...)
         if (targetVideo.id.startsWith("spotify_") || targetVideo.id.length != 11) {
-            val cleanTitle = targetVideo.title.trim()
-            val cleanArtist = targetVideo.artist.split(",").firstOrNull()?.trim() ?: targetVideo.artist.trim()
-            val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
-            val best = try {
-                YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true).firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
-            } catch (e: Exception) { null }
-                ?: YouTubeSearchEngine.searchVideos(query, isMusicOnly = true).firstOrNull { it.id.length == 11 }
-                ?: MusicImportEngine.resolveSingleTrack(targetVideo.title, targetVideo.artist)
+            val cachedResolved = com.videoguard.app.service.PlaybackController.getResolvedSpotifyId(targetVideo.id)
+            if (cachedResolved != null && cachedResolved.length == 11) {
+                targetVideo = targetVideo.copy(id = cachedResolved)
+            } else {
+                val cleanTitle = targetVideo.title.trim()
+                val cleanArtist = targetVideo.artist.split(",").firstOrNull()?.trim() ?: targetVideo.artist.trim()
+                val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
+                val best = try {
+                    YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true).firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
+                } catch (e: Exception) { null }
+                    ?: YouTubeSearchEngine.searchVideos(query, isMusicOnly = true).firstOrNull { it.id.length == 11 }
+                    ?: MusicImportEngine.resolveSingleTrack(targetVideo.title, targetVideo.artist)
 
-            if (best != null && best.id.length == 11) {
-                targetVideo = targetVideo.copy(
-                    id = best.id,
-                    duration = if (targetVideo.duration != "0:00" && targetVideo.duration.isNotBlank()) targetVideo.duration else best.duration,
-                    thumbnailUrl = if (targetVideo.thumbnailUrl.isNotBlank() && !targetVideo.thumbnailUrl.contains("default")) targetVideo.thumbnailUrl else best.thumbnailUrl
-                )
+                if (best != null && best.id.length == 11) {
+                    com.videoguard.app.service.PlaybackController.cacheResolvedSpotifyId(video.id, best.id, video.title, video.artist)
+                    targetVideo = targetVideo.copy(
+                        id = best.id,
+                        duration = if (targetVideo.duration != "0:00" && targetVideo.duration.isNotBlank()) targetVideo.duration else best.duration,
+                        thumbnailUrl = if (targetVideo.thumbnailUrl.isNotBlank() && !targetVideo.thumbnailUrl.contains("default")) targetVideo.thumbnailUrl else best.thumbnailUrl
+                    )
+                }
             }
         }
 
         if (targetVideo.id.length != 11) return@withContext false
-        if (isDownloaded(targetVideo.id)) return@withContext true
+        if (isDownloaded(targetVideo.id) && isDownloaded(video.id)) return@withContext true
 
         // 2. Guarantee real metadata before initiating download
         if (targetVideo.title.contains("YouTube Video", ignoreCase = true) ||
@@ -547,9 +560,24 @@ object UserDataRepository {
             isComplete = true
         )
 
+        // Also create file alias for original ID if different (e.g., spotify_...)
+        if (video.id != targetVideo.id) {
+            try {
+                val aliasFile = File(dir, "${video.id}.m4a")
+                targetFile.copyTo(aliasFile, overwrite = true)
+            } catch (e: Exception) {}
+            try {
+                updateTrackInPlaylists(video.id, targetVideo)
+            } catch (e: Exception) {}
+            com.videoguard.app.service.PlaybackController.cacheResolvedSpotifyId(video.id, targetVideo.id, targetVideo.title, targetVideo.artist)
+        }
+
         val current = _offlineTracks.value.toMutableList()
-        current.removeAll { it.id == targetVideo.id }
+        current.removeAll { it.id == targetVideo.id || it.id == video.id }
         current.add(0, targetVideo)
+        if (video.id != targetVideo.id) {
+            current.add(0, video)
+        }
         _offlineTracks.value = current
         saveOfflineTracks()
 

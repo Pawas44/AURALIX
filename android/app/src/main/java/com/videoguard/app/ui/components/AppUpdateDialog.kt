@@ -61,28 +61,28 @@ fun AppUpdateDialog() {
                         .padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Top Hero Art: Cosmic Launch with Handcrafted Musical Touch
+                    // Top Hero Art: Cosmic Rocket Launch Banner
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(185.dp)
                             .clip(RoundedCornerShape(18.dp))
-                            .background(Color(0xFF20232D))
+                            .background(Color(0xFF1E212A))
                     ) {
                         RocketLaunchBanner()
 
-                        // Frosted Pill Badge
+                        // Frosted Pill Badge (Version Tag)
                         Box(
                             modifier = Modifier
                                 .align(Alignment.TopStart)
                                 .padding(12.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(Color.Black.copy(alpha = 0.45f))
+                                .background(Color.Black.copy(alpha = 0.50f))
                                 .border(0.8.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
                                 .padding(horizontal = 9.dp, vertical = 4.dp)
                         ) {
                             Text(
-                                text = "✨ NEW DROP • ${info.tagName}",
+                                text = "✨ v${info.tagName.removePrefix("v")}",
                                 color = Color(0xFFFFD166),
                                 fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
@@ -91,52 +91,40 @@ fun AppUpdateDialog() {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
-                    // Human Headline
+                    // Clean, Elegant Headline matching reference design
                     Text(
-                        text = "Something fresh just dropped 🎧",
+                        text = "Upgrade to the new version of our app",
                         color = Color.White,
-                        fontSize = 19.sp,
+                        fontSize = 18.5.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = TextAlign.Start,
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    // Conversational, Friendly Microcopy (Human, not AI/corporate!)
+                    // Friendly, Natural Microcopy
                     Text(
-                        text = "We spent the last few late nights polishing your music experience so everything sounds punchier, looks dreamier, and flows without interruptions.",
-                        color = Color(0xFFA5ABC0),
+                        text = "We've made some major improvements to give you a faster experience and new features you'll love. Download the latest version now to keep things rolling smoothly!",
+                        color = Color(0xFF9EABB8),
                         fontSize = 12.5.sp,
-                        lineHeight = 17.5.sp,
+                        lineHeight = 18.sp,
                         textAlign = TextAlign.Start,
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
 
-                    // Humanized Creative Highlight Rows
+                    // Checklist matching reference design with stylish check boxes
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        CreativeHighlightRow(
-                            emoji = "🎨",
-                            title = "Dreamy Blurred Backdrops",
-                            subtitle = "Player now glows with soft blurred art that shifts with each song"
-                        )
-                        CreativeHighlightRow(
-                            emoji = "⚡",
-                            title = "Download Entire Playlists",
-                            subtitle = "Grab all songs in 1 tap from the 3-dot menu for zero-data offline jams"
-                        )
-                        CreativeHighlightRow(
-                            emoji = "🎧",
-                            title = "Tuned to Your Spotify Taste",
-                            subtitle = "Home feed now curates fresh mixes around your connected favorites"
-                        )
+                        UpdateFeatureCheckItem("Improved user interface")
+                        UpdateFeatureCheckItem("More reliable streaming")
+                        UpdateFeatureCheckItem("Easier to navigate")
                     }
 
                     // Download Progress Section (when downloading)
@@ -155,14 +143,14 @@ fun AppUpdateDialog() {
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "Tuning the strings... ($progress%)",
+                                    text = "Downloading update ($progress%)...",
                                     color = Color.White,
                                     fontSize = 12.5.sp,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
                                     text = "$progress%",
-                                    color = Color(0xFFFF5E3A),
+                                    color = Color(0xFFFF5436),
                                     fontSize = 12.5.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -174,7 +162,7 @@ fun AppUpdateDialog() {
                                     .fillMaxWidth()
                                     .height(6.dp)
                                     .clip(RoundedCornerShape(3.dp)),
-                                color = Color(0xFFFF5E3A),
+                                color = Color(0xFFFF5436),
                                 trackColor = Color.White.copy(alpha = 0.12f)
                             )
 
@@ -188,27 +176,27 @@ fun AppUpdateDialog() {
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                    // Warm Action CTA: Pill-shaped Sunset Coral Button ("Grab the Update")
+                    // Solid Coral Pill Action Button ("Update Now")
                     Button(
                         onClick = {
                             AppUpdateManager.downloadAndInstallUpdate(context)
                         },
                         enabled = !isDownloading,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFF5E3A),
-                            disabledContainerColor = Color(0xFFFF5E3A).copy(alpha = 0.5f)
+                            containerColor = Color(0xFFFF5436),
+                            disabledContainerColor = Color(0xFFFF5436).copy(alpha = 0.5f)
                         ),
-                        shape = RoundedCornerShape(25.dp),
+                        shape = RoundedCornerShape(26.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(48.dp)
+                            .height(50.dp)
                     ) {
                         Text(
-                            text = if (isDownloading) "Downloading update ($progress%)..." else "Grab the Update 🚀",
+                            text = if (isDownloading) "Downloading update ($progress%)..." else "Update Now",
                             color = Color.White,
-                            fontSize = 15.sp,
+                            fontSize = 15.5.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -220,10 +208,10 @@ fun AppUpdateDialog() {
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
-                                text = "Maybe later, let me keep vibing",
-                                color = Color(0xFF7E8498),
+                                text = "Maybe later",
+                                color = Color(0xFF71788A),
                                 fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Normal
                             )
                         }
                     }
@@ -234,44 +222,46 @@ fun AppUpdateDialog() {
 }
 
 @Composable
-private fun CreativeHighlightRow(
-    emoji: String,
-    title: String,
-    subtitle: String
-) {
+private fun UpdateFeatureCheckItem(text: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFF1E212B).copy(alpha = 0.70f))
-            .padding(horizontal = 12.dp, vertical = 9.dp),
+            .padding(vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(9.dp))
-                .background(Color(0xFF282C3A)),
+                .size(24.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color(0xFF282B35))
+                .border(0.8.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(6.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = emoji, fontSize = 16.sp)
+            Canvas(modifier = Modifier.size(11.dp)) {
+                val strokeWidth = 1.8.dp.toPx()
+                val path = Path().apply {
+                    moveTo(size.width * 0.15f, size.height * 0.50f)
+                    lineTo(size.width * 0.42f, size.height * 0.80f)
+                    lineTo(size.width * 0.88f, size.height * 0.20f)
+                }
+                drawPath(
+                    path = path,
+                    color = Color.White.copy(alpha = 0.95f),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = strokeWidth,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                        join = androidx.compose.ui.graphics.StrokeJoin.Round
+                    )
+                )
+            }
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = title,
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(1.dp))
-            Text(
-                text = subtitle,
-                color = Color(0xFF9CA3AF),
-                fontSize = 11.5.sp,
-                lineHeight = 15.sp
-            )
-        }
+        Spacer(modifier = Modifier.width(14.dp))
+        Text(
+            text = text,
+            color = Color(0xFFD6DBE5),
+            fontSize = 13.5.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
