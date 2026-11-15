@@ -185,24 +185,30 @@ object AppUpdateManager {
 
             // Evaluation: check if remote version is newer than current installed version
             if (resolvedRelease != null) {
-                val isNewer = isNewerVersion(resolvedRelease.tagName)
+                val isNewer = isNewerVersion(context, resolvedRelease.tagName)
                 if (isNewer || forceShowIfSame) {
                     _updateInfo.value = resolvedRelease
                     _showUpdateDialog.value = true
-                } else if (isManualCheck) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            context,
-                            "✓ AURALIX is up to date! (Installed: v${BuildConfig.APP_VERSION_NAME})",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                } else {
+                    _updateInfo.value = null
+                    _showUpdateDialog.value = false
+                    if (isManualCheck) {
+                        val installedVer = getInstalledVersionName(context)
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(
+                                context,
+                                "✓ AURALIX is up to date! (Installed: v$installedVer)",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                 }
             } else if (isManualCheck) {
+                val installedVer = getInstalledVersionName(context)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         context,
-                        "✓ You are running the latest version of AURALIX (v${BuildConfig.APP_VERSION_NAME})",
+                        "✓ You are running the latest version of AURALIX (v$installedVer)",
                         Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -212,25 +218,54 @@ object AppUpdateManager {
         }
     }
 
+    private fun getInstalledVersionName(context: Context): String {
+        return try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            pInfo.versionName?.takeIf { it.isNotBlank() } ?: BuildConfig.APP_VERSION_NAME
+        } catch (_: Exception) {
+            BuildConfig.APP_VERSION_NAME
+        }
+    }
+
+    private fun getInstalledVersionCode(context: Context): Long {
+        return try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pInfo.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                pInfo.versionCode.toLong()
+            }
+        } catch (_: Exception) {
+            BuildConfig.APP_VERSION_CODE.toLong()
+        }
+    }
+
     /**
-     * Compares remote tag (e.g. "v1.0.90") with current build code/name.
+     * Compares remote tag (e.g. "v1.0.126") with installed app version.
      */
-    private fun isNewerVersion(remoteTag: String): Boolean {
+    private fun isNewerVersion(context: Context, remoteTag: String): Boolean {
         try {
-            val cleanRemote = remoteTag.removePrefix("v").trim()
-            val currentName = BuildConfig.APP_VERSION_NAME.removePrefix("v").trim()
+            val cleanRemote = remoteTag.removePrefix("v").removePrefix("V").trim()
+            val installedName = getInstalledVersionName(context).removePrefix("v").removePrefix("V").trim()
+            val installedCode = getInstalledVersionCode(context)
 
-            // 1. Check build numbers if in 1.0.XX format
-            val remoteRun = cleanRemote.split(".").lastOrNull()?.toIntOrNull()
-            val currentRun = currentName.split(".").lastOrNull()?.toIntOrNull()
+            // 1. Check run numbers if in 1.0.XX format (e.g. 1.0.126 -> 126)
+            val remoteRun = cleanRemote.split(".").lastOrNull()?.toLongOrNull()
+            val currentRun = installedName.split(".").lastOrNull()?.toLongOrNull()
 
-            if (remoteRun != null && currentRun != null) {
-                return remoteRun > currentRun
+            if (remoteRun != null) {
+                if (currentRun != null && currentRun > 0) {
+                    return remoteRun > currentRun
+                }
+                if (installedCode > 0) {
+                    return remoteRun > installedCode
+                }
             }
 
             // 2. Semver fallback comparison
             val remoteParts = cleanRemote.split(".").mapNotNull { it.toIntOrNull() }
-            val currentParts = currentName.split(".").mapNotNull { it.toIntOrNull() }
+            val currentParts = installedName.split(".").mapNotNull { it.toIntOrNull() }
             val maxLen = maxOf(remoteParts.size, currentParts.size)
             for (i in 0 until maxLen) {
                 val r = remoteParts.getOrElse(i) { 0 }
