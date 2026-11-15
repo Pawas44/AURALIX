@@ -518,15 +518,21 @@ object UserDataRepository {
         )
 
         var isRealStreamDownloaded = false
+        val dlQuality = AppSettingsRepository.downloadQuality.value.lowercase()
         val candidateFormats = mutableListOf<AudioStreamFormat>()
 
-        // 1. Primary Priority: Format 18 (mp4 video container with clean unthrottled AAC audio stream)
-        fetchMuxedFormat18(targetVideo.id)?.let { candidateFormats.add(it) }
-
-        // 2. Secondary fallback: Other InnerTube audio formats
-        val primary = fetchRealYouTubeAudioFormat(targetVideo.id)
-        if (primary != null && candidateFormats.none { it.url == primary.url }) {
-            candidateFormats.add(primary)
+        if (dlQuality == "low") {
+            // Low quality: check pure adaptive low audio stream first, then fallback to muxed 18
+            val primary = fetchRealYouTubeAudioFormat(targetVideo.id)
+            if (primary != null) candidateFormats.add(primary)
+            fetchMuxedFormat18(targetVideo.id)?.let { if (candidateFormats.none { f -> f.url == it.url }) candidateFormats.add(it) }
+        } else {
+            // High / Medium: Format 18 AAC unthrottled or high-bitrate adaptive
+            fetchMuxedFormat18(targetVideo.id)?.let { candidateFormats.add(it) }
+            val primary = fetchRealYouTubeAudioFormat(targetVideo.id)
+            if (primary != null && candidateFormats.none { it.url == primary.url }) {
+                candidateFormats.add(primary)
+            }
         }
 
         for (format in candidateFormats) {
@@ -800,12 +806,26 @@ object UserDataRepository {
                         if (audioUrl.isNotBlank()) {
                             val isMp4 = mime.contains("mp4") || mime.contains("m4a") || mime.contains("aac")
                             val currentIsMp4 = bestFormat?.mimeType?.let { it.contains("mp4") || it.contains("m4a") || it.contains("aac") } ?: false
-                            val shouldPick = when {
-                                bestFormat == null -> true
-                                isMp4 && !currentIsMp4 -> true
-                                isMp4 && currentIsMp4 && bitrate > (bestFormat?.bitrate ?: 0) -> true
-                                !isMp4 && !currentIsMp4 && bitrate > (bestFormat?.bitrate ?: 0) -> true
-                                else -> false
+                            val dlQuality = AppSettingsRepository.downloadQuality.value.lowercase()
+                            val shouldPick = when (dlQuality) {
+                                "low" -> {
+                                    // Low: prefer lower bitrate (~40k-128k) to save space & data
+                                    bestFormat == null || (bitrate in 40_000..128_000 && (bestFormat?.bitrate ?: 999_999) > bitrate)
+                                }
+                                "medium" -> {
+                                    // Medium: prefer balanced ~128k-192k
+                                    bestFormat == null || (bitrate in 110_000..192_000)
+                                }
+                                else -> {
+                                    // High: prefer highest bitrate available
+                                    when {
+                                        bestFormat == null -> true
+                                        isMp4 && !currentIsMp4 -> true
+                                        isMp4 && currentIsMp4 && bitrate > (bestFormat?.bitrate ?: 0) -> true
+                                        !isMp4 && !currentIsMp4 && bitrate > (bestFormat?.bitrate ?: 0) -> true
+                                        else -> false
+                                    }
+                                }
                             }
                             if (shouldPick) {
                                 bestFormat = AudioStreamFormat(

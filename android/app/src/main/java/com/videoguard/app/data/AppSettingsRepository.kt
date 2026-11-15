@@ -12,6 +12,7 @@ object AppSettingsRepository {
     private const val KEY_AUTOPLAY = "autoplay"
     private const val KEY_DONT_REPEAT = "dont_repeat_suggestions"
     private const val KEY_STREAMING_QUALITY = "streaming_quality"
+    private const val KEY_DOWNLOAD_QUALITY = "download_quality"
     private const val KEY_VOLUME_LEVELING = "volume_leveling"
 
     private var prefs: SharedPreferences? = null
@@ -24,6 +25,9 @@ object AppSettingsRepository {
     private val _streamingQuality = MutableStateFlow("Lossless")
     val streamingQuality: StateFlow<String> = _streamingQuality.asStateFlow()
 
+    private val _downloadQuality = MutableStateFlow("High")
+    val downloadQuality: StateFlow<String> = _downloadQuality.asStateFlow()
+
     private val _volumeLeveling = MutableStateFlow("Normal")
     val volumeLeveling: StateFlow<String> = _volumeLeveling.asStateFlow()
 
@@ -35,6 +39,7 @@ object AppSettingsRepository {
 
         _dontRepeatSuggestions.value = sp.getBoolean(KEY_DONT_REPEAT, true)
         _streamingQuality.value = sp.getString(KEY_STREAMING_QUALITY, "Lossless") ?: "Lossless"
+        _downloadQuality.value = sp.getString(KEY_DOWNLOAD_QUALITY, "High") ?: "High"
         _volumeLeveling.value = sp.getString(KEY_VOLUME_LEVELING, "Normal") ?: "Normal"
         applyStreamingQuality(_streamingQuality.value)
         applyVolumeLeveling(_volumeLeveling.value)
@@ -63,6 +68,11 @@ object AppSettingsRepository {
             "high" -> PlaybackController.setPlaybackQuality("720p")
             else -> PlaybackController.setPlaybackQuality("Auto (1080p)")
         }
+    }
+
+    fun setDownloadQuality(quality: String) {
+        _downloadQuality.value = quality
+        prefs?.edit()?.putString(KEY_DOWNLOAD_QUALITY, quality)?.apply()
     }
 
     fun setVolumeLeveling(level: String) {

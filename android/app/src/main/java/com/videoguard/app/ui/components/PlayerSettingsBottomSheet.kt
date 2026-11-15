@@ -32,7 +32,9 @@ fun PlayerSettingsBottomSheet(
     val isAutoplayEnabled by AppSettingsRepository.isAutoplay.collectAsState()
     val dontRepeatSuggestions by AppSettingsRepository.dontRepeatSuggestions.collectAsState()
     val streamingQuality by AppSettingsRepository.streamingQuality.collectAsState()
+    val downloadQuality by AppSettingsRepository.downloadQuality.collectAsState()
     val volumeLeveling by AppSettingsRepository.volumeLeveling.collectAsState()
+    val currentQuality by PlaybackController.playbackQuality.collectAsState()
     val isCaptionsEnabled by PlaybackController.isCaptionsEnabled.collectAsState()
     val currentSpeed by PlaybackController.playbackSpeed.collectAsState()
     val sleepTimer by PlaybackController.sleepTimerMinutes.collectAsState()
@@ -40,6 +42,7 @@ fun PlayerSettingsBottomSheet(
     val sleepTimerEndOnTrackFinish by PlaybackController.sleepTimerEndOnTrackFinish.collectAsState()
     val currentTrack by PlaybackController.currentTrack.collectAsState()
 
+    var showQualityDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var customSleepMinutes by remember { mutableIntStateOf(20) }
@@ -105,7 +108,20 @@ fun PlayerSettingsBottomSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 2. Streaming Section (ByTune)
+            // 2. Video Resolution Section
+            SettingsSectionHeader("Video Resolution")
+            SettingsGroupCard {
+                SettingsRow(
+                    icon = Icons.Default.HighQuality,
+                    title = "Video Quality (Resolution)",
+                    subtitle = currentQuality,
+                    onClick = { showQualityDialog = true }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 3. Streaming Section (Audio)
             SettingsSectionHeader("Streaming")
             SettingsSegmentedCard(
                 icon = Icons.Default.Wifi,
@@ -118,7 +134,24 @@ fun PlayerSettingsBottomSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 3. Loudness Section (ByTune)
+            // 4. Downloads Section
+            SettingsSectionHeader("Downloads")
+            SettingsSegmentedCard(
+                icon = Icons.Default.Download,
+                title = "Download quality",
+                subtitle = when (downloadQuality.lowercase()) {
+                    "low" -> "128 kbps • Fast download & saves storage"
+                    "medium" -> "192 kbps • Balanced quality"
+                    else -> "320 kbps • Studio lossless audio"
+                },
+                options = listOf("Low", "Medium", "High"),
+                selectedOption = downloadQuality,
+                onOptionSelected = { AppSettingsRepository.setDownloadQuality(it) }
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 5. Loudness Section (ByTune)
             SettingsSectionHeader("Loudness")
             SettingsSegmentedCard(
                 icon = Icons.Default.VolumeUp,
@@ -191,6 +224,69 @@ fun PlayerSettingsBottomSheet(
                 )
             }
         }
+    }
+
+    // Video Quality Selection Dialog
+    if (showQualityDialog) {
+        val qualities = listOf(
+            "Auto (1080p)" to "Auto (Best available)",
+            "1080p" to "1080p Full HD",
+            "720p" to "720p HD",
+            "480p" to "480p Standard",
+            "360p" to "360p Data Saver"
+        )
+        AlertDialog(
+            onDismissRequest = { showQualityDialog = false },
+            title = {
+                Text(
+                    text = "Video Resolution",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Column {
+                    qualities.forEach { (qKey, qLabel) ->
+                        val isSelected = currentQuality == qKey || (qKey.startsWith("Auto") && currentQuality.startsWith("Auto"))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    PlaybackController.setPlaybackQuality(qKey)
+                                    showQualityDialog = false
+                                }
+                                .padding(vertical = 12.dp, horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = qLabel,
+                                color = if (isSelected) Color(0xFF38BDF8) else Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = Color(0xFF38BDF8)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showQualityDialog = false }) {
+                    Text("Close", color = Color(0xFFAAAAAA))
+                }
+            },
+            containerColor = Color(0xFF1E212B),
+            shape = RoundedCornerShape(18.dp)
+        )
     }
 
     // Speed Selection Dialog

@@ -441,8 +441,17 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             }
 
             function setPlaybackQuality(quality) {
-              if (window.ytPlayer && window.ytPlayer.setPlaybackQuality) {
-                window.ytPlayer.setPlaybackQuality(quality);
+              if (window.ytPlayer && typeof window.ytPlayer.setPlaybackQuality === 'function') {
+                try { window.ytPlayer.setPlaybackQuality(quality); } catch(e) {}
+                try { if (window.ytPlayer.setPlaybackQualityRange) window.ytPlayer.setPlaybackQualityRange(quality, quality); } catch(e) {}
+              }
+              var iframe = document.getElementById('player');
+              if (iframe && iframe.contentWindow) {
+                iframe.contentWindow.postMessage(JSON.stringify({
+                  "event": "command",
+                  "func": "setPlaybackQuality",
+                  "args": [quality]
+                }), '*');
               }
             }
 
