@@ -275,9 +275,10 @@ fun MainScreen() {
                         clip = true
                     }
                 else -> Modifier
-                    .size(200.dp, 120.dp)
-                    .alpha(0.08f)
-                    .zIndex(-10f)
+                    .size(1.dp)
+                    .offset(x = (-1000).dp, y = (-1000).dp)
+                    .alpha(0.005f)
+                    .zIndex(-100f)
             }
 
             if (!PlaybackController.isOfflineModeActive) {

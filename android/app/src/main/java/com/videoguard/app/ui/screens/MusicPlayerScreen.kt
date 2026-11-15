@@ -63,24 +63,16 @@ import com.videoguard.app.data.VideoRepository
 import com.videoguard.app.model.VideoItem
 import com.videoguard.app.ui.components.AddToPlaylistSheet
 import com.videoguard.app.ui.components.YouTubeVideoPlayer
+import androidx.compose.ui.draw.drawBehind
+import com.videoguard.app.ui.theme.AmbientPalette
+import com.videoguard.app.ui.theme.ArtworkColorExtractor
 import com.videoguard.app.ui.theme.LiquidGlassDefaults
 import com.videoguard.app.ui.theme.YouTubeRed
 import com.videoguard.app.ui.theme.YTMusicBlack
 import com.videoguard.app.ui.theme.YTMusicRedAccent
 
-data class AmbientPalette(
-    val primary: Color,
-    val secondary: Color,
-    val deep: Color
-)
-
 fun getTrackPalette(track: VideoItem): AmbientPalette {
-    val hash = track.id.hashCode()
-    val hue = ((hash and 0x7FFFFFFF) % 360).toFloat()
-    val primary = Color.hsl(hue = hue, saturation = 0.68f, lightness = 0.22f)
-    val secondary = Color.hsl(hue = (hue + 28f) % 360f, saturation = 0.52f, lightness = 0.11f)
-    val deep = Color(0xFF070707)
-    return AmbientPalette(primary, secondary, deep)
+    return ArtworkColorExtractor.getPaletteSync(track)
 }
 
 enum class MusicSheetTab {
@@ -129,6 +121,10 @@ fun MusicPlayerScreen(
     var dynamicRelated by remember(track.id) { mutableStateOf<List<VideoItem>>(emptyList()) }
     var isLoadingRelated by remember(track.id) { mutableStateOf(false) }
     var isSheetExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(track.id, track.thumbnailUrl) {
+        ArtworkColorExtractor.extractPalette(context, track)
+    }
 
     LaunchedEffect(track.id) {
         val isOffline = com.videoguard.app.service.PlaybackController.isOfflineModeActive
@@ -346,20 +342,53 @@ fun MusicPlayerScreen(
     val dynamicSecondary = androidx.compose.ui.graphics.lerp(fromPalette.secondary, toPalette.secondary, safeBlend)
     val dynamicDeep = androidx.compose.ui.graphics.lerp(fromPalette.deep, toPalette.deep, safeBlend)
 
-    val ambientGradient = remember(dynamicPrimary, dynamicSecondary, dynamicDeep) {
-        Brush.verticalGradient(
-            colors = listOf(
-                dynamicPrimary,
-                dynamicSecondary,
-                dynamicDeep
-            )
-        )
-    }
-
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(ambientGradient)
+            .background(Color(0xFF060709))
+            .drawBehind {
+                // High-end ambient radial glow centered behind album artwork
+                val auraCenter = Offset(size.width * 0.5f, size.height * 0.36f)
+                val auraRadius = size.width * 0.95f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            dynamicPrimary.copy(alpha = 0.58f),
+                            dynamicSecondary.copy(alpha = 0.32f),
+                            Color.Transparent
+                        ),
+                        center = auraCenter,
+                        radius = auraRadius
+                    ),
+                    center = auraCenter,
+                    radius = auraRadius
+                )
+
+                // Secondary soft lower ambient glow behind transport controls
+                val bottomCenter = Offset(size.width * 0.5f, size.height * 0.86f)
+                val bottomRadius = size.width * 0.72f
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            dynamicSecondary.copy(alpha = 0.22f),
+                            Color.Transparent
+                        ),
+                        center = bottomCenter,
+                        radius = bottomRadius
+                    ),
+                    center = bottomCenter,
+                    radius = bottomRadius
+                )
+
+                // Smooth filmic vignette overlay for maximum contrast and readability
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0.0f to Color.Black.copy(alpha = 0.20f),
+                        0.45f to Color.Transparent,
+                        1.0f to Color(0xFF060709).copy(alpha = 0.92f)
+                    )
+                )
+            }
             .statusBarsPadding()
     ) {
         // Main Player UI (Fixed height, generous spacing, never squashed!)
@@ -635,6 +664,9 @@ fun MusicPlayerScreen(
                 val scale = (0.88f + (1f - 0.88f) * (1f - pageOffset)).coerceIn(0.5f, 1.5f)
                 val alpha = (0.45f + (1f - 0.45f) * (1f - pageOffset)).coerceIn(0f, 1f)
                 val itemPalette = remember(itemTrack.id) { getTrackPalette(itemTrack) }
+                LaunchedEffect(itemTrack.id, itemTrack.thumbnailUrl) {
+                    ArtworkColorExtractor.extractPalette(context, itemTrack)
+                }
 
                 Box(
                     modifier = Modifier.fillMaxSize(),

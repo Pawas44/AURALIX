@@ -58,6 +58,7 @@ object RecommendationEngine {
             val userHistory = UserDataRepository.history.value
             val userPlaylists = UserDataRepository.playlists.value
             val likedPlaylist = userPlaylists.find { it.id == "liked_videos" }?.videos ?: emptyList()
+            val importedPlaylistTracks = userPlaylists.flatMap { it.videos }
 
             // 1. Collect candidate pool
             val syncFeed = YouTubeSyncEngine.musicFeed.value
@@ -66,6 +67,7 @@ object RecommendationEngine {
                 syncFeed.listenAgain +
                 syncFeed.recommendedVideos +
                 syncFeed.trendingCharts +
+                importedPlaylistTracks +
                 userHistory +
                 likedPlaylist +
                 VideoRepository.sampleVideos

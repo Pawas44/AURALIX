@@ -399,6 +399,17 @@ object YouTubeSearchEngine {
     }
 
     suspend fun getRelatedVideos(video: VideoItem, isMusicOnly: Boolean = false): List<VideoItem> = withContext(Dispatchers.IO) {
+        if (isMusicOnly) {
+            try {
+                // Tier 1 (ByTune Native): Official YouTube Music RDAMVM automix song radio
+                val songRadio = getSongRadio(video.id)
+                if (songRadio.isNotEmpty()) {
+                    return@withContext songRadio
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
         val candidates = mutableListOf<VideoItem>()
         try {
             val cleanTitle = video.title.replace(Regex("[\\[\\(].*?[\\]\\)]"), "").trim()
@@ -474,6 +485,12 @@ object YouTubeSearchEngine {
                 put("playlistId", "RDAMVM$videoId")
                 put("enablePersistentPlaylistPanel", true)
                 put("tunerSettingValue", "AUTOMIX_SETTING_NORMAL")
+                put("watchEndpointMusicSupportedConfigs", JSONObject().apply {
+                    put("watchEndpointMusicConfig", JSONObject().apply {
+                        put("hasPersistentPlaylistPanel", true)
+                        put("musicVideoType", "MUSIC_VIDEO_TYPE_ATV")
+                    })
+                })
             }
 
             conn.outputStream.bufferedWriter().use { it.write(body.toString()) }
