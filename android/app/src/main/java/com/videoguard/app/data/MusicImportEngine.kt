@@ -550,7 +550,7 @@ object MusicImportEngine {
         var channel = "YouTube Creator"
         var duration = "3:30"
 
-        val rows = meta.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")?.optJSONArray("metadataRows")
+        val rows = meta?.optJSONObject("metadata")?.optJSONObject("contentMetadataViewModel")?.optJSONArray("metadataRows")
         if (rows != null) {
             for (i in 0 until rows.length()) {
                 val parts = rows.optJSONObject(i)?.optJSONArray("metadataParts")
