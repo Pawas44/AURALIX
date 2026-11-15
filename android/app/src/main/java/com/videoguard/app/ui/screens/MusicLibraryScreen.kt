@@ -40,6 +40,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import android.content.Intent
 import com.videoguard.app.data.AccountRepository
 import com.videoguard.app.data.ImportProgress
 import com.videoguard.app.data.MusicImportEngine
@@ -48,6 +49,7 @@ import com.videoguard.app.data.SpotifyConnectEngine
 import com.videoguard.app.data.UserDataRepository
 import com.videoguard.app.model.UserPlaylist
 import com.videoguard.app.model.VideoItem
+import com.videoguard.app.ui.SpotifyAuthActivity
 import com.videoguard.app.ui.components.SpotifyLoginDialog
 import com.videoguard.app.ui.theme.YTMusicRedAccent
 import kotlinx.coroutines.launch
@@ -244,7 +246,9 @@ fun MusicLibraryScreen(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Button(
-                                        onClick = { showSpotifyLoginDialog = true },
+                                        onClick = {
+                                            context.startActivity(Intent(context, SpotifyAuthActivity::class.java))
+                                        },
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)),
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.weight(1f)

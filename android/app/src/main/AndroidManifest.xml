@@ -42,6 +42,13 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.SpotifyAuthActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
+            android:theme="@style/Theme.VideoGuard"
+            android:windowSoftInputMode="adjustResize" />
+
         <service
             android:name=".service.MediaPlaybackService"
             android:exported="false"

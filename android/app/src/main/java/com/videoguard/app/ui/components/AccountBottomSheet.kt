@@ -1,5 +1,6 @@
 package com.videoguard.app.ui.components
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -26,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.videoguard.app.data.AccountRepository
 import com.videoguard.app.data.SpotifyConnectEngine
 import com.videoguard.app.model.AppMode
+import com.videoguard.app.ui.SpotifyAuthActivity
 import com.videoguard.app.ui.theme.YouTubeRed
 import kotlinx.coroutines.launch
 
@@ -353,7 +355,10 @@ fun AccountBottomSheet(
                             }
                         } else {
                             Button(
-                                onClick = { showSpotifyLoginDialogInSheet = true },
+                                onClick = {
+                                    onDismiss()
+                                    context.startActivity(Intent(context, SpotifyAuthActivity::class.java))
+                                },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)),
                                 shape = RoundedCornerShape(16.dp),
                                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
