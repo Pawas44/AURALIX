@@ -66,29 +66,12 @@ object MusicImportEngine {
                 return@withContext Result.failure(IllegalStateException("No tracks found to import. Please check the link or song list."))
             }
 
-            val matchedVideos = matchTracksWithYouTube(trackMetas, onProgress).toMutableList()
+            val matchedVideos = matchTracksWithYouTube(trackMetas, onProgress)
+                .filter { it.id.length == 11 && !it.id.startsWith("search_") }
+                .toMutableList()
 
             if (matchedVideos.isEmpty()) {
-                val sampleList = VideoRepository.getMusicTracks().ifEmpty { VideoRepository.sampleVideos }
-                val fallbackList = trackMetas.mapIndexed { idx, meta ->
-                    val sample = sampleList[idx % sampleList.size]
-                    VideoItem(
-                        id = sample.id,
-                        title = meta.title,
-                        channelName = meta.artist.ifBlank { sample.artist },
-                        channelAvatarUrl = "https://img.youtube.com/vi/${sample.id}/hqdefault.jpg",
-                        thumbnailUrl = "https://img.youtube.com/vi/${sample.id}/hqdefault.jpg",
-                        views = "Popular",
-                        uploadTime = "Recently",
-                        duration = if (meta.durationSeconds > 0) "${meta.durationSeconds / 60}:${(meta.durationSeconds % 60).toString().padStart(2, '0')}" else "3:30",
-                        description = "${meta.title} by ${meta.artist}",
-                        isMusicTrack = true,
-                        artist = meta.artist.ifBlank { sample.artist },
-                        album = meta.album.ifBlank { "Single" },
-                        category = "Music"
-                    )
-                }
-                matchedVideos.addAll(fallbackList)
+                return@withContext Result.failure(IllegalStateException("Could not match tracks on YouTube. Please check your internet connection."))
             }
 
             val finalPlaylist = UserPlaylist(
@@ -130,28 +113,12 @@ object MusicImportEngine {
             if (tracks.isEmpty()) {
                 return@withContext Result.failure(IllegalStateException("No tracks found in playlist"))
             }
-            val matchedVideos = matchTracksWithYouTube(tracks, onProgress).toMutableList()
+            val matchedVideos = matchTracksWithYouTube(tracks, onProgress)
+                .filter { it.id.length == 11 && !it.id.startsWith("search_") }
+                .toMutableList()
+
             if (matchedVideos.isEmpty()) {
-                val sampleList = VideoRepository.getMusicTracks().ifEmpty { VideoRepository.sampleVideos }
-                val fallbackList = tracks.mapIndexed { idx, meta ->
-                    val sample = sampleList[idx % sampleList.size]
-                    VideoItem(
-                        id = sample.id,
-                        title = meta.title,
-                        channelName = meta.artist.ifBlank { sample.artist },
-                        channelAvatarUrl = "https://img.youtube.com/vi/${sample.id}/hqdefault.jpg",
-                        thumbnailUrl = "https://img.youtube.com/vi/${sample.id}/hqdefault.jpg",
-                        views = "Popular",
-                        uploadTime = "Recently",
-                        duration = if (meta.durationSeconds > 0) "${meta.durationSeconds / 60}:${(meta.durationSeconds % 60).toString().padStart(2, '0')}" else "3:30",
-                        description = "${meta.title} by ${meta.artist}",
-                        isMusicTrack = true,
-                        artist = meta.artist.ifBlank { sample.artist },
-                        album = meta.album.ifBlank { "Single" },
-                        category = "Music"
-                    )
-                }
-                matchedVideos.addAll(fallbackList)
+                return@withContext Result.failure(IllegalStateException("Could not match tracks on YouTube. Please check your internet connection."))
             }
             val finalPlaylist = UserPlaylist(
                 id = UUID.randomUUID().toString(),
@@ -172,8 +139,8 @@ object MusicImportEngine {
     }
 
     private const val INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
-    // Official YouTube Music Song Filter (guarantees studio audio tracks, eliminates jukeboxes and fan recordings)
-    private const val YTM_SONGS_FILTER = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"
+    // Official YouTube Music Song Filter from ByTune (guarantees studio audio tracks, eliminates jukeboxes and fan recordings)
+    private const val YTM_SONGS_FILTER = "EgWKAQIIAWoKEAkQChAFEAMQBA=="
     private const val YT_VIDEO_FILTER = "EgIQAQ=="
 
     private suspend fun searchInnerTubeDirect(
@@ -565,142 +532,68 @@ object MusicImportEngine {
         )
     }
 
-    private suspend fun resolveTrackOnYouTube(meta: ImportTrackMeta): VideoItem {
+    private suspend fun resolveTrackOnYouTube(meta: ImportTrackMeta): VideoItem? {
         try {
-            val cleanTitle = meta.title.replace(Regex("""[([{【「『][^)\]}】」』]*[)\]}】」』]"""), " ").trim()
-            val primaryArtist = meta.artist.split(Regex("[,&+/;]")).firstOrNull()?.trim() ?: meta.artist
+            val queries = searchQueries(meta)
+            var matched: VideoItem? = null
 
-            val query1 = if (primaryArtist.isNotBlank() && !cleanTitle.contains(primaryArtist, ignoreCase = true)) {
-                "$cleanTitle $primaryArtist"
-            } else {
-                cleanTitle
+            // 1. YouTube Music Official Songs Catalog (ByTune method - exact studio audio tracks)
+            for (q in queries) {
+                val results = searchInnerTubeDirect(q, useMusicApi = true, params = YTM_SONGS_FILTER)
+                matched = bestMatch(meta, results)
+                if (matched != null) break
             }
 
-            // 1. YouTube Music Official Songs Catalog (Highest priority - Song filter: exact official audio)
-            var results = searchInnerTubeDirect(query1, useMusicApi = true, params = YTM_SONGS_FILTER)
-
-            // 2. YouTube Music with full title + artist (with Song filter)
-            if (results.isEmpty() && meta.artist.isNotBlank()) {
-                results = searchInnerTubeDirect("${meta.title} ${meta.artist}", useMusicApi = true, params = YTM_SONGS_FILTER)
-            }
-
-            // 3. YouTube Music Catalog without filter (in case songs filter hid a rare track)
-            if (results.isEmpty()) {
-                results = searchInnerTubeDirect(query1, useMusicApi = true, params = null)
-            }
-
-            // 4. Regular YouTube Video Search with Video Filter (EgIQAQ==)
-            if (results.isEmpty()) {
-                results = searchInnerTubeDirect("$cleanTitle $primaryArtist official audio", useMusicApi = false, params = YT_VIDEO_FILTER)
-            }
-
-            // 5. Clean title only on YouTube Music
-            if (results.isEmpty()) {
-                results = searchInnerTubeDirect(cleanTitle, useMusicApi = true, params = YTM_SONGS_FILTER)
-            }
-
-            // 6. Public Web Search fallback
-            if (results.isEmpty()) {
-                results = searchYouTubeFreeWeb("$cleanTitle $primaryArtist")
-            }
-
-            // 7. Regular YouTube general search
-            if (results.isEmpty()) {
-                results = searchInnerTubeDirect(query1, useMusicApi = false, params = YT_VIDEO_FILTER)
-            }
-
-            val validCandidates = results.filter { it.id.length == 11 }
-            val best = validCandidates.maxByOrNull { scoreTrackMatch(meta, it) }
-            val bestScore = if (best != null) scoreTrackMatch(meta, best) else -999
-
-            // If best match scored well (>= 20) and has valid 11-char ID, accept immediately!
-            if (best != null && bestScore >= 20 && best.id.length == 11) {
-                val realThumb = if (best.thumbnailUrl.isNotBlank() && !best.thumbnailUrl.contains("unsplash")) {
-                    best.thumbnailUrl
-                } else {
-                    "https://img.youtube.com/vi/${best.id}/hqdefault.jpg"
+            // 2. Regular YouTube Video Search with official audio filter
+            if (matched == null) {
+                for (q in queries) {
+                    val ytResults = searchInnerTubeDirect("$q official audio", useMusicApi = false, params = YT_VIDEO_FILTER)
+                    matched = bestMatch(meta, ytResults)
+                    if (matched != null) break
                 }
-                return best.copy(
-                    title = meta.title.ifBlank { best.title },
-                    artist = meta.artist.ifBlank { best.artist },
+            }
+
+            // 3. YouTube Music Catalog without filter (in case songs filter hid a rare regional track)
+            if (matched == null) {
+                for (q in queries) {
+                    val fallbackYtm = searchInnerTubeDirect(q, useMusicApi = true, params = null)
+                    matched = bestMatch(meta, fallbackYtm)
+                    if (matched != null) break
+                }
+            }
+
+            // 4. Free YouTube web scraping fallback (gets real YouTube video for the song)
+            if (matched == null) {
+                val primaryQ = queries.firstOrNull() ?: "${meta.title} ${meta.artist}"
+                val webResults = searchYouTubeFreeWeb(primaryQ)
+                matched = bestMatch(meta, webResults) ?: webResults.firstOrNull()
+            }
+
+            // 5. YouTubeSearchEngine fallback
+            if (matched == null) {
+                val primaryQ = queries.firstOrNull() ?: "${meta.title} ${meta.artist}"
+                val engineResults = YouTubeSearchEngine.searchVideos(primaryQ, isMusicOnly = true)
+                matched = bestMatch(meta, engineResults) ?: engineResults.firstOrNull()
+            }
+
+            if (matched != null && matched.id.length == 11) {
+                val realThumb = if (matched.thumbnailUrl.isNotBlank() && !matched.thumbnailUrl.contains("unsplash")) {
+                    matched.thumbnailUrl
+                } else {
+                    "https://img.youtube.com/vi/${matched.id}/hqdefault.jpg"
+                }
+                return matched.copy(
+                    title = meta.title.ifBlank { matched.title },
+                    artist = meta.artist.ifBlank { matched.artist },
                     thumbnailUrl = realThumb,
                     channelAvatarUrl = realThumb
                 )
             }
 
-            // If score was below 20, do a targeted "official audio" search as safety net
-            if (bestScore < 20) {
-                val audioResults = searchInnerTubeDirect("$cleanTitle $primaryArtist official audio", useMusicApi = false, params = YT_VIDEO_FILTER)
-                val audioBest = audioResults.filter { it.id.length == 11 }.maxByOrNull { scoreTrackMatch(meta, it) }
-                if (audioBest != null && scoreTrackMatch(meta, audioBest) > bestScore) {
-                    val realThumb = "https://img.youtube.com/vi/${audioBest.id}/hqdefault.jpg"
-                    return audioBest.copy(
-                        title = meta.title.ifBlank { audioBest.title },
-                        artist = meta.artist.ifBlank { audioBest.artist },
-                        thumbnailUrl = realThumb,
-                        channelAvatarUrl = realThumb
-                    )
-                }
-            }
-
-            // If any valid candidate was found, use the best available
-            if (best != null && best.id.length == 11) {
-                val realThumb = if (best.thumbnailUrl.isNotBlank() && !best.thumbnailUrl.contains("unsplash")) {
-                    best.thumbnailUrl
-                } else {
-                    "https://img.youtube.com/vi/${best.id}/hqdefault.jpg"
-                }
-                return best.copy(
-                    title = meta.title.ifBlank { best.title },
-                    artist = meta.artist.ifBlank { best.artist },
-                    thumbnailUrl = realThumb,
-                    channelAvatarUrl = realThumb
-                )
-            }
-
-            // 8. Diverse fallback from sample repository (never all The Weeknd)
-            val sampleList = VideoRepository.getMusicTracks().ifEmpty { VideoRepository.sampleVideos }
-            val index = kotlin.math.abs(meta.title.hashCode()) % sampleList.size
-            val fallbackSample = sampleList[index]
-            val safeVid = fallbackSample.id
-            val safeThumb = "https://img.youtube.com/vi/$safeVid/hqdefault.jpg"
-            return VideoItem(
-                id = safeVid,
-                title = meta.title,
-                channelName = meta.artist.ifBlank { fallbackSample.artist },
-                channelAvatarUrl = safeThumb,
-                thumbnailUrl = safeThumb,
-                views = "Popular",
-                uploadTime = "Recently",
-                duration = if (meta.durationSeconds > 0) "${meta.durationSeconds / 60}:${(meta.durationSeconds % 60).toString().padStart(2, '0')}" else "3:30",
-                description = "${meta.title} by ${meta.artist}",
-                isMusicTrack = true,
-                artist = meta.artist.ifBlank { fallbackSample.artist },
-                album = meta.album.ifBlank { "Single" },
-                category = "Music"
-            )
+            return null
         } catch (e: Exception) {
             e.printStackTrace()
-            val sampleList = VideoRepository.getMusicTracks().ifEmpty { VideoRepository.sampleVideos }
-            val index = kotlin.math.abs(meta.title.hashCode()) % sampleList.size
-            val fallbackSample = sampleList[index]
-            val safeVid = fallbackSample.id
-            val safeThumb = "https://img.youtube.com/vi/$safeVid/hqdefault.jpg"
-            return VideoItem(
-                id = safeVid,
-                title = meta.title,
-                channelName = meta.artist.ifBlank { fallbackSample.artist },
-                channelAvatarUrl = safeThumb,
-                thumbnailUrl = safeThumb,
-                views = "Popular",
-                uploadTime = "Recently",
-                duration = "3:30",
-                description = "${meta.title} by ${meta.artist}",
-                isMusicTrack = true,
-                artist = meta.artist.ifBlank { fallbackSample.artist },
-                album = meta.album.ifBlank { "Single" },
-                category = "Music"
-            )
+            return null
         }
     }
 
@@ -838,8 +731,10 @@ object MusicImportEngine {
                             val t = trackList.optJSONObject(i) ?: continue
                             val title = t.optString("title", "")
                             val subtitle = t.optString("subtitle", "")
+                            val durMs = t.optLong("duration", 0L)
+                            val durSec = if (durMs > 0) (durMs / 1000).toInt() else 0
                             if (title.isNotBlank()) {
-                                tracks.add(ImportTrackMeta(title, subtitle))
+                                tracks.add(ImportTrackMeta(title = title, artist = subtitle, durationSeconds = durSec))
                             }
                         }
                     }
@@ -1280,80 +1175,92 @@ object MusicImportEngine {
         return (2f * shared) / (x.length - 1 + y.length - 1)
     }
 
-    private fun scoreTrackMatch(meta: ImportTrackMeta, candidate: VideoItem): Int {
-        val metaClean = cleanTitleWords(meta.title)
-        val candClean = cleanTitleWords(candidate.title)
-        val candLow = candidate.title.lowercase()
-        val metaLow = meta.title.lowercase()
+    private fun searchQueries(meta: ImportTrackMeta): List<String> {
+        val cleanTitle = meta.title
+            .replace(Regex("""[([{【「『][^)\]}】」』]*[)\]}】」』]"""), " ")
+            .replace(Regex("""\s[-–—]\s.*$"""), " ")
+            .trim()
+        val baseTitle = if (cleanTitle.isNotBlank()) cleanTitle else meta.title.trim()
+        val version = extractVersionMarkers(meta.title).sorted().joinToString(" ")
+        val name = if (version.isNotBlank()) "$baseTitle $version" else baseTitle
 
-        var score = 0
+        val firstArtist = meta.artist
+            .split(Regex("""\s*(?:,|&|\+|\/|;|、|\sx\s|\sand\s|\s(?:feat|ft)\.?\s|\sfeaturing\s|\swith\s|\svs\.?\s)\s*""", RegexOption.IGNORE_CASE))
+            .firstOrNull()?.trim() ?: ""
 
-        // 1. Jukebox / Nonstop / 1 hour / Compilation penalty (-200)
-        val junkPatterns = listOf("jukebox", "nonstop", "non stop", "full album", "all songs", "mashup", "compilation", "1 hour", "10 hour", "megamix", "reaction")
-        for (pat in junkPatterns) {
-            if (candLow.contains(pat) && !metaLow.contains(pat)) {
-                score -= 200
-            }
+        val queries = mutableListOf<String>()
+        if (meta.artist.isNotBlank() && !name.contains(meta.artist, ignoreCase = true)) {
+            queries.add("$name ${meta.artist}")
         }
-
-        // 2. Live / Concert penalty (-100)
-        val livePatterns = listOf("live", "concert", "tour", "arena", "dome", "stadium", "performance")
-        for (pat in livePatterns) {
-            if (candLow.contains(pat) && !metaLow.contains(pat)) {
-                score -= 100
-            }
+        if (firstArtist.isNotBlank() && firstArtist != meta.artist && !name.contains(firstArtist, ignoreCase = true)) {
+            queries.add("$name $firstArtist")
         }
+        queries.add(name)
+        return queries.distinct()
+    }
 
-        // 3. Cover / Karaoke / Slowed / Reverb penalty (-80)
-        val altPatterns = listOf("cover", "karaoke", "instrumental", "slowed", "reverb", "sped up", "nightcore", "remix", "reprise")
-        for (pat in altPatterns) {
-            if (candLow.contains(pat) && !metaLow.contains(pat)) {
-                score -= 80
-            }
-        }
+    private fun artistNames(artist: String): List<String> {
+        return artist
+            .split(Regex("""\s*(?:,|&|\+|\/|;|、|\sx\s|\sand\s|\s(?:feat|ft)\.?\s|\sfeaturing\s|\swith\s|\svs\.?\s)\s*""", RegexOption.IGNORE_CASE))
+            .map { cleanTitleWords(it).replace(" ", "") }
+            .filter { it.length >= 2 }
+    }
 
-        // 4. Version markers match
-        val metaVersions = extractVersionMarkers(meta.title)
-        val candVersions = extractVersionMarkers(candidate.title)
-        if (metaVersions == candVersions && metaVersions.isNotEmpty()) {
-            score += 25
-        } else if (metaVersions.isNotEmpty() && candVersions.isEmpty()) {
-            score -= 20
-        }
+    /**
+     * ByTune's exact match scoring logic (ported from electron/track-match.ts)
+     * Returns a float score (higher is surer) or null if candidate is rejected as a different recording.
+     */
+    private fun matchScore(target: ImportTrackMeta, candidate: VideoItem): Float? {
+        // 1. Version markers must agree (remix with remix, live with live)
+        if (extractVersionMarkers(target.title) != extractVersionMarkers(candidate.title)) return null
 
-        // 5. Title Match Bonus (+100 for exact, +70 for substring, up to +60 for dice similarity)
-        if (metaClean == candClean) {
-            score += 100
-        } else if (candClean.contains(metaClean) || metaClean.contains(candClean)) {
-            score += 70
-        } else {
-            val sim = diceSimilarity(metaClean, candClean)
-            score += (sim * 60).toInt()
-        }
+        // 2. Title similarity check
+        val targetWords = cleanTitleWords(target.title)
+        val candWords = cleanTitleWords(candidate.title)
+        val sim = diceSimilarity(targetWords, candWords)
+        val titleMatches = sim >= 0.70f || targetWords == candWords ||
+            (targetWords.length >= 4 && candWords.contains(targetWords)) ||
+            (candWords.length >= 4 && targetWords.contains(candWords))
+        if (!titleMatches) return null
 
-        // 6. Artist Overlap Bonus (+50)
-        if (meta.artist.isNotBlank()) {
-            val targetArtists = meta.artist.split(Regex("[,&+/;]"))
-                .map { it.trim().lowercase().replace(" ", "") }
-                .filter { it.isNotBlank() }
-            val candArtistStr = "${candidate.artist} ${candidate.channelName} ${candidate.title}".lowercase().replace(" ", "")
-            val hasOverlap = targetArtists.any { it.length > 2 && candArtistStr.contains(it) }
-            if (hasOverlap) score += 50
-        }
-
-        // 7. Duration Matching
+        // 3. Duration check if duration is known (gap <= 25 sec)
         val candSec = parseDurationSec(candidate.duration)
-        if (candSec > 600 && (meta.durationSeconds <= 0 || meta.durationSeconds < 600)) {
-            // Massive penalty if candidate is > 10 min while meta is a normal song
-            score -= 250
-        } else if (meta.durationSeconds > 0 && candSec > 0) {
-            val gap = kotlin.math.abs(meta.durationSeconds - candSec)
-            if (gap <= 5) score += 30
-            else if (gap <= 15) score += 15
-            else if (gap > 45) score -= 30
-        }
+        val gap = if (target.durationSeconds > 0 && candSec > 0) kotlin.math.abs(target.durationSeconds - candSec) else null
+        if (gap != null && gap > 25) return null
 
+        // 4. Reject long mix/jukebox
+        if (candSec > 600 && target.durationSeconds < 600) return null
+
+        // 5. Reject candidate with explicit junk keywords if target does not have them
+        val candLow = candidate.title.lowercase()
+        val targetLow = target.title.lowercase()
+        val junkKeywords = listOf("jukebox", "nonstop", "non stop", "full album", "all songs", "mashup", "compilation", "1 hour", "10 hour")
+        if (junkKeywords.any { candLow.contains(it) && !targetLow.contains(it) }) return null
+
+        // 6. Artist check
+        val wanted = artistNames(target.artist)
+        val candArtistStr = "${candidate.artist} ${candidate.channelName} ${candidate.title}".lowercase().replace(" ", "")
+        val shared = wanted.any { it.length > 2 && candArtistStr.contains(it) }
+
+        var score = sim * 100f + (if (shared) 40f else 0f)
+        if (gap != null) {
+            score += if (gap <= 3) 25f else if (gap <= 8) 15f else 5f
+        }
         return score
+    }
+
+    private fun bestMatch(target: ImportTrackMeta, candidates: List<VideoItem>): VideoItem? {
+        var best: VideoItem? = null
+        var bestScore = -1f
+        for (cand in candidates) {
+            if (cand.id.length != 11) continue
+            val sc = matchScore(target, cand) ?: continue
+            if (sc > bestScore) {
+                best = cand
+                bestScore = sc
+            }
+        }
+        return best
     }
 
     private fun parseDurationSec(str: String): Int {
