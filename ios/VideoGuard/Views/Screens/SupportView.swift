@@ -85,28 +85,6 @@ struct SupportView: View {
                         }
                     }
 
-                    // Clean Direct Payee Pill (1-Tap No Manual Effort)
-                    HStack {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(mintAccent)
-                        Text("To: \(pawasName) (\(pawasPhoneNumber))")
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .foregroundColor(Color(hex: 0xCBD5E1))
-                        Spacer()
-                        Text("1-Tap Direct UPI")
-                            .font(.system(size: 11.5, weight: .medium))
-                            .foregroundColor(razorpayAccent)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(10)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-                    )
-
                     Text("Select Amount (INR):")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(Color(hex: 0xCBD5E1))

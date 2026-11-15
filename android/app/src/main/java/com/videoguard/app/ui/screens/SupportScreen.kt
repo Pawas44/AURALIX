@@ -171,46 +171,6 @@ fun SupportScreen(
                     }
                 }
 
-                // Clean Direct Payee Banner (1-Tap No Manual Effort)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.05f))
-                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Verified",
-                                tint = MintAccent,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                text = "To: $PAWAS_NAME ($PAWAS_PHONE_NUMBER)",
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                        Text(
-                            text = "1-Tap Direct UPI",
-                            color = RazorpayAccent,
-                            fontSize = 11.5.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-
                 Text(
                     text = "Select Amount (INR):",
                     color = Color(0xFFCBD5E1),
