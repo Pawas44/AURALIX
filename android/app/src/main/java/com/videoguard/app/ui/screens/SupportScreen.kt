@@ -2,9 +2,12 @@ package com.videoguard.app.ui.screens
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,22 +30,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import com.videoguard.app.BuildConfig
 import com.videoguard.app.R
 import com.videoguard.app.data.AppUpdateManager
+import java.io.File
+import java.io.FileOutputStream
 
 // ========================================================
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
 // ========================================================
 // Put your exact UPI VPA here (e.g. pawas@oksbi, pawas@paytm, etc.)
-const val PAWAS_UPI_ID = "pawas@fam"
-const val PAWAS_NAME = "Pawas"
+const val PAWAS_UPI_ID = "9315135782@naviaxis"
+const val PAWAS_NAME = "PAWAS PANT"
 private const val RAZORPAY_URL = "https://razorpay.me/@pawas"
 private const val BMC_PROFILE_URL = "https://buymeacoffee.com/findex"
 
@@ -66,6 +73,7 @@ fun SupportScreen(
 
     var selectedAmount by remember { mutableStateOf("100") }
     var customAmount by remember { mutableStateOf("") }
+    var showQrCode by remember { mutableStateOf(false) }
 
     val presetAmounts = listOf("50", "100", "250", "500")
     val effectiveAmount = customAmount.ifBlank { selectedAmount }.ifBlank { "100" }
@@ -233,12 +241,12 @@ fun SupportScreen(
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                // Action 1: Open Installed UPI App Directly
+                // Action 1: Pay via PhonePe (Auto-Scans QR Code behind the button)
                 Button(
                     onClick = {
-                        openUpiPayment(context, effectiveAmount)
+                        openPhonePeWithQr(context, effectiveAmount)
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RazorpayAccent),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5F259F)),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -247,14 +255,35 @@ fun SupportScreen(
                     OfficialUpiArrows(modifier = Modifier.size(width = 24.dp, height = 16.dp))
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Pay ₹$effectiveAmount via UPI App",
+                        text = "Pay ₹$effectiveAmount via PhonePe (Auto-Scan QR)",
                         color = Color.White,
-                        fontSize = 14.5.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                // Action 2: Web Payment Gateway Fallback
+                // Action 2: Other UPI Apps (GPay, Paytm, BHIM)
+                Button(
+                    onClick = {
+                        openUpiPayment(context, effectiveAmount)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = RazorpayAccent),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                ) {
+                    OfficialUpiArrows(modifier = Modifier.size(width = 22.dp, height = 14.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Other UPI Apps (GPay, Paytm)",
+                        color = Color.White,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                // Action 3: Web Payment Gateway Fallback
                 OutlinedButton(
                     onClick = {
                         openRazorpayWithAmount(context, effectiveAmount)
@@ -278,6 +307,49 @@ fun SupportScreen(
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.Medium
                     )
+                }
+
+                // Helper Tip
+                Text(
+                    text = "💡 Tip: If PhonePe shows a gallery notice, tap DISMISS and proceed with Pay.",
+                    color = Color(0xFFA0AEC0),
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 2.dp, start = 4.dp)
+                )
+
+                // Optional Toggle to Show QR on Screen
+                TextButton(
+                    onClick = { showQrCode = !showQrCode },
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    Icon(
+                        imageVector = if (showQrCode) Icons.Filled.ExpandLess else Icons.Filled.QrCodeScanner,
+                        contentDescription = null,
+                        tint = RazorpayAccent,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (showQrCode) "Hide QR Code" else "Show QR Code (Scan from another device)",
+                        color = RazorpayAccent,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                if (showQrCode) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.CenterHorizontally)
+                            .background(Color.White, RoundedCornerShape(16.dp))
+                            .padding(14.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.pawas_qr),
+                            contentDescription = "Pawas UPI QR Code",
+                            modifier = Modifier.size(180.dp)
+                        )
+                    }
                 }
             }
         }
@@ -638,13 +710,47 @@ fun OfficialBmcBadge(modifier: Modifier = Modifier) {
 // ========================================================
 
 private fun buildUpiUri(amount: String): Uri {
-    val tr = "AUR" + System.currentTimeMillis()
     val amt = amount.toDoubleOrNull() ?: 100.0
     val formattedAmount = String.format(java.util.Locale.US, "%.2f", amt)
     val encodedName = Uri.encode(PAWAS_NAME)
     return Uri.parse(
-        "upi://pay?pa=$PAWAS_UPI_ID&pn=$encodedName&am=$formattedAmount&cu=INR&tr=$tr&tn=Support%20AURALIX"
+        "upi://pay?pa=$PAWAS_UPI_ID&pn=$encodedName&am=$formattedAmount&cu=INR"
     )
+}
+
+/**
+ * Direct launch of PhonePe application with pre-scanned QR code.
+ * Copies the embedded QR image to cache and shares via ACTION_SEND directly to com.phonepe.app.
+ * PhonePe's built-in QR scanner processes the image and immediately opens the payment sheet.
+ */
+private fun openPhonePeWithQr(context: Context, amount: String) {
+    try {
+        val qrFile = File(context.cacheDir, "pawas_qr.png")
+        if (!qrFile.exists() || qrFile.length() == 0L) {
+            val bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.pawas_qr)
+            FileOutputStream(qrFile).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                out.flush()
+            }
+        }
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            qrFile
+        )
+
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/png"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            setPackage("com.phonepe.app")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        // Fallback: standard UPI chooser
+        openUpiPayment(context, amount)
+    }
 }
 
 private fun openRazorpayWithAmount(context: Context, amount: String) {

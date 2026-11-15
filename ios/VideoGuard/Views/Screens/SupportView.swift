@@ -3,8 +3,8 @@ import SwiftUI
 // ========================================================
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
 // ========================================================
-private let pawasUpiId = "pawas@fam"
-private let pawasName = "Pawas"
+private let pawasUpiId = "9315135782@naviaxis"
+private let pawasName = "PAWAS PANT"
 private let razorpayURL = URL(string: "https://razorpay.me/@pawas")!
 private let bmcProfileURL = URL(string: "https://buymeacoffee.com/findex")!
 
@@ -253,10 +253,9 @@ struct SupportView: View {
 
     private func openUpiPayment(amount: String) {
         let nameEncoded = pawasName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? pawasName
-        let tr = "AUR\(Int(Date().timeIntervalSince1970 * 1000))"
         let amt = Double(amount) ?? 100.0
         let formattedAmount = String(format: "%.2f", amt)
-        let upiString = "upi://pay?pa=\(pawasUpiId)&pn=\(nameEncoded)&am=\(formattedAmount)&cu=INR&tr=\(tr)&tn=Support%20AURALIX"
+        let upiString = "upi://pay?pa=\(pawasUpiId)&pn=\(nameEncoded)&am=\(formattedAmount)&cu=INR"
         let cleanAmt = amount.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackUrlStr = !cleanAmt.isEmpty && cleanAmt != "0" ? "\(razorpayURL.absoluteString)?amount=\(cleanAmt)" : razorpayURL.absoluteString
         let fallbackURL = URL(string: fallbackUrlStr) ?? razorpayURL
