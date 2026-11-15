@@ -166,7 +166,6 @@ object AlbumDataRepository {
         val all = mutableListOf<VideoItem>()
         UserDataRepository.playlists.value.forEach { all.addAll(it.videos) }
         UserDataRepository.history.value.forEach { all.add(it) }
-        all.addAll(UserDataRepository.likedTracks.value)
 
         val grouped = all
             .filter { it.album.isNotBlank() && !it.album.equals("Single", ignoreCase = true) && !it.album.equals("Unknown", ignoreCase = true) }

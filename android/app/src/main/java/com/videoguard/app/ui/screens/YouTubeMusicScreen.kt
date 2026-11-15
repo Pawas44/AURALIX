@@ -65,6 +65,7 @@ fun YouTubeMusicScreen(
     var selectedVideoForPlaylist by remember { mutableStateOf<VideoItem?>(null) }
     var explanationTrack by remember { mutableStateOf<VideoItem?>(null) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    val albumsList = remember(userPlaylists.size, userHistory.size) { AlbumDataRepository.getAllAlbums() }
 
     // Initial load and whenever mood changes or user history updates
     LaunchedEffect(selectedMood, userHistory.size, userPlaylists.size) {
@@ -214,7 +215,6 @@ fun YouTubeMusicScreen(
         }
 
         // Section: Featured Albums & Mixtapes
-        val albumsList = remember { AlbumDataRepository.getAllAlbums() }
         if (albumsList.isNotEmpty()) {
             item {
                 Spacer(modifier = Modifier.height(20.dp))
