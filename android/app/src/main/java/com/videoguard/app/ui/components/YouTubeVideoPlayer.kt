@@ -468,6 +468,12 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               }
             }
 
+            function setVolume(vol) {
+              if (window.ytPlayer && window.ytPlayer.setVolume) {
+                window.ytPlayer.setVolume(vol);
+              }
+            }
+
             function setCaptions(enabled) {
               if (window.ytPlayer) {
                 try {

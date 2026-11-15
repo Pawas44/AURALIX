@@ -42,6 +42,7 @@ fun AccountBottomSheet(
     val spotifyUserName by SpotifyConnectEngine.userDisplayName.collectAsState()
     var showGoogleAuthDialog by remember { mutableStateOf(false) }
     var showSpotifyLoginDialogInSheet by remember { mutableStateOf(false) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     val scope = rememberCoroutineScope()
@@ -399,7 +400,7 @@ fun AccountBottomSheet(
                 AccountMenuItem(
                     icon = Icons.Outlined.Settings,
                     title = "Settings",
-                    onClick = onDismiss
+                    onClick = { showSettingsSheet = true }
                 )
 
                 AccountMenuItem(
@@ -428,6 +429,12 @@ fun AccountBottomSheet(
             onLoginSuccess = {
                 showSpotifyLoginDialogInSheet = false
             }
+        )
+    }
+
+    if (showSettingsSheet) {
+        PlayerSettingsBottomSheet(
+            onDismiss = { showSettingsSheet = false }
         )
     }
 }

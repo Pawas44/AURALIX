@@ -121,6 +121,17 @@ object PlaybackController {
         sendCommand("setPlaybackQuality('$ytQuality')")
     }
 
+    private var _currentVolumeMultiplier = 1.0f
+
+    fun setVolumeLevel(multiplier: Float) {
+        _currentVolumeMultiplier = multiplier
+        val volPercent = (multiplier * 100).toInt().coerceIn(0, 100)
+        sendCommand("setVolume($volPercent)")
+        try {
+            exoPlayer?.volume = multiplier.coerceIn(0f, 1f)
+        } catch (e: Exception) {}
+    }
+
     fun toggleLoop() {
         _isLoopEnabled.value = !_isLoopEnabled.value
     }
@@ -253,6 +264,7 @@ object PlaybackController {
         val appCtx = context.applicationContext
         appContext = appCtx
         com.videoguard.app.data.UserDataRepository.init(context)
+        com.videoguard.app.data.AppSettingsRepository.init(context)
         com.videoguard.app.data.AccountRepository.init(context)
         com.videoguard.app.data.SpotifyConnectEngine.init(context)
         com.videoguard.app.recommendation.RecommendationEngine.init(context)

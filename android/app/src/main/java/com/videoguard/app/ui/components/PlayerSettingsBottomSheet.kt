@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.videoguard.app.data.AppSettingsRepository
 import com.videoguard.app.service.PlaybackController
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -28,24 +29,25 @@ fun PlayerSettingsBottomSheet(
 ) {
     val isBackgroundPlay by PlaybackController.isBackgroundPlayEnabled.collectAsState()
     val isLoopEnabled by PlaybackController.isLoopEnabled.collectAsState()
-    val isAutoplayEnabled by PlaybackController.isAutoplayEnabled.collectAsState()
+    val isAutoplayEnabled by AppSettingsRepository.isAutoplay.collectAsState()
+    val dontRepeatSuggestions by AppSettingsRepository.dontRepeatSuggestions.collectAsState()
+    val streamingQuality by AppSettingsRepository.streamingQuality.collectAsState()
+    val volumeLeveling by AppSettingsRepository.volumeLeveling.collectAsState()
     val isCaptionsEnabled by PlaybackController.isCaptionsEnabled.collectAsState()
     val currentSpeed by PlaybackController.playbackSpeed.collectAsState()
-    val currentQuality by PlaybackController.playbackQuality.collectAsState()
     val sleepTimer by PlaybackController.sleepTimerMinutes.collectAsState()
     val sleepTimerRemaining by PlaybackController.sleepTimerRemainingSeconds.collectAsState()
     val sleepTimerEndOnTrackFinish by PlaybackController.sleepTimerEndOnTrackFinish.collectAsState()
     val currentTrack by PlaybackController.currentTrack.collectAsState()
 
     var showSpeedDialog by remember { mutableStateOf(false) }
-    var showQualityDialog by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var customSleepMinutes by remember { mutableIntStateOf(20) }
     var showStatsDialog by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xF218192A),
+        containerColor = Color(0xF212131F),
         dragHandle = { BottomSheetDefaults.DragHandle(color = Color.White.copy(alpha = 0.35f)) }
     ) {
         Column(
@@ -63,7 +65,7 @@ fun PlayerSettingsBottomSheet(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Playback settings",
+                    text = "Sound & Suggestions",
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
@@ -77,82 +79,117 @@ fun PlayerSettingsBottomSheet(
                 }
             }
 
-            HorizontalDivider(color = Color(0xFF333333), thickness = 0.8.dp)
+            HorizontalDivider(color = Color(0xFF262838), thickness = 0.8.dp)
 
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // 1. Quality
-            SettingsRow(
-                icon = Icons.Default.HighQuality,
-                title = "Quality",
-                subtitle = currentQuality,
-                onClick = { showQualityDialog = true }
-            )
-
-            // 2. Playback Speed
-            val speedText = if (currentSpeed == 1.0f) "Normal (1.0x)" else "${currentSpeed}x"
-            SettingsRow(
-                icon = Icons.Default.Speed,
-                title = "Playback speed",
-                subtitle = speedText,
-                onClick = { showSpeedDialog = true }
-            )
-
-            // 3. Background Playback Toggle
-            SettingsSwitchRow(
-                icon = Icons.Default.Headphones,
-                title = "Background playback",
-                subtitle = "Keep audio playing when screen is off",
-                checked = isBackgroundPlay,
-                onCheckedChange = { PlaybackController.toggleBackgroundPlay() }
-            )
-
-            // 4. Loop Video Toggle
-            SettingsSwitchRow(
-                icon = Icons.Default.Repeat,
-                title = "Loop video",
-                subtitle = "Automatically replay when finished",
-                checked = isLoopEnabled,
-                onCheckedChange = { PlaybackController.toggleLoop() }
-            )
-
-            // 5. Autoplay Toggle
-            SettingsSwitchRow(
-                icon = Icons.Default.PlayCircleOutline,
-                title = "Autoplay",
-                subtitle = "Automatically play next video when finished",
-                checked = isAutoplayEnabled,
-                onCheckedChange = { PlaybackController.toggleAutoplay() }
-            )
-
-            // 6. Captions / Subtitles Toggle
-            SettingsSwitchRow(
-                icon = Icons.Default.ClosedCaption,
-                title = "Captions (Subtitles)",
-                subtitle = "Display closed captions on video",
-                checked = isCaptionsEnabled,
-                onCheckedChange = { PlaybackController.toggleCaptions() }
-            )
-
-            // 7. Sleep Timer
-            val timerText = when {
-                sleepTimerRemaining != null -> "🌙 ${PlaybackController.formatSleepTimerRemaining(sleepTimerRemaining)} remaining"
-                else -> "Off"
+            // 1. Suggestions Section (ByTune)
+            SettingsSectionHeader("Suggestions")
+            SettingsGroupCard {
+                SettingsCardSwitchRow(
+                    icon = Icons.Default.AllInclusive,
+                    title = "Autoplay",
+                    subtitle = "When your songs run out, keep playing music like them",
+                    checked = isAutoplayEnabled,
+                    onCheckedChange = { AppSettingsRepository.setAutoplay(it) }
+                )
+                HorizontalDivider(color = Color.White.copy(alpha = 0.06f), thickness = 0.8.dp, modifier = Modifier.padding(vertical = 4.dp))
+                SettingsCardSwitchRow(
+                    icon = Icons.Default.Sync,
+                    title = "Don't repeat suggestions",
+                    subtitle = "Keep recently played tracks out of the home feed",
+                    checked = dontRepeatSuggestions,
+                    onCheckedChange = { AppSettingsRepository.setDontRepeatSuggestions(it) }
+                )
             }
-            SettingsRow(
-                icon = Icons.Default.Timer,
-                title = "Sleep timer",
-                subtitle = timerText,
-                onClick = { showSleepTimerDialog = true }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 2. Streaming Section (ByTune)
+            SettingsSectionHeader("Streaming")
+            SettingsSegmentedCard(
+                icon = Icons.Default.Wifi,
+                title = "Streaming quality",
+                subtitle = "The highest quality Auralix streams",
+                options = listOf("Low", "Medium", "High", "Lossless"),
+                selectedOption = streamingQuality,
+                onOptionSelected = { AppSettingsRepository.setStreamingQuality(it) }
             )
 
-            // 6. Stats & Video Info
-            SettingsRow(
-                icon = Icons.Default.Info,
-                title = "Stats & video info",
-                subtitle = "Resolution, ID, codec & channel",
-                onClick = { showStatsDialog = true }
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 3. Loudness Section (ByTune)
+            SettingsSectionHeader("Loudness")
+            SettingsSegmentedCard(
+                icon = Icons.Default.VolumeUp,
+                title = "Volume leveling",
+                subtitle = "Bring every song to a similar loudness",
+                options = listOf("Off", "Quiet", "Normal", "Loud"),
+                selectedOption = volumeLeveling,
+                onOptionSelected = { AppSettingsRepository.setVolumeLeveling(it) }
             )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 4. Playback Controls
+            SettingsSectionHeader("Playback")
+            SettingsGroupCard {
+                SettingsCardSwitchRow(
+                    icon = Icons.Default.Headphones,
+                    title = "Background playback",
+                    subtitle = "Keep audio playing when screen is off",
+                    checked = isBackgroundPlay,
+                    onCheckedChange = { PlaybackController.toggleBackgroundPlay() }
+                )
+                HorizontalDivider(color = Color.White.copy(alpha = 0.06f), thickness = 0.8.dp, modifier = Modifier.padding(vertical = 4.dp))
+                SettingsCardSwitchRow(
+                    icon = Icons.Default.Repeat,
+                    title = "Loop video",
+                    subtitle = "Automatically replay when finished",
+                    checked = isLoopEnabled,
+                    onCheckedChange = { PlaybackController.toggleLoop() }
+                )
+                HorizontalDivider(color = Color.White.copy(alpha = 0.06f), thickness = 0.8.dp, modifier = Modifier.padding(vertical = 4.dp))
+                SettingsCardSwitchRow(
+                    icon = Icons.Default.ClosedCaption,
+                    title = "Captions (Subtitles)",
+                    subtitle = "Display closed captions on video",
+                    checked = isCaptionsEnabled,
+                    onCheckedChange = { PlaybackController.toggleCaptions() }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 5. Advanced Controls
+            SettingsSectionHeader("Advanced")
+            SettingsGroupCard {
+                val speedText = if (currentSpeed == 1.0f) "Normal (1.0x)" else "${currentSpeed}x"
+                SettingsRow(
+                    icon = Icons.Default.Speed,
+                    title = "Playback speed",
+                    subtitle = speedText,
+                    onClick = { showSpeedDialog = true }
+                )
+                HorizontalDivider(color = Color.White.copy(alpha = 0.06f), thickness = 0.8.dp, modifier = Modifier.padding(vertical = 4.dp))
+                val timerText = when {
+                    sleepTimerRemaining != null -> "🌙 ${PlaybackController.formatSleepTimerRemaining(sleepTimerRemaining)} remaining"
+                    else -> "Off"
+                }
+                SettingsRow(
+                    icon = Icons.Default.Timer,
+                    title = "Sleep timer",
+                    subtitle = timerText,
+                    onClick = { showSleepTimerDialog = true }
+                )
+                HorizontalDivider(color = Color.White.copy(alpha = 0.06f), thickness = 0.8.dp, modifier = Modifier.padding(vertical = 4.dp))
+                SettingsRow(
+                    icon = Icons.Default.Info,
+                    title = "Stats & video info",
+                    subtitle = "Resolution, ID, codec & channel",
+                    onClick = { showStatsDialog = true }
+                )
+            }
         }
     }
 
@@ -445,6 +482,181 @@ fun PlayerSettingsBottomSheet(
             containerColor = Color(0xFF282828),
             shape = RoundedCornerShape(16.dp)
         )
+    }
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        color = Color(0xFFA0A3B5),
+        fontSize = 13.sp,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
+    )
+}
+
+@Composable
+private fun SettingsGroupCard(
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFF1B1C28),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun SettingsCardSwitchRow(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF262838)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = Color.White,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                color = Color(0xFF8E90A2),
+                fontSize = 12.sp,
+                lineHeight = 16.sp
+            )
+        }
+        Spacer(modifier = Modifier.width(8.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color(0xFF1B1C28),
+                checkedTrackColor = Color.White,
+                uncheckedThumbColor = Color(0xFF8E90A2),
+                uncheckedTrackColor = Color(0xFF262838),
+                uncheckedBorderColor = Color.Transparent
+            )
+        )
+    }
+}
+
+@Composable
+private fun SettingsSegmentedCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    options: List<String>,
+    selectedOption: String,
+    onOptionSelected: (String) -> Unit
+) {
+    SettingsGroupCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color(0xFF262838)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    color = Color(0xFF8E90A2),
+                    fontSize = 12.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF12131C))
+                .padding(3.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                options.forEach { opt ->
+                    val isSelected = opt.equals(selectedOption, ignoreCase = true)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (isSelected) Color(0xFF383A4E) else Color.Transparent)
+                            .clickable { onOptionSelected(opt) }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = opt,
+                            color = if (isSelected) Color.White else Color(0xFF8E90A2),
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

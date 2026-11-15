@@ -60,6 +60,9 @@ object RecommendationEngine {
             val likedPlaylist = userPlaylists.find { it.id == "liked_videos" }?.videos ?: emptyList()
             val importedPlaylistTracks = userPlaylists.flatMap { it.videos }
 
+            val filterRecentHistory = com.videoguard.app.data.AppSettingsRepository.dontRepeatSuggestions.value
+            val recentPlayedIds = if (filterRecentHistory) userHistory.take(40).map { it.id }.toSet() else emptySet()
+
             // 1. Collect candidate pool
             val syncFeed = YouTubeSyncEngine.musicFeed.value
             val candidatePool = (
@@ -71,7 +74,7 @@ object RecommendationEngine {
                 userHistory +
                 likedPlaylist +
                 VideoRepository.sampleVideos
-            ).distinctBy { it.id }
+            ).distinctBy { it.id }.filter { it.id !in recentPlayedIds }
 
             // Deduplication tracker across all smart sections
             val placedTrackIds = mutableSetOf<String>()
