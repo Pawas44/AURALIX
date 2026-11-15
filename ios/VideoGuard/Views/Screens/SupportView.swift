@@ -112,14 +112,17 @@ struct SupportView: View {
                         }
                     }
 
-                    // Action 1: Open UPI App Directly
+                    // Action 1: Instant Razorpay Checkout (PhonePe, GPay, Paytm, Cards)
                     Button(action: {
-                        openUpiPayment(amount: effectiveAmount)
+                        let cleanAmt = effectiveAmount.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let urlStr = !cleanAmt.isEmpty && cleanAmt != "0" ? "\(razorpayURL.absoluteString)?amount=\(cleanAmt)" : razorpayURL.absoluteString
+                        if let targetURL = URL(string: urlStr) {
+                            UIApplication.shared.open(targetURL)
+                        }
                     }) {
-                        HStack(spacing: 10) {
-                            OfficialUpiArrowsView()
-                                .frame(width: 24, height: 16)
-                            Text("Pay ₹\(effectiveAmount) via UPI App")
+                        HStack(spacing: 8) {
+                            Image(systemName: "bolt.fill")
+                            Text("Pay ₹\(effectiveAmount) via PhonePe / UPI (Instant)")
                         }
                         .font(.system(size: 14.5, weight: .bold))
                         .foregroundColor(.white)
@@ -129,13 +132,14 @@ struct SupportView: View {
                         .cornerRadius(14)
                     }
 
-                    // Action 2: Web Payment Gateway Fallback
+                    // Action 2: Direct UPI App Scheme
                     Button(action: {
-                        UIApplication.shared.open(razorpayURL)
+                        openUpiPayment(amount: effectiveAmount)
                     }) {
                         HStack(spacing: 6) {
-                            Image(systemName: "arrow.up.right.square")
-                            Text("Open Razorpay Web Portal ↗")
+                            OfficialUpiArrowsView()
+                                .frame(width: 20, height: 14)
+                            Text("Other UPI Apps (Direct Intent)")
                         }
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundColor(Color(hex: 0xCBD5E1))
