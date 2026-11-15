@@ -122,8 +122,13 @@ fun MusicPlayerScreen(
     var isLoadingRelated by remember(track.id) { mutableStateOf(false) }
     var isSheetExpanded by remember { mutableStateOf(false) }
 
+    var extractedPalette by remember(track.id, track.thumbnailUrl) {
+        mutableStateOf(ArtworkColorExtractor.getPaletteSync(track))
+    }
+
     LaunchedEffect(track.id, track.thumbnailUrl) {
-        ArtworkColorExtractor.extractPalette(context, track)
+        val p = ArtworkColorExtractor.extractPalette(context, track)
+        extractedPalette = p
     }
 
     LaunchedEffect(track.id) {
@@ -330,11 +335,23 @@ fun MusicPlayerScreen(
         Triple(page, prev, -offsetFraction)
     }
 
-    val fromPalette = remember(fromIdx, safeActiveQueue) {
-        if (fromIdx in safeActiveQueue.indices) getTrackPalette(safeActiveQueue[fromIdx]) else getTrackPalette(track)
+    val fromPalette = remember(fromIdx, safeActiveQueue, extractedPalette) {
+        if (fromIdx in safeActiveQueue.indices && safeActiveQueue[fromIdx].id == track.id) {
+            extractedPalette
+        } else if (fromIdx in safeActiveQueue.indices) {
+            getTrackPalette(safeActiveQueue[fromIdx])
+        } else {
+            extractedPalette
+        }
     }
-    val toPalette = remember(toIdx, safeActiveQueue) {
-        if (toIdx in safeActiveQueue.indices) getTrackPalette(safeActiveQueue[toIdx]) else getTrackPalette(track)
+    val toPalette = remember(toIdx, safeActiveQueue, extractedPalette) {
+        if (toIdx in safeActiveQueue.indices && safeActiveQueue[toIdx].id == track.id) {
+            extractedPalette
+        } else if (toIdx in safeActiveQueue.indices) {
+            getTrackPalette(safeActiveQueue[toIdx])
+        } else {
+            extractedPalette
+        }
     }
 
     val safeBlend = if (blend.isNaN()) 0f else blend.coerceIn(0f, 1f)
@@ -345,16 +362,25 @@ fun MusicPlayerScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF060709))
+            .background(Color(0xFF050608))
             .drawBehind {
-                // High-end ambient radial glow centered behind album artwork
-                val auraCenter = Offset(size.width * 0.5f, size.height * 0.36f)
-                val auraRadius = size.width * 0.95f
+                // 1. Base deep ambient gradient
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        0.0f to dynamicDeep.copy(alpha = 0.85f),
+                        0.55f to Color(0xFF07080B),
+                        1.0f to Color(0xFF040507)
+                    )
+                )
+
+                // 2. High-end radiant ambient radial aura centered behind album artwork
+                val auraCenter = Offset(size.width * 0.5f, size.height * 0.35f)
+                val auraRadius = size.width * 1.05f
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            dynamicPrimary.copy(alpha = 0.58f),
-                            dynamicSecondary.copy(alpha = 0.32f),
+                            dynamicPrimary.copy(alpha = 0.72f),
+                            dynamicSecondary.copy(alpha = 0.40f),
                             Color.Transparent
                         ),
                         center = auraCenter,
@@ -364,13 +390,13 @@ fun MusicPlayerScreen(
                     radius = auraRadius
                 )
 
-                // Secondary soft lower ambient glow behind transport controls
-                val bottomCenter = Offset(size.width * 0.5f, size.height * 0.86f)
-                val bottomRadius = size.width * 0.72f
+                // 3. Secondary warm lower ambient glow behind transport controls
+                val bottomCenter = Offset(size.width * 0.5f, size.height * 0.85f)
+                val bottomRadius = size.width * 0.80f
                 drawCircle(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            dynamicSecondary.copy(alpha = 0.22f),
+                            dynamicSecondary.copy(alpha = 0.30f),
                             Color.Transparent
                         ),
                         center = bottomCenter,
@@ -380,12 +406,13 @@ fun MusicPlayerScreen(
                     radius = bottomRadius
                 )
 
-                // Smooth filmic vignette overlay for maximum contrast and readability
+                // 4. Smooth filmic vignette overlay for crisp contrast and glass readability
                 drawRect(
                     brush = Brush.verticalGradient(
-                        0.0f to Color.Black.copy(alpha = 0.20f),
-                        0.45f to Color.Transparent,
-                        1.0f to Color(0xFF060709).copy(alpha = 0.92f)
+                        0.0f to Color.Black.copy(alpha = 0.30f),
+                        0.40f to Color.Transparent,
+                        0.78f to Color.Black.copy(alpha = 0.55f),
+                        1.0f to Color(0xFF040507).copy(alpha = 0.98f)
                     )
                 )
             }

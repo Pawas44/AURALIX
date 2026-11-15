@@ -60,6 +60,7 @@ fun YouTubeMusicScreen(
     var selectedTrackForOptions by remember { mutableStateOf<VideoItem?>(null) }
     var selectedVideoForPlaylist by remember { mutableStateOf<VideoItem?>(null) }
     var explanationTrack by remember { mutableStateOf<VideoItem?>(null) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
 
     // Initial load and whenever mood changes or user history updates
     LaunchedEffect(selectedMood, userHistory.size, userPlaylists.size) {
@@ -157,6 +158,23 @@ fun YouTubeMusicScreen(
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Refresh",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.White.copy(alpha = 0.10f))
+                                .border(1.dp, LiquidGlassDefaults.BorderSpecular, RoundedCornerShape(16.dp))
+                                .clickable { showSettingsSheet = true }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = "Sound & Suggestions",
                                 tint = Color.White,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -550,6 +568,12 @@ fun YouTubeMusicScreen(
         AddToPlaylistSheet(
             video = video,
             onDismiss = { selectedVideoForPlaylist = null }
+        )
+    }
+
+    if (showSettingsSheet) {
+        com.videoguard.app.ui.components.PlayerSettingsBottomSheet(
+            onDismiss = { showSettingsSheet = false }
         )
     }
 }

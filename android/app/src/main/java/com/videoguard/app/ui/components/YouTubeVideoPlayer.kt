@@ -73,6 +73,7 @@ fun YouTubeVideoPlayer(
     videoId: String,
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
+    isVisible: Boolean = true,
     onStateChange: (Int) -> Unit = {}
 ) {
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
@@ -284,6 +285,14 @@ fun YouTubeVideoPlayer(
             },
             update = { webView ->
                 webViewRef = webView
+                webView.alpha = if (isVisible) 1f else 0f
+                if (!isVisible) {
+                    webView.translationX = -50000f
+                    webView.translationY = -50000f
+                } else {
+                    webView.translationX = 0f
+                    webView.translationY = 0f
+                }
             }
         )
     }

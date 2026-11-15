@@ -276,8 +276,8 @@ fun MainScreen() {
                     }
                 else -> Modifier
                     .size(1.dp)
-                    .offset(x = (-1000).dp, y = (-1000).dp)
-                    .alpha(0.005f)
+                    .offset(x = (-5000).dp, y = (-5000).dp)
+                    .alpha(0f)
                     .zIndex(-100f)
             }
 
@@ -286,6 +286,7 @@ fun MainScreen() {
                     YouTubeVideoPlayer(
                         videoId = currentVideo!!.id,
                         isPlaying = isPlaying,
+                        isVisible = isFullscreen || showVideoInYT,
                         modifier = Modifier.fillMaxSize()
                     )
                     if (showVideoInYT) {

@@ -27,9 +27,9 @@ object ArtworkColorExtractor {
         val hash = id.hashCode()
         val hue = ((hash and 0x7FFFFFFF) % 360).toFloat()
         // Vibrant, luxury jewel tones
-        val primary = Color.hsl(hue = hue, saturation = 0.72f, lightness = 0.32f)
-        val secondary = Color.hsl(hue = (hue + 28f) % 360f, saturation = 0.58f, lightness = 0.16f)
-        val deep = Color(0xFF060709)
+        val primary = Color.hsl(hue = hue, saturation = 0.75f, lightness = 0.35f)
+        val secondary = Color.hsl(hue = (hue + 32f) % 360f, saturation = 0.65f, lightness = 0.20f)
+        val deep = Color.hsl(hue = hue, saturation = 0.40f, lightness = 0.07f)
         return AmbientPalette(primary, secondary, deep)
     }
 
@@ -98,17 +98,23 @@ object ArtworkColorExtractor {
             }
 
             android.graphics.Color.colorToHSV(finalColor, hsv)
+            val primaryHue = hsv[0]
+            val primarySat = (hsv[1] * 1.15f).coerceIn(0.55f, 0.92f)
             val primary = Color.hsl(
-                hue = hsv[0],
-                saturation = hsv[1].coerceIn(0.60f, 0.90f),
-                lightness = 0.32f
+                hue = primaryHue,
+                saturation = primarySat,
+                lightness = 0.34f
             )
             val secondary = Color.hsl(
-                hue = (hsv[0] + 24f) % 360f,
-                saturation = (hsv[1] * 0.80f).coerceIn(0.40f, 0.75f),
-                lightness = 0.15f
+                hue = (primaryHue + 28f) % 360f,
+                saturation = (primarySat * 0.85f).coerceIn(0.40f, 0.78f),
+                lightness = 0.18f
             )
-            val deep = Color(0xFF060709)
+            val deep = Color.hsl(
+                hue = primaryHue,
+                saturation = (primarySat * 0.50f).coerceIn(0.25f, 0.50f),
+                lightness = 0.07f
+            )
 
             val palette = AmbientPalette(primary, secondary, deep)
             cache[track.id] = palette

@@ -646,7 +646,13 @@ object SpotifyConnectEngine {
                                 val name = track.optString("name", "")
                                 val id = track.optString("id", "")
                                 val durMs = track.optLong("duration_ms", 0L)
-                                val albumName = track.optJSONObject("album")?.optString("name", "") ?: ""
+                                val albumObj = track.optJSONObject("album")
+                                val albumName = albumObj?.optString("name", "") ?: ""
+                                var coverUrl = ""
+                                val images = albumObj?.optJSONArray("images")
+                                if (images != null && images.length() > 0) {
+                                    coverUrl = images.optJSONObject(0)?.optString("url", "") ?: ""
+                                }
 
                                 val artistsArr = track.optJSONArray("artists")
                                 val artistNames = mutableListOf<String>()
@@ -666,7 +672,8 @@ object SpotifyConnectEngine {
                                             artist = artist,
                                             album = albumName,
                                             durationSeconds = (durMs / 1000).toInt(),
-                                            spotifyId = id
+                                            spotifyId = id,
+                                            coverUrl = coverUrl
                                         )
                                     )
                                 }
@@ -726,7 +733,13 @@ object SpotifyConnectEngine {
                     }
                 }
                 val artist = artistList.joinToString(", ")
-                val album = tData.optJSONObject("albumOfTrack")?.optString("name", "") ?: ""
+                val albumObj = tData.optJSONObject("albumOfTrack")
+                val album = albumObj?.optString("name", "") ?: ""
+                var coverUrl = ""
+                val sources = albumObj?.optJSONObject("coverArt")?.optJSONArray("sources")
+                if (sources != null && sources.length() > 0) {
+                    coverUrl = sources.optJSONObject(0)?.optString("url", "") ?: ""
+                }
 
                 if (name.isNotBlank()) {
                     tracks.add(
@@ -735,7 +748,8 @@ object SpotifyConnectEngine {
                             artist = artist,
                             album = album,
                             durationSeconds = (durMs / 1000).toInt(),
-                            spotifyId = spotifyId
+                            spotifyId = spotifyId,
+                            coverUrl = coverUrl
                         )
                     )
                 }
@@ -788,7 +802,13 @@ object SpotifyConnectEngine {
                                 val name = track.optString("name", "")
                                 val id = track.optString("id", "")
                                 val durMs = track.optLong("duration_ms", 0L)
-                                val albumName = track.optJSONObject("album")?.optString("name", "") ?: ""
+                                val albumObj = track.optJSONObject("album")
+                                val albumName = albumObj?.optString("name", "") ?: ""
+                                var coverUrl = ""
+                                val images = albumObj?.optJSONArray("images")
+                                if (images != null && images.length() > 0) {
+                                    coverUrl = images.optJSONObject(0)?.optString("url", "") ?: ""
+                                }
 
                                 val artistsArr = track.optJSONArray("artists")
                                 val artistNames = mutableListOf<String>()
@@ -808,7 +828,8 @@ object SpotifyConnectEngine {
                                             artist = artist,
                                             album = albumName,
                                             durationSeconds = (durMs / 1000).toInt(),
-                                            spotifyId = id
+                                            spotifyId = id,
+                                            coverUrl = coverUrl
                                         )
                                     )
                                 }
@@ -877,7 +898,13 @@ object SpotifyConnectEngine {
                     }
                 }
                 val artist = artistList.joinToString(", ")
-                val album = tData.optJSONObject("albumOfTrack")?.optString("name", "") ?: ""
+                val albumObj = tData.optJSONObject("albumOfTrack")
+                val album = albumObj?.optString("name", "") ?: ""
+                var coverUrl = ""
+                val sources = albumObj?.optJSONObject("coverArt")?.optJSONArray("sources")
+                if (sources != null && sources.length() > 0) {
+                    coverUrl = sources.optJSONObject(0)?.optString("url", "") ?: ""
+                }
 
                 if (name.isNotBlank()) {
                     tracks.add(
@@ -886,7 +913,8 @@ object SpotifyConnectEngine {
                             artist = artist,
                             album = album,
                             durationSeconds = (durMs / 1000).toInt(),
-                            spotifyId = spotifyId
+                            spotifyId = spotifyId,
+                            coverUrl = coverUrl
                         )
                     )
                 }

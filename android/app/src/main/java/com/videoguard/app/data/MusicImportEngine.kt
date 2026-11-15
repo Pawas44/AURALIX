@@ -20,7 +20,8 @@ data class ImportTrackMeta(
     val artist: String,
     val album: String = "",
     val durationSeconds: Int = 0,
-    val spotifyId: String = ""
+    val spotifyId: String = "",
+    val coverUrl: String = ""
 )
 
 data class ImportProgress(
@@ -612,89 +613,56 @@ object MusicImportEngine {
     private suspend fun resolveTrackOnYouTube(meta: ImportTrackMeta): VideoItem? {
         try {
             val queries = searchQueries(meta)
-            var matched: VideoItem? = null
 
-            // 1. YouTube Music Official Songs Catalog (ByTune method - exact studio audio tracks)
+            // 1. YouTube Music Official Songs Catalog (ByTune method: exact studio audio tracks)
             for (q in queries) {
                 val results = searchInnerTubeDirect(q, useMusicApi = true, params = YTM_SONGS_FILTER)
-                if (results.isNotEmpty()) {
-                    matched = bestMatch(meta, results) ?: results.firstOrNull { it.id.length == 11 }
-                    if (matched != null) break
-                }
+                val matched = bestMatch(meta, results)
+                if (matched != null) return matched
             }
 
             // 2. YouTube Music Catalog without songs filter (in case songs filter hid a regional track)
-            if (matched == null) {
-                for (q in queries) {
-                    val fallbackYtm = searchInnerTubeDirect(q, useMusicApi = true, params = "")
-                    if (fallbackYtm.isNotEmpty()) {
-                        matched = bestMatch(meta, fallbackYtm) ?: fallbackYtm.firstOrNull { it.id.length == 11 }
-                        if (matched != null) break
-                    }
-                }
+            for (q in queries) {
+                val fallbackYtm = searchInnerTubeDirect(q, useMusicApi = true, params = "")
+                val matched = bestMatch(meta, fallbackYtm)
+                if (matched != null) return matched
             }
 
-            // 3. Regular YouTube Search via InnerTube WEB client
-            if (matched == null) {
-                for (q in queries) {
-                    val ytResults = searchInnerTubeDirect("$q official audio", useMusicApi = false, params = YT_VIDEO_FILTER)
-                    if (ytResults.isNotEmpty()) {
-                        matched = bestMatch(meta, ytResults) ?: ytResults.firstOrNull { it.id.length == 11 }
-                        if (matched != null) break
-                    }
-                }
+            // 3. Regular YouTube Search via InnerTube WEB client ("${query} official audio")
+            for (q in queries) {
+                val ytResults = searchInnerTubeDirect("$q official audio", useMusicApi = false, params = YT_VIDEO_FILTER)
+                val matched = bestMatch(meta, ytResults)
+                if (matched != null) return matched
             }
 
-            // 4. Secondary fallback to general search for "${meta.title} ${meta.artist}"
-            if (matched == null) {
-                val primaryQ = queries.firstOrNull() ?: "${meta.title} ${meta.artist}"
-                val fallbackResults = searchInnerTubeDirect(primaryQ, useMusicApi = false, params = "")
-                if (fallbackResults.isNotEmpty()) {
-                    matched = bestMatch(meta, fallbackResults) ?: fallbackResults.firstOrNull { it.id.length == 11 }
-                }
+            // 4. Secondary search for "${meta.title} ${meta.artist}"
+            for (q in queries) {
+                val fallbackResults = searchInnerTubeDirect(q, useMusicApi = false, params = "")
+                val matched = bestMatch(meta, fallbackResults)
+                if (matched != null) return matched
             }
 
             // 5. YouTubeSyncEngine search fallback (reliable Web client used across app)
-            if (matched == null) {
+            for (q in queries) {
                 try {
-                    val primaryQ = queries.firstOrNull() ?: "${meta.title} ${meta.artist}"
-                    val syncResults = YouTubeSyncEngine.searchVideosInnerTube(primaryQ, filterToVideos = true)
-                    if (syncResults.isNotEmpty()) {
-                        matched = bestMatch(meta, syncResults) ?: syncResults.firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
-                    }
+                    val syncResults = YouTubeSyncEngine.searchVideosInnerTube(q, filterToVideos = true)
+                    val matched = bestMatch(meta, syncResults)
+                    if (matched != null) return matched
                 } catch (e: Exception) {}
             }
 
             // 6. YouTubeSearchEngine fallback
-            if (matched == null) {
-                val primaryQ = queries.firstOrNull() ?: "${meta.title} ${meta.artist}"
-                val engineResults = YouTubeSearchEngine.searchVideos(primaryQ, isMusicOnly = true)
-                if (engineResults.isNotEmpty()) {
-                    matched = bestMatch(meta, engineResults) ?: engineResults.firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
-                }
+            for (q in queries) {
+                val engineResults = YouTubeSearchEngine.searchVideos(q, isMusicOnly = true)
+                val matched = bestMatch(meta, engineResults)
+                if (matched != null) return matched
             }
 
             // 7. Free YouTube web scraping
-            if (matched == null) {
-                val primaryQ = queries.firstOrNull() ?: "${meta.title} ${meta.artist}"
-                val webResults = searchYouTubeFreeWeb(primaryQ)
-                if (webResults.isNotEmpty()) {
-                    matched = bestMatch(meta, webResults) ?: webResults.firstOrNull { it.id.length == 11 }
-                }
-            }
-
-            if (matched != null && matched.id.length == 11) {
-                val realThumb = if (matched.thumbnailUrl.isNotBlank() && !matched.thumbnailUrl.contains("unsplash") && !matched.thumbnailUrl.contains("placeholder")) {
-                    matched.thumbnailUrl
-                } else {
-                    "https://img.youtube.com/vi/${matched.id}/hqdefault.jpg"
-                }
-                return matched.copy(
-                    title = meta.title.ifBlank { matched.title },
-                    artist = meta.artist.ifBlank { matched.artist },
-                    thumbnailUrl = realThumb,
-                    channelAvatarUrl = realThumb
-                )
+            for (q in queries) {
+                val webResults = searchYouTubeFreeWeb(q)
+                val matched = bestMatch(meta, webResults)
+                if (matched != null) return matched
             }
 
             return null
@@ -728,26 +696,24 @@ object MusicImportEngine {
                 val resolved = resolvedBatch[idx]
                 val meta = batch[idx]
                 if (resolved != null) {
-                    val cleanTitle = if (resolved.title.contains("YouTube Video", ignoreCase = true) || resolved.title.contains(resolved.id) || resolved.title.isBlank()) {
-                        meta.title
-                    } else {
-                        resolved.title
-                    }
-                    val cleanArtist = if (resolved.artist.isBlank() || resolved.artist == "Artist" || resolved.artist == "YouTube Channel") {
-                        meta.artist.ifBlank { resolved.channelName }
-                    } else {
-                        resolved.artist
-                    }
-                    val finalThumb = if (resolved.thumbnailUrl.isNotBlank() && !resolved.thumbnailUrl.contains("unsplash")) {
+                    val cleanTitle = meta.title.ifBlank { resolved.title }
+                    val cleanArtist = meta.artist.ifBlank { resolved.artist }
+                    val cleanAlbum = if (meta.album.isNotBlank()) meta.album else (if (resolved.album.isBlank() || resolved.album == "Single") "Single" else resolved.album)
+
+                    // BYTUNE RULE: Always prioritize the official Spotify / Source HD Cover Art!
+                    val finalThumb = if (meta.coverUrl.isNotBlank()) {
+                        meta.coverUrl
+                    } else if (resolved.thumbnailUrl.isNotBlank() && !resolved.thumbnailUrl.contains("unsplash")) {
                         resolved.thumbnailUrl
                     } else {
                         "https://img.youtube.com/vi/${resolved.id}/hqdefault.jpg"
                     }
+
                     matchedVideos.add(
                         resolved.copy(
                             title = cleanTitle,
                             artist = cleanArtist,
-                            album = if (resolved.album.isBlank() || resolved.album == "Single") meta.album.ifBlank { resolved.album } else resolved.album,
+                            album = cleanAlbum,
                             thumbnailUrl = finalThumb,
                             channelAvatarUrl = finalThumb
                         )
@@ -823,8 +789,9 @@ object MusicImportEngine {
                     val json = JSONObject(jsonStr)
                     val title = json.optString("title", "Spotify Track").trim()
                     val author = json.optString("author_name", "").trim()
+                    val thumb = json.optString("thumbnail_url", "").trim()
                     if (title.isNotBlank()) {
-                        return Pair(title, listOf(ImportTrackMeta(title = title, artist = author, spotifyId = id)))
+                        return Pair(title, listOf(ImportTrackMeta(title = title, artist = author, spotifyId = id, coverUrl = thumb)))
                     }
                 }
             } catch (e: Exception) {
@@ -860,6 +827,7 @@ object MusicImportEngine {
         var playlistTitle = "Spotify Playlist"
         val tracks = mutableListOf<ImportTrackMeta>()
         var foundToken: String? = null
+        var entityCoverUrl = ""
 
         // 3a. __NEXT_DATA__ JSON blob
         val nextDataPattern = Pattern.compile("<script id=\"__NEXT_DATA__\"[^>]*>(.*?)</script>", Pattern.DOTALL)
@@ -875,13 +843,32 @@ object MusicImportEngine {
                     ?: pageProps?.optJSONObject("album")
                     ?: pageProps?.optJSONObject("track")
 
-                // Extract anonymous token if present for potential Pathfinder queries
+                // Extract anonymous token if present for Pathfinder queries
                 foundToken = pageProps?.optJSONObject("state")?.optJSONObject("data")?.optJSONObject("settings")?.optJSONObject("session")?.optString("accessToken")
                     ?: data.optJSONObject("props")?.optJSONObject("pageProps")?.optJSONObject("session")?.optString("accessToken")
 
                 if (entity != null) {
                     val name = entity.optString("name").ifBlank { entity.optString("title") }
                     if (name.isNotBlank()) playlistTitle = name
+
+                    // Extract playlist cover artwork
+                    val coverSources = entity.optJSONObject("coverArt")?.optJSONArray("sources")
+                        ?: entity.optJSONObject("visualIdentity")?.optJSONObject("image")?.optJSONArray("sources")
+                    if (coverSources != null && coverSources.length() > 0) {
+                        entityCoverUrl = coverSources.optJSONObject(0)?.optString("url", "") ?: ""
+                    }
+
+                    // If token found and it's a playlist, query Pathfinder immediately (ByTune method)
+                    if (!foundToken.isNullOrBlank() && isPlaylist) {
+                        try {
+                            val pfTracks = fetchPlaylistPathfinderWithToken(id, foundToken, entityCoverUrl)
+                            if (pfTracks.isNotEmpty()) {
+                                return Pair(playlistTitle, pfTracks)
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
 
                     val trackList = entity.optJSONArray("trackList")
                     if (trackList != null && trackList.length() > 0) {
@@ -894,7 +881,15 @@ object MusicImportEngine {
                             val tUri = t.optString("uri", "")
                             val sId = if (tUri.startsWith("spotify:track:")) tUri.removePrefix("spotify:track:") else ""
                             if (title.isNotBlank()) {
-                                tracks.add(ImportTrackMeta(title = title, artist = subtitle, durationSeconds = durSec, spotifyId = sId))
+                                tracks.add(
+                                    ImportTrackMeta(
+                                        title = title,
+                                        artist = subtitle,
+                                        durationSeconds = durSec,
+                                        spotifyId = sId,
+                                        coverUrl = entityCoverUrl
+                                    )
+                                )
                             }
                         }
                     }
@@ -912,7 +907,15 @@ object MusicImportEngine {
                         val durMs = entity.optLong("duration", 0L)
                         val durSec = if (durMs > 0) (durMs / 1000).toInt() else 0
                         if (name.isNotBlank()) {
-                            tracks.add(ImportTrackMeta(title = name, artist = artistList.joinToString(", "), durationSeconds = durSec, spotifyId = id))
+                            tracks.add(
+                                ImportTrackMeta(
+                                    title = name,
+                                    artist = artistList.joinToString(", "),
+                                    durationSeconds = durSec,
+                                    spotifyId = id,
+                                    coverUrl = entityCoverUrl
+                                )
+                            )
                         }
                     }
                 }
@@ -933,6 +936,9 @@ object MusicImportEngine {
                     val obj = JSONObject(oembedJson)
                     val t = obj.optString("title")
                     if (t.isNotBlank()) playlistTitle = t
+                    if (entityCoverUrl.isBlank()) {
+                        entityCoverUrl = obj.optString("thumbnail_url", "")
+                    }
                 }
             } catch (e: Exception) {}
         }
@@ -945,7 +951,7 @@ object MusicImportEngine {
                 val t = trMatcher.group(1)?.trim() ?: ""
                 val s = trMatcher.group(2)?.replace('\u00A0', ' ')?.trim() ?: ""
                 if (t.isNotBlank() && !t.contains("Spotify") && !t.equals("Home", ignoreCase = true)) {
-                    tracks.add(ImportTrackMeta(t, s))
+                    tracks.add(ImportTrackMeta(t, s, coverUrl = entityCoverUrl))
                 }
             }
         }
@@ -953,7 +959,7 @@ object MusicImportEngine {
         // 3d. Fallback: If still empty, query Pathfinder using anonymous token if available
         if (tracks.isEmpty() && !foundToken.isNullOrBlank() && isPlaylist) {
             try {
-                val pfTracks = fetchPlaylistPathfinderWithToken(id, foundToken)
+                val pfTracks = fetchPlaylistPathfinderWithToken(id, foundToken, entityCoverUrl)
                 if (pfTracks.isNotEmpty()) {
                     tracks.addAll(pfTracks)
                 }
@@ -965,55 +971,64 @@ object MusicImportEngine {
         return Pair(playlistTitle, tracks)
     }
 
-    private fun fetchPlaylistPathfinderWithToken(playlistId: String, token: String): List<ImportTrackMeta> {
+    private fun fetchPlaylistPathfinderWithToken(playlistId: String, token: String, defaultCoverUrl: String = ""): List<ImportTrackMeta> {
         val tracks = mutableListOf<ImportTrackMeta>()
         try {
-            val conn = (URL("https://api-partner.spotify.com/pathfinder/v2/query").openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 12000
-                readTimeout = 12000
-                doOutput = true
-                setRequestProperty("Authorization", "Bearer $token")
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("Content-Type", "application/json;charset=UTF-8")
-                setRequestProperty("App-Platform", "WebPlayer")
-                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-            }
+            var offset = 0
+            val limit = 100
+            var totalCount = 100
 
-            val payload = JSONObject().apply {
-                put("variables", JSONObject().apply {
-                    put("uri", "spotify:playlist:$playlistId")
-                    put("offset", 0)
-                    put("limit", 100)
-                    put("enableWatchFeedEntrypoint", false)
-                })
-                put("operationName", "fetchPlaylist")
-                put("extensions", JSONObject().apply {
-                    put("persistedQuery", JSONObject().apply {
-                        put("version", 1)
-                        put("sha256Hash", "21ea11a6ac75a5f3e01fd365d29c18e0a4a8b7dc09f89bbb5d73910190c6acaf")
+            while (offset < minOf(totalCount, 500)) {
+                val conn = (URL("https://api-partner.spotify.com/pathfinder/v2/query").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 12000
+                    readTimeout = 12000
+                    doOutput = true
+                    setRequestProperty("Authorization", "Bearer $token")
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("Content-Type", "application/json;charset=UTF-8")
+                    setRequestProperty("App-Platform", "WebPlayer")
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+                }
+
+                val payload = JSONObject().apply {
+                    put("variables", JSONObject().apply {
+                        put("uri", "spotify:playlist:$playlistId")
+                        put("offset", offset)
+                        put("limit", limit)
+                        put("enableWatchFeedEntrypoint", false)
                     })
-                })
-            }
+                    put("operationName", "fetchPlaylist")
+                    put("extensions", JSONObject().apply {
+                        put("persistedQuery", JSONObject().apply {
+                            put("version", 1)
+                            put("sha256Hash", "21ea11a6ac75a5f3e01fd365d29c18e0a4a8b7dc09f89bbb5d73910190c6acaf")
+                        })
+                    })
+                }
 
-            conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
+                conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
 
-            if (conn.responseCode in 200..299) {
-                val text = conn.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(text)
-                val items = json.optJSONObject("data")
-                    ?.optJSONObject("playlistV2")
-                    ?.optJSONObject("content")
-                    ?.optJSONArray("items")
+                if (conn.responseCode in 200..299) {
+                    val text = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(text)
+                    val playlistV2 = json.optJSONObject("data")?.optJSONObject("playlistV2") ?: break
+                    val content = playlistV2.optJSONObject("content") ?: break
+                    totalCount = content.optInt("totalCount", totalCount)
+                    val items = content.optJSONArray("items") ?: break
+                    if (items.length() == 0) break
 
-                if (items != null) {
                     for (i in 0 until items.length()) {
                         val item = items.optJSONObject(i) ?: continue
                         val tData = item.optJSONObject("itemV2")?.optJSONObject("data") ?: continue
+                        val typename = tData.optString("__typename", "")
+                        if (typename.isNotBlank() && typename != "Track") continue
+
                         val name = tData.optString("name", "")
                         val uri = tData.optString("uri", "")
                         val spotifyId = if (uri.startsWith("spotify:track:")) uri.removePrefix("spotify:track:") else ""
-                        val durMs = tData.optJSONObject("trackDuration")?.optLong("totalMilliseconds", 0L) ?: 0L
+                        val durMs = tData.optJSONObject("trackDuration")?.optLong("totalMilliseconds", 0L)
+                            ?: tData.optJSONObject("duration")?.optLong("totalMilliseconds", 0L) ?: 0L
 
                         val artistsArr = tData.optJSONObject("artists")?.optJSONArray("items")
                         val artistList = mutableListOf<String>()
@@ -1024,10 +1039,41 @@ object MusicImportEngine {
                             }
                         }
                         val artist = artistList.joinToString(", ")
+                        val albumObj = tData.optJSONObject("albumOfTrack")
+                        val album = albumObj?.optString("name", "") ?: ""
+
+                        var coverUrl = ""
+                        val coverSources = albumObj?.optJSONObject("coverArt")?.optJSONArray("sources")
+                        if (coverSources != null && coverSources.length() > 0) {
+                            for (s in 0 until coverSources.length()) {
+                                val src = coverSources.optJSONObject(s) ?: continue
+                                val u = src.optString("url", "")
+                                val w = src.optInt("width", 0)
+                                if (u.startsWith("https://")) {
+                                    if (coverUrl.isBlank() || w in 300..640) {
+                                        coverUrl = u
+                                    }
+                                }
+                            }
+                        }
+                        if (coverUrl.isBlank()) coverUrl = defaultCoverUrl
+
                         if (name.isNotBlank()) {
-                            tracks.add(ImportTrackMeta(title = name, artist = artist, durationSeconds = (durMs / 1000).toInt(), spotifyId = spotifyId))
+                            tracks.add(
+                                ImportTrackMeta(
+                                    title = name,
+                                    artist = artist,
+                                    album = album,
+                                    durationSeconds = (durMs / 1000).toInt(),
+                                    spotifyId = spotifyId,
+                                    coverUrl = coverUrl
+                                )
+                            )
                         }
                     }
+                    offset += items.length()
+                } else {
+                    break
                 }
             }
         } catch (e: Exception) {
@@ -1432,27 +1478,44 @@ object MusicImportEngine {
         }
     }
 
-    private val VERSION_REGEX = Regex("""(?i)\b(remix|live|acoustic|instrumental|unplugged|karaoke|slowed|reverb|sped|nightcore|lo-?fi|cover|reprise|mashup)\b""")
+    private val VERSION_REGEX = Regex("""(?i)\b(remix|live|acoustic|instrumental|unplugged|karaoke|slowed|reverb|sped|nightcore|lo-?fi|cover|reprise|mashup|8d)\b""")
+    private const val MAX_LENGTH_GAP = 15
+    private const val MIN_TITLE_SIMILARITY = 0.80f
 
-    private fun extractVersionMarkers(title: String): Set<String> {
-        return VERSION_REGEX.findAll(title.lowercase()).map { it.value.replace("-", "") }.toSet()
-    }
-
-    private fun cleanTitleWords(title: String): String {
-        return title.replace(Regex("""[([{【「『][^)\]}】」』]*[)\]}】」』]"""), " ")
-            .replace(Regex("""(?i)\b(official\s+video|official\s+audio|music\s+video|lyric\s+video|lyrics|audio|video|hd|4k|ft\.?|feat\.?)\b"""), " ")
-            .replace(Regex("""[^\p{L}\p{N}\s]"""), " ")
-            .replace(Regex("""\s+"""), " ")
-            .trim()
+    private fun normalizeTitle(title: String): String {
+        return title
             .lowercase()
+            .replace(Regex("""[([{【「『][^)\]}】」』]*[)\]}】」』]"""), " ")
+            .replace(Regex("""(?i)\s+-\s+(?:official|lyrics?|audio|video|visuali[sz]er|from)\b.*$"""), " ")
+            .replace(Regex("""(?i)\s(?:feat\.?|ft\.?|featuring)\s.*$"""), " ")
+            .replace(Regex("""[^\p{L}\p{M}\p{N}]+"""), " ")
+            .trim()
     }
 
-    private fun diceSimilarity(a: String, b: String): Float {
+    private fun titleWords(title: String): String {
+        val bare = title.replace(Regex("""[([{【「『][^)\]}】」』]*[)\]}】」』]"""), " ")
+            .replace(Regex("""\s[-–—]\s.*$"""), " ")
+        val n = normalizeTitle(bare)
+        return if (n.isNotBlank()) n else normalizeTitle(title)
+    }
+
+    private fun versionMarks(title: String): String {
+        val found = VERSION_REGEX.findAll(title.lowercase()).map { it.value.replace("-", "") }.distinct().toList()
+        return found.sorted().joinToString(" ")
+    }
+
+    private fun artistNames(artist: String): List<String> {
+        return artist
+            .split(Regex("""\s*(?:,|&|\+|\/|;|、|\sx\s|\sand\s|\s(?:feat|ft)\.?\s|\sfeaturing\s|\swith\s|\svs\.?\s)\s*""", RegexOption.IGNORE_CASE))
+            .map { normalizeTitle(it).replace(" ", "") }
+            .filter { it.isNotBlank() }
+    }
+
+    private fun similarity(a: String, b: String): Float {
         val x = a.replace(" ", "")
         val y = b.replace(" ", "")
         if (x.isEmpty() || y.isEmpty()) return 0f
         if (x == y) return 1f
-        if (x.contains(y) || y.contains(x)) return 0.85f
         if (x.length < 2 || y.length < 2) return 0f
         val pairs = mutableMapOf<String, Int>()
         for (i in 0 until x.length - 1) {
@@ -1472,95 +1535,65 @@ object MusicImportEngine {
     }
 
     private fun searchQueries(meta: ImportTrackMeta): List<String> {
-        val cleanTitle = meta.title
+        val bareTitle = meta.title
             .replace(Regex("""[([{【「『][^)\]}】」』]*[)\]}】」』]"""), " ")
             .replace(Regex("""\s[-–—]\s.*$"""), " ")
+            .replace(Regex("""\s+"""), " ")
             .trim()
-        val baseTitle = if (cleanTitle.isNotBlank()) cleanTitle else meta.title.trim()
-        val version = extractVersionMarkers(meta.title).sorted().joinToString(" ")
-        val name = if (version.isNotBlank()) "$baseTitle $version" else baseTitle
-
-        val firstArtist = meta.artist
-            .split(Regex("""\s*(?:,|&|\+|\/|;|、|\sx\s|\sand\s|\s(?:feat|ft)\.?\s|\sfeaturing\s|\swith\s|\svs\.?\s)\s*""", RegexOption.IGNORE_CASE))
-            .firstOrNull()?.trim() ?: ""
+        val vm = versionMarks(meta.title)
+        val name = listOf(if (bareTitle.isNotBlank()) bareTitle else meta.title.trim(), vm).filter { it.isNotBlank() }.joinToString(" ")
+        val firstArtist = meta.artist.split(Regex("""\s*(?:,|&|\sx\s|\s(?:feat|ft)\.?\s)\s*""", RegexOption.IGNORE_CASE)).firstOrNull()?.trim() ?: ""
 
         val queries = mutableListOf<String>()
-        if (meta.artist.isNotBlank() && !name.contains(meta.artist, ignoreCase = true)) {
-            queries.add("$name ${meta.artist}")
-        }
-        if (firstArtist.isNotBlank() && firstArtist != meta.artist && !name.contains(firstArtist, ignoreCase = true)) {
+        if (firstArtist.isNotBlank()) {
             queries.add("$name $firstArtist")
+        }
+        if (meta.artist.isNotBlank() && meta.artist != firstArtist) {
+            queries.add("$name ${meta.artist}")
         }
         queries.add(name)
         return queries.distinct()
     }
 
-    private fun artistNames(artist: String): List<String> {
-        return artist
-            .split(Regex("""\s*(?:,|&|\+|\/|;|、|\sx\s|\sand\s|\s(?:feat|ft)\.?\s|\sfeaturing\s|\swith\s|\svs\.?\s)\s*""", RegexOption.IGNORE_CASE))
-            .map { cleanTitleWords(it).replace(" ", "") }
-            .filter { it.length >= 2 }
-    }
-
     /**
-     * Exact match scoring logic with soft duration weighting and word overlap.
-     * Returns a float score (higher is surer) or null if candidate is rejected as a different recording.
+     * ByTune exact matching:
+     * - versionMarks must agree both ways (remix, live, acoustic, etc.)
+     * - title similarity >= 0.80 or exact containment
+     * - duration gap <= 15 seconds (MAX_LENGTH_GAP)
+     * - shared artist required when artists are specified on both sides
+     * - Returns null if candidate is rejected
      */
     private fun matchScore(target: ImportTrackMeta, candidate: VideoItem): Float? {
-        val targetTitleClean = cleanTitleWords(target.title)
-        val candTitleClean = cleanTitleWords(candidate.title)
+        if (versionMarks(target.title) != versionMarks(candidate.title)) return null
 
-        // 1. Version markers check (remix, live, acoustic, cover, etc.)
-        val targetVersions = extractVersionMarkers(target.title)
-        val candVersions = extractVersionMarkers(candidate.title)
-        // If target specifically asked for a version (e.g. remix or live), candidate MUST have it
-        if (targetVersions.isNotEmpty() && !candVersions.containsAll(targetVersions)) {
-            return null
-        }
-        // If candidate is a karaoke, instrumental or 10-hour loop when target didn't ask for it, reject
-        val unwanted = setOf("karaoke", "instrumental", "1hour", "10hour")
-        if (candVersions.any { unwanted.contains(it) && !targetVersions.contains(it) }) {
-            return null
-        }
+        val wordsTarget = titleWords(target.title)
+        val wordsCand = titleWords(candidate.title)
+        val sim = similarity(wordsTarget, wordsCand)
+        val exactOrContains = wordsTarget == wordsCand ||
+                (wordsTarget.length >= 4 && wordsCand.contains(wordsTarget)) ||
+                (wordsCand.length >= 4 && wordsTarget.contains(wordsCand))
+        if (sim < MIN_TITLE_SIMILARITY && !exactOrContains) return null
 
-        // 2. Reject long mix/jukebox
         val candSec = parseDurationSec(candidate.duration)
-        if (candSec > 600 && target.durationSeconds in 1..400) return null
-        val candLow = candidate.title.lowercase()
-        val targetLow = target.title.lowercase()
-        val junkKeywords = listOf("jukebox", "nonstop", "non stop", "full album", "all songs", "compilation")
-        if (junkKeywords.any { candLow.contains(it) && !targetLow.contains(it) }) return null
+        val gap = if (target.durationSeconds > 0 && candSec > 0) kotlin.math.abs(target.durationSeconds - candSec) else null
+        if (gap != null && gap > MAX_LENGTH_GAP) return null
 
-        // 3. Title matching (Character Dice similarity + word overlap + substring)
-        val sim = diceSimilarity(targetTitleClean, candTitleClean)
-        val containsSubstr = (targetTitleClean.length >= 2 && candTitleClean.contains(targetTitleClean)) ||
-                             (candTitleClean.length >= 2 && targetTitleClean.contains(candTitleClean))
-
-        val targetWords = targetTitleClean.split(" ").filter { it.isNotBlank() }
-        val candWords = candTitleClean.split(" ").filter { it.isNotBlank() }
-        val sharedWords = targetWords.filter { candWords.contains(it) }
-        val wordOverlap = if (targetWords.isNotEmpty()) sharedWords.size.toFloat() / targetWords.size else 0f
-
-        val titleMatches = sim >= 0.35f || containsSubstr || wordOverlap >= 0.40f || targetTitleClean.isBlank()
-        if (!titleMatches) return null
-
-        // 4. Artist check
         val wanted = artistNames(target.artist)
-        val candArtistStr = "${candidate.artist} ${candidate.channelName} ${candidate.title}".lowercase().replace(" ", "")
-        val shared = wanted.any { it.length >= 3 && candArtistStr.contains(it) }
+        val credited = artistNames(candidate.artist) + artistNames(candidate.channelName)
+        val shared = wanted.filter { credited.contains(it) }.size
+        if (wanted.isNotEmpty() && credited.isNotEmpty() && shared == 0) return null
 
-        // 5. Score calculation
-        var score = (sim * 50f) + (wordOverlap * 50f) + (if (shared) 40f else 0f)
-
-        // Duration bonus/penalty (soft weighting rather than hard rejection)
-        if (target.durationSeconds > 0 && candSec > 0) {
-            val gap = kotlin.math.abs(target.durationSeconds - candSec)
-            if (gap <= 4) score += 30f
-            else if (gap <= 12) score += 20f
-            else if (gap <= 25) score += 10f
-            else if (gap > 60) score -= 20f
+        var score = sim * 100f + (if (shared > 0) 30f + 10f * (shared.toFloat() / wanted.size) else 0f)
+        if (gap != null) {
+            score += when {
+                gap <= 3 -> 20f
+                gap <= 8 -> 10f
+                else -> 0f
+            }
         }
-
+        if (target.album.isNotBlank() && candidate.album.isNotBlank() && titleWords(target.album) == titleWords(candidate.album)) {
+            score += 10f
+        }
         return score
     }
 

@@ -69,10 +69,10 @@ fun PlayerControlsOverlay(
         }
     }
 
-    // Auto-hide controls after 3.5 seconds when playing
+    // Auto-hide controls after 2.5 seconds when playing so the video stays unobstructed and crystal-clear
     LaunchedEffect(controlsVisible, isPlaying, isUserScrubbing, showSettingsSheet) {
         if (controlsVisible && isPlaying && !isUserScrubbing && !showSettingsSheet) {
-            delay(3500)
+            delay(2500)
             controlsVisible = false
         }
     }
@@ -215,11 +215,11 @@ fun PlayerControlsOverlay(
                         )
                 )
 
-                // Center subtle dimming
+                // Center subtle dimming (keep ultra-light so video remains high-contrast & vivid)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.25f))
+                        .background(Color.Black.copy(alpha = 0.08f))
                 )
 
                 // --- TOP BAR ---
