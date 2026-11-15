@@ -45,6 +45,10 @@ object PlaybackController {
     private val _isLoopEnabled = MutableStateFlow(false)
     val isLoopEnabled: StateFlow<Boolean> = _isLoopEnabled.asStateFlow()
 
+    private val _isShuffleEnabled = MutableStateFlow(false)
+    val isShuffleEnabled: StateFlow<Boolean> = _isShuffleEnabled.asStateFlow()
+    private var unShuffledQueue: List<VideoItem> = emptyList()
+
     private val _isAutoplayEnabled = MutableStateFlow(true)
     val isAutoplayEnabled: StateFlow<Boolean> = _isAutoplayEnabled.asStateFlow()
 
@@ -119,6 +123,28 @@ object PlaybackController {
 
     fun toggleLoop() {
         _isLoopEnabled.value = !_isLoopEnabled.value
+    }
+
+    fun toggleShuffle() {
+        val newState = !_isShuffleEnabled.value
+        _isShuffleEnabled.value = newState
+        val cur = _currentTrack.value
+        val queue = _playbackQueue.value
+        if (newState) {
+            unShuffledQueue = queue
+            if (cur != null && queue.size > 1) {
+                val others = queue.filter { it.id != cur.id }.shuffled()
+                _playbackQueue.value = listOf(cur) + others
+            } else {
+                _playbackQueue.value = queue.shuffled()
+            }
+        } else {
+            if (unShuffledQueue.isNotEmpty()) {
+                val restored = unShuffledQueue
+                unShuffledQueue = emptyList()
+                _playbackQueue.value = restored
+            }
+        }
     }
 
     fun toggleAutoplay() {
@@ -714,7 +740,8 @@ object PlaybackController {
                     candidates.addAll(samplePool)
                 }
 
-                val distinctNew = candidates.distinctBy { it.id }.take(10)
+                val pool = if (_isShuffleEnabled.value) candidates.shuffled() else candidates
+                val distinctNew = pool.distinctBy { it.id }.take(10)
                 if (distinctNew.isNotEmpty()) {
                     currentQueue.addAll(distinctNew)
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {

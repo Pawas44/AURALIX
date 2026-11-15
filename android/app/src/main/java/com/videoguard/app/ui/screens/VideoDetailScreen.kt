@@ -65,8 +65,8 @@ fun VideoDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val userPlaylists by com.videoguard.app.data.UserDataRepository.playlists.collectAsState()
-    val isLiked = remember(userPlaylists, video.id) {
-        com.videoguard.app.data.UserDataRepository.isLiked(video.id)
+    val isLiked = remember(userPlaylists, video.id, video.title) {
+        com.videoguard.app.data.UserDataRepository.isLiked(video.id, video.title, video.channelName)
     }
     val isSaved = remember(userPlaylists, video.id) {
         com.videoguard.app.data.UserDataRepository.isWatchLater(video.id)
@@ -417,7 +417,8 @@ fun VideoDetailScreen(
                             com.videoguard.app.data.UserDataRepository.toggleLiked(video)
                         },
                         shape = RoundedCornerShape(18.dp),
-                        color = Color.White.copy(alpha = 0.08f)
+                        color = if (isLiked) Color(0xFFFF1744).copy(alpha = 0.2f) else Color.White.copy(alpha = 0.08f),
+                        border = if (isLiked) androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF1744).copy(alpha = 0.5f)) else null
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -430,7 +431,12 @@ fun VideoDetailScreen(
                                 modifier = Modifier.size(17.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Like", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                text = if (isLiked) "Liked" else "Like",
+                                color = if (isLiked) Color(0xFFFF1744) else Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
 

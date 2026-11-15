@@ -59,14 +59,7 @@ fun PlaylistDetailScreen(
         iconType = if (isDownloads) "download" else "playlist"
     )
 
-    var dynamicVideos by remember(playlistId) { mutableStateOf(playlist.videos) }
-    LaunchedEffect(repoPlaylist?.videos) {
-        val updated = repoPlaylist?.videos
-        if (!updated.isNullOrEmpty()) {
-            dynamicVideos = updated
-        }
-    }
-    val currentVideos = if (isDownloads) offlineTracks else dynamicVideos
+    val currentVideos = if (isDownloads) offlineTracks else (repoPlaylist?.videos ?: initialPlaylist?.videos ?: emptyList())
     val totalDurationStr = remember(currentVideos) {
         UserDataRepository.formatCombinedDuration(currentVideos)
     }

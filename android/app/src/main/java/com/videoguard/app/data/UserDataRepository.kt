@@ -33,8 +33,10 @@ object UserDataRepository {
     private const val KEY_SUBSCRIPTIONS = "subscriptions_json"
     private const val KEY_SEARCH_HISTORY = "search_history_json"
     private const val KEY_OFFLINE = "offline_tracks_json"
+    private const val KEY_UNLIKED_IDS = "unliked_video_ids"
 
     private var prefs: SharedPreferences? = null
+    private val unlikedVideoIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
 
     private val _history = MutableStateFlow<List<VideoItem>>(emptyList())
     val history: StateFlow<List<VideoItem>> = _history.asStateFlow()
@@ -156,6 +158,12 @@ object UserDataRepository {
             } catch (e: Exception) {
                 e.printStackTrace()
             }
+        }
+
+        // Load Unliked/Removed Liked Video IDs
+        val unlikedSet = sp.getStringSet(KEY_UNLIKED_IDS, null)
+        if (!unlikedSet.isNullOrEmpty()) {
+            unlikedVideoIds.addAll(unlikedSet)
         }
 
         // Load Offline Tracks
@@ -999,19 +1007,35 @@ object UserDataRepository {
         val current = _playlists.value.toMutableList()
         val index = current.indexOfFirst { it.id == "liked_videos" }
         if (index != -1) {
-            current[index] = current[index].copy(videos = likedVideos)
+            val existing = current[index].videos
+            // Filter out remote videos that the user explicitly removed/unliked locally
+            val cleanRemote = likedVideos.filterNot { unlikedVideoIds.contains(it.id) }
+            val existingIds = existing.map { it.id }.toSet()
+            val newFromRemote = cleanRemote.filter { it.id !in existingIds }
+            val merged = (existing + newFromRemote).filterNot { unlikedVideoIds.contains(it.id) }.distinctBy { it.id }
+            current[index] = current[index].copy(videos = merged)
         } else {
+            val clean = likedVideos.filterNot { unlikedVideoIds.contains(it.id) }
             current.add(0, UserPlaylist(
                 id = "liked_videos",
                 title = "Liked videos",
                 description = "Videos you've liked",
-                videos = likedVideos,
+                videos = clean,
                 isSystem = true,
                 iconType = "like"
             ))
         }
         _playlists.value = current
         savePlaylists()
+    }
+
+    private fun saveUnlikedIds() {
+        val sp = prefs ?: return
+        try {
+            sp.edit().putStringSet(KEY_UNLIKED_IDS, unlikedVideoIds.toSet()).apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun saveHistory() {
@@ -1026,9 +1050,12 @@ object UserDataRepository {
     }
 
     // --- Playlist Management ---
-    fun isLiked(videoId: String): Boolean {
+    fun isLiked(videoId: String, title: String = "", artist: String = ""): Boolean {
+        if (unlikedVideoIds.contains(videoId)) return false
         val likedPlaylist = _playlists.value.find { it.id == "liked_videos" } ?: return false
-        return likedPlaylist.videos.any { it.id == videoId }
+        return likedPlaylist.videos.any {
+            it.id == videoId || (title.isNotBlank() && it.title.equals(title, ignoreCase = true) && (artist.isBlank() || it.artist.equals(artist, ignoreCase = true)))
+        }
     }
 
     fun toggleLiked(video: VideoItem) {
@@ -1037,9 +1064,18 @@ object UserDataRepository {
         if (index != -1) {
             val playlist = current[index]
             val videos = playlist.videos.toMutableList()
-            if (videos.any { it.id == video.id }) {
-                videos.removeAll { it.id == video.id }
+            val alreadyLiked = videos.any {
+                it.id == video.id || (it.title.isNotBlank() && it.title.equals(video.title, ignoreCase = true))
+            }
+            if (alreadyLiked) {
+                videos.removeAll {
+                    it.id == video.id || (it.title.isNotBlank() && it.title.equals(video.title, ignoreCase = true))
+                }
+                unlikedVideoIds.add(video.id)
+                saveUnlikedIds()
             } else {
+                unlikedVideoIds.remove(video.id)
+                saveUnlikedIds()
                 videos.add(0, video)
                 com.videoguard.app.recommendation.ListeningHistoryManager.onTrackLiked(video)
             }
@@ -1108,6 +1144,10 @@ object UserDataRepository {
         if (index != -1) {
             val playlist = current[index]
             val videos = playlist.videos.filter { it.id != videoId }
+            if (playlistId == "liked_videos") {
+                unlikedVideoIds.add(videoId)
+                saveUnlikedIds()
+            }
             current[index] = playlist.copy(videos = videos)
             _playlists.value = current
             savePlaylists()

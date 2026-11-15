@@ -113,6 +113,7 @@ fun MainScreen() {
                     playerDragOffsetY = value
                 }
                 isPlayerExpanded = false
+                kotlinx.coroutines.delay(100)
                 playerDragOffsetY = 0f
             } else {
                 val anim = Animatable(currentVal)
@@ -131,21 +132,8 @@ fun MainScreen() {
     }
 
     val collapsePlayerWithAnimation: () -> Unit = {
-        coroutineScope.launch {
-            val targetY = with(density) { 1000.dp.toPx() }
-            val anim = Animatable(playerDragOffsetY)
-            anim.animateTo(
-                targetValue = targetY,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMedium
-                )
-            ) {
-                playerDragOffsetY = value
-            }
-            isPlayerExpanded = false
-            playerDragOffsetY = 0f
-        }
+        playerDragOffsetY = 0f
+        isPlayerExpanded = false
     }
 
     // Synchronize window system bars & screen orientation with isFullscreen
@@ -637,13 +625,17 @@ fun MainScreen() {
                     stiffness = Spring.StiffnessMediumLow
                 )
             ) + fadeIn(animationSpec = tween(220)),
-            exit = slideOutVertically(
-                targetOffsetY = { it },
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
-            ) + fadeOut(animationSpec = tween(180)),
+            exit = if (playerDragOffsetY > 50f) {
+                fadeOut(animationSpec = tween(50))
+            } else {
+                slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow
+                    )
+                ) + fadeOut(animationSpec = tween(180))
+            },
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(10f)

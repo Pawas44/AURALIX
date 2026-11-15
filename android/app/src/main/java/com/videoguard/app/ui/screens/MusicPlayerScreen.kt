@@ -107,11 +107,11 @@ fun MusicPlayerScreen(
 ) {
     var activeTab by remember { mutableStateOf(MusicSheetTab.UP_NEXT) }
     val userPlaylists by com.videoguard.app.data.UserDataRepository.playlists.collectAsState()
-    val isLiked = remember(userPlaylists, track.id) {
-        com.videoguard.app.data.UserDataRepository.isLiked(track.id)
+    val isLiked = remember(userPlaylists, track.id, track.title) {
+        com.videoguard.app.data.UserDataRepository.isLiked(track.id, track.title, track.artist)
     }
     var isDisliked by remember { mutableStateOf(false) }
-    var isShuffle by remember { mutableStateOf(false) }
+    val isShuffle by com.videoguard.app.service.PlaybackController.isShuffleEnabled.collectAsState()
     val isRepeat by com.videoguard.app.service.PlaybackController.isLoopEnabled.collectAsState()
     var sliderPosition by remember { mutableFloatStateOf(0.35f) }
     var showSettingsSheet by remember { mutableStateOf(false) }
@@ -834,15 +834,27 @@ fun MusicPlayerScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            IconButton(
-                onClick = { isShuffle = !isShuffle },
-                modifier = Modifier.size(42.dp)
+            // Shuffle Button with Label
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable { com.videoguard.app.service.PlaybackController.toggleShuffle() }
             ) {
-                Icon(
-                    imageVector = Icons.Default.Shuffle,
-                    contentDescription = "Shuffle",
-                    tint = if (isShuffle) YTMusicRedAccent else Color(0xFFAAAAAA),
-                    modifier = Modifier.size(24.dp)
+                IconButton(
+                    onClick = { com.videoguard.app.service.PlaybackController.toggleShuffle() },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Shuffle,
+                        contentDescription = "Shuffle",
+                        tint = if (isShuffle) YTMusicRedAccent else Color(0xFFAAAAAA),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Text(
+                    text = "Shuffle",
+                    color = if (isShuffle) YTMusicRedAccent else Color(0xFFAAAAAA),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
@@ -881,15 +893,27 @@ fun MusicPlayerScreen(
                 )
             }
 
-            IconButton(
-                onClick = { com.videoguard.app.service.PlaybackController.toggleLoop() },
-                modifier = Modifier.size(42.dp)
+            // Loop Button with Label
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clickable { com.videoguard.app.service.PlaybackController.toggleLoop() }
             ) {
-                Icon(
-                    imageVector = Icons.Default.Repeat,
-                    contentDescription = "Repeat",
-                    tint = if (isRepeat) YTMusicRedAccent else Color(0xFFAAAAAA),
-                    modifier = Modifier.size(24.dp)
+                IconButton(
+                    onClick = { com.videoguard.app.service.PlaybackController.toggleLoop() },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Repeat,
+                        contentDescription = "Loop",
+                        tint = if (isRepeat) YTMusicRedAccent else Color(0xFFAAAAAA),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                Text(
+                    text = "Loop",
+                    color = if (isRepeat) YTMusicRedAccent else Color(0xFFAAAAAA),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
         } // End of Playback Controls Row
