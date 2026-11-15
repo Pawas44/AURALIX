@@ -1051,10 +1051,9 @@ object UserDataRepository {
 
     // --- Playlist Management ---
     fun isLiked(videoId: String, title: String = "", artist: String = ""): Boolean {
-        if (unlikedVideoIds.contains(videoId)) return false
         val likedPlaylist = _playlists.value.find { it.id == "liked_videos" } ?: return false
         return likedPlaylist.videos.any {
-            it.id == videoId || (title.isNotBlank() && it.title.equals(title, ignoreCase = true) && (artist.isBlank() || it.artist.equals(artist, ignoreCase = true)))
+            it.id == videoId || (title.isNotBlank() && it.title.equals(title, ignoreCase = true) && (artist.isBlank() || it.artist.isBlank() || it.artist.equals(artist, ignoreCase = true)))
         }
     }
 

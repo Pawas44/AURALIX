@@ -113,6 +113,7 @@ fun MusicPlayerScreen(
     var isDisliked by remember { mutableStateOf(false) }
     val isShuffle by com.videoguard.app.service.PlaybackController.isShuffleEnabled.collectAsState()
     val isRepeat by com.videoguard.app.service.PlaybackController.isLoopEnabled.collectAsState()
+    val isAutoplay by com.videoguard.app.service.PlaybackController.isAutoplayEnabled.collectAsState()
     var sliderPosition by remember { mutableFloatStateOf(0.35f) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showAddToPlaylistSheet by remember { mutableStateOf(false) }
@@ -745,14 +746,18 @@ fun MusicPlayerScreen(
                 IconButton(
                     onClick = {
                         isDisliked = !isDisliked
-                        if (isDisliked && isLiked) {
-                            com.videoguard.app.data.UserDataRepository.toggleLiked(track)
+                        if (isDisliked) {
+                            if (isLiked) {
+                                com.videoguard.app.data.UserDataRepository.toggleLiked(track)
+                            }
+                            com.videoguard.app.service.PlaybackController.dontPlayTrack(track)
+                            android.widget.Toast.makeText(context, "Won't play this track again in this session", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     }
                 ) {
                     Icon(
                         imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
-                        contentDescription = "Dislike",
+                        contentDescription = "Don't play this",
                         tint = if (isDisliked) YTMusicRedAccent else Color.White
                     )
                 }
@@ -834,22 +839,21 @@ fun MusicPlayerScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Shuffle Button with Label
+            // Shuffle Button with Label (Single click target)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable { com.videoguard.app.service.PlaybackController.toggleShuffle() }
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { com.videoguard.app.service.PlaybackController.toggleShuffle() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                IconButton(
-                    onClick = { com.videoguard.app.service.PlaybackController.toggleShuffle() },
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Shuffle,
-                        contentDescription = "Shuffle",
-                        tint = if (isShuffle) YTMusicRedAccent else Color(0xFFAAAAAA),
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Shuffle,
+                    contentDescription = "Shuffle",
+                    tint = if (isShuffle) YTMusicRedAccent else Color(0xFFAAAAAA),
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "Shuffle",
                     color = if (isShuffle) YTMusicRedAccent else Color(0xFFAAAAAA),
@@ -893,22 +897,21 @@ fun MusicPlayerScreen(
                 )
             }
 
-            // Loop Button with Label
+            // Loop Button with Label (Single click target)
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.clickable { com.videoguard.app.service.PlaybackController.toggleLoop() }
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { com.videoguard.app.service.PlaybackController.toggleLoop() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
-                IconButton(
-                    onClick = { com.videoguard.app.service.PlaybackController.toggleLoop() },
-                    modifier = Modifier.size(38.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Repeat,
-                        contentDescription = "Loop",
-                        tint = if (isRepeat) YTMusicRedAccent else Color(0xFFAAAAAA),
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.Repeat,
+                    contentDescription = "Loop",
+                    tint = if (isRepeat) YTMusicRedAccent else Color(0xFFAAAAAA),
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = "Loop",
                     color = if (isRepeat) YTMusicRedAccent else Color(0xFFAAAAAA),
@@ -1058,55 +1061,107 @@ fun MusicPlayerScreen(
                                         }
                                     }
                                 } else {
-                                    LazyColumn(
-                                        contentPadding = PaddingValues(bottom = navBarBottom + 8.dp)
-                                    ) {
-                                        itemsIndexed(queueTracks, key = { index, item -> "${item.id}_$index" }) { _, qTrack ->
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        // AutoPlay Header Bar (ByTune style)
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clickable {
-                                                    val activeQueue = if (liveQueue.size > 1) liveQueue else listOf(track) + queueTracks
-                                                    com.videoguard.app.service.PlaybackController.playTrack(qTrack, activeQueue)
-                                                }
-                                                .padding(vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                                .padding(horizontal = 4.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            AsyncImage(
-                                                model = qTrack.thumbnailUrl,
-                                                contentDescription = qTrack.title,
-                                                contentScale = ContentScale.Crop,
-                                                modifier = Modifier
-                                                    .size(40.dp)
-                                                    .clip(RoundedCornerShape(6.dp))
-                                            )
-                                            Spacer(modifier = Modifier.width(12.dp))
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = qTrack.title,
+                                                    text = "Autoplay",
                                                     color = Color.White,
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Bold
                                                 )
-                                                Spacer(modifier = Modifier.height(2.dp))
                                                 Text(
-                                                    text = qTrack.artist.ifEmpty { qTrack.channelName },
+                                                    text = "Continuous music that never runs dry",
                                                     color = Color(0xFFAAAAAA),
-                                                    fontSize = 11.sp,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
+                                                    fontSize = 11.sp
                                                 )
                                             }
-                                            Text(
-                                                text = qTrack.duration,
-                                                color = Color(0xFF888888),
-                                                fontSize = 12.sp
+                                            Switch(
+                                                checked = isAutoplay,
+                                                onCheckedChange = { com.videoguard.app.service.PlaybackController.toggleAutoplay() },
+                                                colors = SwitchDefaults.colors(
+                                                    checkedThumbColor = Color.White,
+                                                    checkedTrackColor = YTMusicRedAccent,
+                                                    uncheckedThumbColor = Color(0xFFAAAAAA),
+                                                    uncheckedTrackColor = Color(0xFF333333)
+                                                )
                                             )
                                         }
+                                        Spacer(modifier = Modifier.height(4.dp))
+
+                                        LazyColumn(
+                                            contentPadding = PaddingValues(bottom = navBarBottom + 8.dp)
+                                        ) {
+                                            itemsIndexed(queueTracks, key = { index, item -> "${item.id}_$index" }) { _, qTrack ->
+                                                Row(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            val activeQueue = if (liveQueue.size > 1) liveQueue else listOf(track) + queueTracks
+                                                            com.videoguard.app.service.PlaybackController.playTrack(qTrack, activeQueue)
+                                                        }
+                                                        .padding(vertical = 6.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    AsyncImage(
+                                                        model = qTrack.thumbnailUrl,
+                                                        contentDescription = qTrack.title,
+                                                        contentScale = ContentScale.Crop,
+                                                        modifier = Modifier
+                                                            .size(40.dp)
+                                                            .clip(RoundedCornerShape(6.dp))
+                                                    )
+                                                    Spacer(modifier = Modifier.width(12.dp))
+                                                    Column(modifier = Modifier.weight(1f)) {
+                                                        Text(
+                                                            text = qTrack.title,
+                                                            color = Color.White,
+                                                            fontSize = 13.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                        Spacer(modifier = Modifier.height(2.dp))
+                                                        Text(
+                                                            text = qTrack.artist.ifEmpty { qTrack.channelName },
+                                                            color = Color(0xFFAAAAAA),
+                                                            fontSize = 11.sp,
+                                                            maxLines = 1,
+                                                            overflow = TextOverflow.Ellipsis
+                                                        )
+                                                    }
+                                                    Text(
+                                                        text = qTrack.duration,
+                                                        color = Color(0xFF888888),
+                                                        fontSize = 12.sp
+                                                    )
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    // "Don't play this" button (ByTune feature)
+                                                    IconButton(
+                                                        onClick = {
+                                                            com.videoguard.app.service.PlaybackController.dontPlayTrack(qTrack)
+                                                            android.widget.Toast.makeText(context, "Won't suggest this song again", android.widget.Toast.LENGTH_SHORT).show()
+                                                        },
+                                                        modifier = Modifier.size(34.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Block,
+                                                            contentDescription = "Don't play this",
+                                                            tint = Color(0xFF777777),
+                                                            modifier = Modifier.size(17.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
-                                }
                             }
                         }
                         MusicSheetTab.LYRICS -> {

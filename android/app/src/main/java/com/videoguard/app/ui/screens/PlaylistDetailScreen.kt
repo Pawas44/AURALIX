@@ -73,7 +73,8 @@ fun PlaylistDetailScreen(
     val scope = rememberCoroutineScope()
 
     suspend fun refreshVideos() {
-        if (isDownloads || (!playlistId.startsWith("PL") && playlistId != "liked_videos" && playlistId != "watch_later")) {
+        val isRemoteYouTubePlaylist = playlistId.startsWith("PL") || playlistId.startsWith("RD") || playlistId.startsWith("VL") || playlistId.startsWith("OLAK5uy_")
+        if (isDownloads || !isRemoteYouTubePlaylist) {
             isRefreshing = false
             isLoading = false
             return
@@ -83,11 +84,7 @@ fun PlaylistDetailScreen(
             YouTubeSyncEngine.fetchPlaylistVideos(playlistId)
         }
         if (online.isNotEmpty()) {
-            when (playlistId) {
-                "liked_videos" -> UserDataRepository.updateLikedVideos(online)
-                "watch_later" -> UserDataRepository.updateWatchLaterVideos(online)
-                else -> UserDataRepository.updatePlaylistVideos(playlistId, online)
-            }
+            UserDataRepository.updatePlaylistVideos(playlistId, online)
         }
         isRefreshing = false
         isLoading = false

@@ -441,4 +441,101 @@ object YouTubeSearchEngine {
         else VideoRepository.sampleVideos.filter { it.id != video.id }
         fallback.sortedByDescending { com.videoguard.app.recommendation.SongSimilarityEngine.computeSimilarity(video, it) }
     }
+
+    /**
+     * Official YouTube Music Radio (RDAMVM<id>) — returns continuous songs specifically
+     * curated for this song using YouTube Music's native automix radio algorithm.
+     */
+    suspend fun getSongRadio(videoId: String): List<VideoItem> = withContext(Dispatchers.IO) {
+        val tracks = mutableListOf<VideoItem>()
+        try {
+            val url = URL("https://music.youtube.com/youtubei/v1/next")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 8000
+                readTimeout = 8000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+                setRequestProperty("X-YouTube-Client-Name", "67")
+                setRequestProperty("X-YouTube-Client-Version", "1.20240101.01.00")
+            }
+
+            val body = JSONObject().apply {
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "WEB_REMIX")
+                        put("clientVersion", "1.20240101.01.00")
+                        put("hl", "en")
+                        put("gl", "US")
+                    })
+                })
+                put("videoId", videoId)
+                put("playlistId", "RDAMVM$videoId")
+                put("enablePersistentPlaylistPanel", true)
+                put("tunerSettingValue", "AUTOMIX_SETTING_NORMAL")
+            }
+
+            conn.outputStream.bufferedWriter().use { it.write(body.toString()) }
+
+            if (conn.responseCode in 200..299) {
+                val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
+                if (jsonStr.startsWith("{")) {
+                    val root = JSONObject(jsonStr)
+                    extractRadioTracks(root, tracks)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        tracks.filter { it.id != videoId }.distinctBy { it.id }
+    }
+
+    private fun extractRadioTracks(node: Any?, out: MutableList<VideoItem>) {
+        when (node) {
+            is JSONObject -> {
+                val ppvr = node.optJSONObject("playlistPanelVideoRenderer")
+                if (ppvr != null) {
+                    val id = ppvr.optString("videoId")
+                    val title = ppvr.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                        ?: ppvr.optJSONObject("title")?.optString("simpleText", "") ?: ""
+                    val artist = ppvr.optJSONObject("longBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                        ?: ppvr.optJSONObject("shortBylineText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text") ?: "Artist"
+                    val thumb = ppvr.optJSONObject("thumbnail")?.optJSONArray("thumbnails")?.let { arr ->
+                        arr.optJSONObject(arr.length() - 1)?.optString("url")
+                    } ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg"
+                    val dur = ppvr.optJSONObject("lengthText")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")
+                        ?: ppvr.optJSONObject("lengthText")?.optString("simpleText", "3:30") ?: "3:30"
+
+                    if (id.isNotBlank() && title.isNotBlank() && out.none { it.id == id }) {
+                        out.add(
+                            VideoItem(
+                                id = id,
+                                title = title,
+                                channelName = artist,
+                                channelAvatarUrl = "",
+                                thumbnailUrl = thumb,
+                                views = "",
+                                uploadTime = "",
+                                duration = dur,
+                                isMusicTrack = true,
+                                artist = artist,
+                                album = ""
+                            )
+                        )
+                    }
+                }
+                val keys = node.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    extractRadioTracks(node.opt(key), out)
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until node.length()) {
+                    extractRadioTracks(node.opt(i), out)
+                }
+            }
+        }
+    }
 }

@@ -346,7 +346,14 @@ object PlaybackController {
             com.videoguard.app.recommendation.ListeningHistoryManager.onTrackStarted(track, initialDurationSec)
 
             if (queue.isNotEmpty()) {
-                _playbackQueue.value = queue
+                if (_isShuffleEnabled.value && queue.size > 1) {
+                    unShuffledQueue = queue
+                    val others = queue.filter { it.id != track.id }.shuffled()
+                    _playbackQueue.value = listOf(track) + others
+                } else {
+                    unShuffledQueue = emptyList()
+                    _playbackQueue.value = queue
+                }
             } else if (_playbackQueue.value.none { it.id == track.id }) {
                 _playbackQueue.value = listOf(track)
             }
@@ -517,12 +524,12 @@ object PlaybackController {
         val dur = _durationSeconds.value
         val elapsed = System.currentTimeMillis() - lastTrackChangeTimeMs
         if (dur > 10f) {
-            return cur >= (dur - 4f) || (elapsed > 15000L && cur >= (dur - 6f))
+            return cur >= (dur - 8f) || (cur >= dur * 0.90f) || (elapsed > 12000L && cur >= (dur - 12f))
         }
         if (dur > 2f) {
             return cur >= (dur - 1f)
         }
-        return false
+        return elapsed > 5000L && cur > 5f
     }
 
     fun setQueue(queue: List<VideoItem>) {
@@ -657,16 +664,64 @@ object PlaybackController {
         syncServiceProgress(force = true)
     }
 
+    private val sessionBlockedIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val sessionBlockedKeys = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    fun normalizeSongKey(title: String, artist: String): String {
+        val cleanTitle = title.lowercase(java.util.Locale.ROOT)
+            .replace(Regex("""\((?:official|video|audio|lyric|hd|4k|remix|version)[^)]*\)"""), "")
+            .replace(Regex("""\[(?:official|video|audio|lyric|hd|4k|remix|version)[^\]]*\]"""), "")
+            .replace(Regex("""[^a-z0-9]"""), "")
+        val cleanArtist = artist.lowercase(java.util.Locale.ROOT)
+            .replace(Regex("""[^a-z0-9]"""), "")
+        return "$cleanTitle|$cleanArtist"
+    }
+
     /**
-     * Continuous and Unlimited Playback Queue Replenishment
-     * Automatically enqueues fresh recommendations when approaching the end of the Up Next queue.
-     * Prevents looping or abrupt stops.
+     * User explicitly marks a song as "Don't play this" (ByTune style).
+     * The song and identical versions are blocked from current queue and future auto-play recommendations in this session.
+     */
+    fun dontPlayTrack(track: VideoItem) {
+        sessionBlockedIds.add(track.id)
+        val key = normalizeSongKey(track.title, track.artist)
+        if (key.isNotBlank()) {
+            sessionBlockedKeys.add(key)
+        }
+
+        // Remove from current active queue
+        val currentQ = _playbackQueue.value.toMutableList()
+        currentQ.removeAll { it.id == track.id || (key.isNotBlank() && normalizeSongKey(it.title, it.artist) == key) }
+        _playbackQueue.value = currentQ
+
+        if (unShuffledQueue.isNotEmpty()) {
+            val unQ = unShuffledQueue.toMutableList()
+            unQ.removeAll { it.id == track.id || (key.isNotBlank() && normalizeSongKey(it.title, it.artist) == key) }
+            unShuffledQueue = unQ
+        }
+
+        // If the dismissed song is currently playing, jump to next song immediately
+        if (_currentTrack.value?.id == track.id) {
+            nextTrack()
+        } else {
+            val cur = _currentTrack.value
+            if (cur != null) {
+                replenishQueueIfNeeded(cur)
+            }
+        }
+    }
+
+    /**
+     * Continuous AutoPlay That Never Runs Dry (ByTune Style)
+     * When queue runs low (<= 4 remaining), songs that fit keep coming,
+     * lined up a step ahead using YouTube Music's RDAMVM automix song radio with zero gap.
      */
     fun replenishQueueIfNeeded(currentTrack: VideoItem) {
+        if (!_isAutoplayEnabled.value) return
         if (isReplenishingQueue) return
         val currentQueue = _playbackQueue.value
         val idx = currentQueue.indexOfFirst { it.id == currentTrack.id }
-        if (idx < 0 || idx >= currentQueue.size - 3 || currentQueue.size <= 3) {
+        val remainingAfter = if (idx >= 0) currentQueue.size - 1 - idx else 0
+        if (idx < 0 || remainingAfter <= 4 || currentQueue.size <= 4) {
             triggerQueueReplenishment(currentTrack)
         }
     }
@@ -682,68 +737,100 @@ object PlaybackController {
                 val currentQueue = _playbackQueue.value.toMutableList()
                 val existingIds = currentQueue.map { it.id }.toMutableSet()
                 existingIds.addAll(recentPlayedTrackIds)
+                existingIds.addAll(sessionBlockedIds)
 
-                val candidates = mutableListOf<VideoItem>()
+                // Pick best seed: the last song in queue if available, otherwise current song
+                val effectiveSeed = currentQueue.lastOrNull() ?: seedTrack
+                val rawCandidates = mutableListOf<VideoItem>()
 
                 if (!isOfflineModeActive) {
-                    // Tier 1: YouTube related videos (music-only)
+                    // Tier 1 (ByTune): YouTube Music Native RDAMVM endless radio
                     try {
-                        val related = com.videoguard.app.data.YouTubeSearchEngine.getRelatedVideos(seedTrack, isMusicOnly = true)
-                        candidates.addAll(related.filter { it.id !in existingIds })
+                        val radio = com.videoguard.app.data.YouTubeSearchEngine.getSongRadio(effectiveSeed.id)
+                        rawCandidates.addAll(radio)
                     } catch (e: Exception) {}
 
-                    // Tier 2: Recommendation Engine Personalized Feed
-                    if (candidates.size < 6) {
+                    // Tier 2: YouTube Related Videos (music-only)
+                    if (rawCandidates.size < 8) {
                         try {
-                            val feed = com.videoguard.app.recommendation.RecommendationEngine.feedState.value
-                            val feedTracks = (feed.recommendedForYou + feed.madeForYou + feed.discoverWeekly)
-                                .filter { it.id !in existingIds }
-                            candidates.addAll(feedTracks)
+                            val related = com.videoguard.app.data.YouTubeSearchEngine.getRelatedVideos(effectiveSeed, isMusicOnly = true)
+                            rawCandidates.addAll(related)
                         } catch (e: Exception) {}
                     }
 
-                    // Tier 3: Artist Radio Search
-                    val artist = seedTrack.artist.ifBlank { seedTrack.channelName }
-                    if (candidates.size < 6 && artist.isNotBlank() && artist != "YouTube Channel") {
+                    // Tier 3: Personalized Feed
+                    if (rawCandidates.size < 6) {
+                        try {
+                            val feed = com.videoguard.app.recommendation.RecommendationEngine.feedState.value
+                            val feedTracks = (feed.recommendedForYou + feed.madeForYou + feed.discoverWeekly)
+                            rawCandidates.addAll(feedTracks)
+                        } catch (e: Exception) {}
+                    }
+
+                    // Tier 4: Artist Radio Search
+                    val artist = effectiveSeed.artist.ifBlank { effectiveSeed.channelName }
+                    if (rawCandidates.size < 6 && artist.isNotBlank() && artist != "YouTube Channel") {
                         try {
                             val artistSongs = com.videoguard.app.data.YouTubeSearchEngine.searchVideos(
                                 "$artist songs",
                                 isMusicOnly = true
-                            ).filter { it.id !in existingIds }
-                            candidates.addAll(artistSongs)
+                            )
+                            rawCandidates.addAll(artistSongs)
                         } catch (e: Exception) {}
                     }
 
-                    // Tier 4: Curated Music Pool
-                    if (candidates.size < 4) {
-                        val musicTracks = VideoRepository.getMusicTracks().filter { it.id !in existingIds }
-                        candidates.addAll(musicTracks)
+                    // Tier 5: Curated Music Pool
+                    if (rawCandidates.size < 4) {
+                        val musicTracks = VideoRepository.getMusicTracks()
+                        rawCandidates.addAll(musicTracks)
                     }
                 }
 
-                // Tier 5: Local Offline Tracks Fallback (or if in offline mode / network failed)
-                if (candidates.isEmpty() || isOfflineModeActive) {
+                // Tier 6: Local Offline Tracks Fallback (or if network failed)
+                if (rawCandidates.isEmpty() || isOfflineModeActive) {
                     val offline = com.videoguard.app.data.UserDataRepository.offlineTracks.value
-                    val unplayedOffline = offline.filter { it.id !in existingIds && it.id != seedTrack.id }
+                    val unplayedOffline = offline.filter { it.id !in existingIds && it.id != effectiveSeed.id }
                     if (unplayedOffline.isNotEmpty()) {
-                        candidates.addAll(unplayedOffline)
+                        rawCandidates.addAll(unplayedOffline)
                     } else if (offline.size > 1) {
-                        candidates.addAll(offline.filter { it.id != seedTrack.id }.shuffled())
+                        rawCandidates.addAll(offline.filter { it.id != effectiveSeed.id }.shuffled())
                     } else if (offline.isNotEmpty()) {
-                        candidates.addAll(offline)
+                        rawCandidates.addAll(offline)
                     }
                 }
 
-                // Tier 6: Failsafe fallback across sample catalogue (online only)
-                if (candidates.isEmpty() && !isOfflineModeActive) {
-                    val samplePool = VideoRepository.sampleVideos.filter { it.id != seedTrack.id }
-                    candidates.addAll(samplePool)
+                // Tier 7: Failsafe fallback across sample catalogue (online only)
+                if (rawCandidates.isEmpty() && !isOfflineModeActive) {
+                    val samplePool = VideoRepository.sampleVideos.filter { it.id != effectiveSeed.id }
+                    rawCandidates.addAll(samplePool)
                 }
 
-                val pool = if (_isShuffleEnabled.value) candidates.shuffled() else candidates
-                val distinctNew = pool.distinctBy { it.id }.take(10)
-                if (distinctNew.isNotEmpty()) {
-                    currentQueue.addAll(distinctNew)
+                // ByTune Smart Filtering:
+                // 1. Exclude blocked IDs and blocked song keys
+                // 2. Diversity cap: max 2 songs per artist (3 for seed artist)
+                val seedArtist = (effectiveSeed.artist.ifBlank { effectiveSeed.channelName }).lowercase(java.util.Locale.ROOT).trim()
+                val artistCounts = mutableMapOf<String, Int>()
+                val accepted = mutableListOf<VideoItem>()
+
+                val pool = if (_isShuffleEnabled.value) rawCandidates.shuffled() else rawCandidates
+                for (cand in pool) {
+                    if (cand.id in existingIds) continue
+                    val key = normalizeSongKey(cand.title, cand.artist)
+                    if (key.isNotBlank() && key in sessionBlockedKeys) continue
+
+                    val candArtist = (cand.artist.ifBlank { cand.channelName }).lowercase(java.util.Locale.ROOT).trim()
+                    val maxCap = if (candArtist.isNotBlank() && (candArtist.contains(seedArtist) || seedArtist.contains(candArtist))) 3 else 2
+                    val currentCount = artistCounts.getOrDefault(candArtist, 0)
+                    if (currentCount < maxCap) {
+                        artistCounts[candArtist] = currentCount + 1
+                        accepted.add(cand)
+                        existingIds.add(cand.id)
+                        if (accepted.size >= 8) break
+                    }
+                }
+
+                if (accepted.isNotEmpty()) {
+                    currentQueue.addAll(accepted)
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                         _playbackQueue.value = currentQueue
                         onComplete?.invoke(currentQueue)
@@ -778,9 +865,9 @@ object PlaybackController {
 
         if (idx in 0 until queue.lastIndex) {
             val nextTrack = queue[idx + 1]
-            playTrack(nextTrack, queue)
-            // If nearing end of queue, replenish in advance
-            if (idx + 1 >= queue.size - 3) {
+            playTrack(nextTrack, emptyList())
+            // If nearing end of queue (4 or fewer tracks ahead), replenish in advance so queue never runs dry!
+            if (queue.size - 1 - (idx + 1) <= 4) {
                 replenishQueueIfNeeded(nextTrack)
             }
         } else {
@@ -788,10 +875,10 @@ object PlaybackController {
             triggerQueueReplenishment(current) { updatedQueue ->
                 val newIdx = updatedQueue.indexOfFirst { it.id == current.id }
                 if (newIdx in 0 until updatedQueue.lastIndex) {
-                    playTrack(updatedQueue[newIdx + 1], updatedQueue)
+                    playTrack(updatedQueue[newIdx + 1], emptyList())
                 } else if (updatedQueue.isNotEmpty()) {
                     val fallback = updatedQueue.firstOrNull { it.id != current.id } ?: updatedQueue.first()
-                    playTrack(fallback, updatedQueue)
+                    playTrack(fallback, emptyList())
                 }
             }
         }
@@ -813,7 +900,7 @@ object PlaybackController {
         val idx = queue.indexOfFirst { it.id == current.id }
         val prevIdx = if (idx > 0) idx - 1 else queue.lastIndex
         if (prevIdx in queue.indices) {
-            playTrack(queue[prevIdx], queue)
+            playTrack(queue[prevIdx], emptyList())
         }
     }
 

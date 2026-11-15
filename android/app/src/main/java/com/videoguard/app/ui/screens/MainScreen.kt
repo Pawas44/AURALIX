@@ -100,21 +100,14 @@ fun MainScreen() {
         val shouldDismiss = currentVal > threshold || velocityY > 600f
         coroutineScope.launch {
             if (shouldDismiss) {
-                val targetY = with(density) { 1200.dp.toPx() }
+                isPlayerExpanded = false
                 val anim = Animatable(currentVal)
                 anim.animateTo(
-                    targetValue = targetY,
-                    initialVelocity = velocityY,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow
-                    )
+                    targetValue = 0f,
+                    animationSpec = tween(180, easing = FastOutSlowInEasing)
                 ) {
                     playerDragOffsetY = value
                 }
-                isPlayerExpanded = false
-                kotlinx.coroutines.delay(100)
-                playerDragOffsetY = 0f
             } else {
                 val anim = Animatable(currentVal)
                 anim.animateTo(
@@ -625,17 +618,10 @@ fun MainScreen() {
                     stiffness = Spring.StiffnessMediumLow
                 )
             ) + fadeIn(animationSpec = tween(220)),
-            exit = if (playerDragOffsetY > 50f) {
-                fadeOut(animationSpec = tween(50))
-            } else {
-                slideOutVertically(
-                    targetOffsetY = { it },
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioNoBouncy,
-                        stiffness = Spring.StiffnessMediumLow
-                    )
-                ) + fadeOut(animationSpec = tween(180))
-            },
+            exit = slideOutVertically(
+                targetOffsetY = { it },
+                animationSpec = tween(220, easing = FastOutSlowInEasing)
+            ) + fadeOut(animationSpec = tween(180)),
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(10f)
