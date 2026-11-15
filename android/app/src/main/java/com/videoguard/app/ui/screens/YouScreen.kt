@@ -78,6 +78,7 @@ fun YouScreen(
     var showNewPlaylistDialog by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -298,19 +299,27 @@ fun YouScreen(
                         Spacer(modifier = Modifier.height(14.dp))
                     }
 
-                    // Account quick action chips: Switch account on left, Logout button on right end
+                    // Account quick action chips: Switch account on left, Settings in middle, Logout button on right
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         AccountChip(
                             icon = Icons.Default.SwitchAccount,
-                            label = "Switch account",
+                            label = "Switch",
                             onClick = onSignInClick
                         )
+
+                        AccountChip(
+                            icon = Icons.Outlined.Settings,
+                            label = "Settings",
+                            onClick = { showSettingsSheet = true }
+                        )
+
+                        Spacer(modifier = Modifier.weight(1f))
 
                         AccountChip(
                             icon = Icons.AutoMirrored.Filled.Logout,
@@ -448,6 +457,12 @@ fun YouScreen(
                 Spacer(modifier = Modifier.height(90.dp))
             }
         }
+    }
+
+    if (showSettingsSheet) {
+        com.videoguard.app.ui.components.PlayerSettingsBottomSheet(
+            onDismiss = { showSettingsSheet = false }
+        )
     }
 }
 

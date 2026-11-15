@@ -33,6 +33,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import com.videoguard.app.R
+import com.videoguard.app.data.AlbumDataRepository
+import com.videoguard.app.data.AlbumItem
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -170,7 +172,7 @@ fun MusicLibraryScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf("All", "Playlists", "Spotify", "Liked Songs", "Recently Played", "Downloads").forEach { chip ->
+                    listOf("All", "Playlists", "Albums", "Mixtapes", "Spotify", "Liked Songs", "Recently Played", "Downloads").forEach { chip ->
                         val isSelected = selectedFilter == chip
                         FilterChip(
                             selected = isSelected,
@@ -846,6 +848,113 @@ fun MusicLibraryScreen(
                                             }
                                         }
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2c. Albums & Mixtapes Section
+            if (selectedFilter == "All" || selectedFilter == "Albums" || selectedFilter == "Mixtapes") {
+                val albumsToShow = when (selectedFilter) {
+                    "Albums" -> AlbumDataRepository.getPureAlbums()
+                    "Mixtapes" -> AlbumDataRepository.getMixtapes()
+                    else -> AlbumDataRepository.getAllAlbums()
+                }
+
+                if (albumsToShow.isNotEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = when (selectedFilter) {
+                                        "Albums" -> "Albums"
+                                        "Mixtapes" -> "Mixtapes"
+                                        else -> "Albums & Mixtapes"
+                                    },
+                                    color = Color.White,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Text(
+                                    text = "${albumsToShow.size} releases",
+                                    color = Color(0xFFAAAAAA),
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            if (selectedFilter == "All") {
+                                // Horizontal Carousel for "All" tab
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    items(albumsToShow, key = { it.id }) { album ->
+                                        AlbumLibraryCard(
+                                            album = album,
+                                            onClick = {
+                                                onPlaylistClick(AlbumDataRepository.toUserPlaylist(album))
+                                            },
+                                            onPlay = {
+                                                scope.launch {
+                                                    val tracks = AlbumDataRepository.getOrFetchAlbumTracks(album)
+                                                    if (tracks.isNotEmpty()) {
+                                                        onTrackSelected(tracks.first(), tracks)
+                                                    }
+                                                }
+                                            }
+                                        )
+                                    }
+                                }
+                            } else {
+                                // Full Grid for "Albums" or "Mixtapes" filter tab
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    albumsToShow.chunked(2).forEach { rowItems ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                        ) {
+                                            rowItems.forEach { album ->
+                                                AlbumLibraryCard(
+                                                    album = album,
+                                                    modifier = Modifier.weight(1f),
+                                                    onClick = {
+                                                        onPlaylistClick(AlbumDataRepository.toUserPlaylist(album))
+                                                    },
+                                                    onPlay = {
+                                                        scope.launch {
+                                                            val tracks = AlbumDataRepository.getOrFetchAlbumTracks(album)
+                                                            if (tracks.isNotEmpty()) {
+                                                                onTrackSelected(tracks.first(), tracks)
+                                                            }
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                            if (rowItems.size == 1) {
+                                                Spacer(modifier = Modifier.weight(1f))
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1588,6 +1697,91 @@ private fun ServiceRow(
             contentDescription = null,
             tint = Color(0xFF888888),
             modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@Composable
+private fun AlbumLibraryCard(
+    album: AlbumItem,
+    onClick: () -> Unit,
+    onPlay: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .width(150.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF22232E))
+        ) {
+            AsyncImage(
+                model = album.coverUrl,
+                contentDescription = album.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Badge for release type
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color.Black.copy(alpha = 0.75f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = album.releaseType.uppercase(),
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+            }
+
+            // Quick Play Button
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.8f))
+                    .clickable { onPlay() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Text(
+            text = album.title,
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Text(
+            text = "${album.artist} • ${album.year}",
+            color = Color(0xFFAAAAAA),
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

@@ -33,6 +33,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.videoguard.app.data.AlbumDataRepository
+import com.videoguard.app.data.AlbumItem
 import coil.compose.AsyncImage
 import com.videoguard.app.data.UserDataRepository
 import com.videoguard.app.data.YouTubeSearchEngine
@@ -108,12 +110,15 @@ fun SearchScreen(
             }
     }
 
+    val searchCategories = listOf("All", "Songs", "Albums", "Mixtapes", "Artists")
+    var selectedCategory by remember { mutableStateOf("All") }
+
     val presetChips = listOf(
         "Malayalam", "Malayalam Songs", "The Weeknd", "Lofi Beats",
         "Imagine Dragons", "Dua Lipa", "Taylor Swift", "Trending News"
     )
 
-    fun performSearch(query: String) {
+    fun performSearch(query: String, category: String = selectedCategory) {
         if (query.isBlank()) return
         val trimmed = query.trim()
         searchQuery = trimmed
@@ -125,9 +130,17 @@ fun SearchScreen(
         keyboardController?.hide()
         UserDataRepository.addSearchQuery(trimmed)
 
+        val targetQuery = when (category) {
+            "Albums" -> if (!trimmed.contains("album", ignoreCase = true)) "$trimmed album" else trimmed
+            "Mixtapes" -> if (!trimmed.contains("mixtape", ignoreCase = true)) "$trimmed mixtape" else trimmed
+            "Songs" -> if (!trimmed.contains("song", ignoreCase = true)) "$trimmed song" else trimmed
+            "Artists" -> if (!trimmed.contains("artist", ignoreCase = true)) "$trimmed artist" else trimmed
+            else -> trimmed
+        }
+
         coroutineScope.launch {
             try {
-                val results = YouTubeSearchEngine.searchVideos(trimmed, isMusicOnly = isMusic, page = 0)
+                val results = YouTubeSearchEngine.searchVideos(targetQuery, isMusicOnly = isMusic, page = 0)
                 searchResults = results
                 seenSearchIds = results.map { it.id }.toSet()
             } catch (e: Exception) {
@@ -247,6 +260,44 @@ fun SearchScreen(
                     imageVector = Icons.Default.Mic,
                     contentDescription = "Voice Search",
                     tint = Color.White
+                )
+            }
+        }
+
+        // Category Filter Chips (All, Songs, Albums, Mixtapes, Artists)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            searchCategories.forEach { cat ->
+                val isSelected = selectedCategory == cat
+                FilterChip(
+                    selected = isSelected,
+                    onClick = {
+                        selectedCategory = cat
+                        if (searchQuery.isNotBlank()) {
+                            performSearch(searchQuery, cat)
+                        }
+                    },
+                    label = {
+                        Text(
+                            text = cat,
+                            color = if (isSelected) Color.Black else Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = Color(0xFF1E1E24),
+                        labelColor = Color.White,
+                        selectedContainerColor = Color.White,
+                        selectedLabelColor = Color.Black
+                    ),
+                    border = null,
+                    shape = RoundedCornerShape(16.dp)
                 )
             }
         }

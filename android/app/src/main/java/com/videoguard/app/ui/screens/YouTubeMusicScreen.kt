@@ -29,9 +29,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.videoguard.app.data.AlbumDataRepository
+import com.videoguard.app.data.AlbumItem
 import com.videoguard.app.data.UserDataRepository
 import com.videoguard.app.data.VideoRepository
 import com.videoguard.app.data.YouTubeSyncEngine
+import com.videoguard.app.model.UserPlaylist
 import com.videoguard.app.model.VideoItem
 import com.videoguard.app.recommendation.DailyMix
 import com.videoguard.app.recommendation.MusicDiscoveryService
@@ -45,6 +48,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun YouTubeMusicScreen(
     onTrackSelected: (VideoItem, List<VideoItem>) -> Unit,
+    onPlaylistClick: (UserPlaylist) -> Unit = {},
     scrollToTopTrigger: Int = 0,
     modifier: Modifier = Modifier
 ) {
@@ -207,6 +211,64 @@ fun YouTubeMusicScreen(
                 onClick = { onTrackSelected(track, madeForYouList) },
                 onMoreClick = { selectedTrackForOptions = track }
             )
+        }
+
+        // Section: Featured Albums & Mixtapes
+        val albumsList = remember { AlbumDataRepository.getAllAlbums() }
+        if (albumsList.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(20.dp))
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "FEATURED DISCOGRAPHY",
+                                color = Color(0xFF909090),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.8.sp
+                            )
+                            Text(
+                                text = "Albums & Mixtapes",
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        items(albumsList, key = { it.id }) { album ->
+                            HomeAlbumCard(
+                                album = album,
+                                onClick = {
+                                    val pl = AlbumDataRepository.toUserPlaylist(album)
+                                    onPlaylistClick(pl)
+                                },
+                                onPlayClick = {
+                                    coroutineScope.launch {
+                                        val tracks = AlbumDataRepository.getOrFetchAlbumTracks(album)
+                                        if (tracks.isNotEmpty()) {
+                                            onTrackSelected(tracks.first(), tracks)
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // Section 2: Discover Weekly (Spotify-Style Banner)
@@ -963,6 +1025,90 @@ private fun VideoMusicCard(
         Text(
             text = "${track.artist.ifEmpty { track.channelName }} • ${track.views}",
             color = Color(0xFF909090),
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun HomeAlbumCard(
+    album: AlbumItem,
+    onClick: () -> Unit,
+    onPlayClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .width(140.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(140.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xFF22232E))
+        ) {
+            AsyncImage(
+                model = album.coverUrl,
+                contentDescription = album.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // Release Type Pill (e.g. ALBUM, MIXTAPE, EP)
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color.Black.copy(alpha = 0.75f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text(
+                    text = album.releaseType.uppercase(),
+                    color = Color.White,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+            }
+
+            // Quick Play Button
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.8f))
+                    .clickable { onPlayClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = album.title,
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Text(
+            text = "${album.artist} • ${album.year}",
+            color = Color(0xFFAAAAAA),
             fontSize = 11.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis

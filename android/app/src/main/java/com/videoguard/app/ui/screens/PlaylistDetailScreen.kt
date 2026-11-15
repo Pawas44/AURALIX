@@ -74,14 +74,24 @@ fun PlaylistDetailScreen(
 
     suspend fun refreshVideos() {
         val isRemoteYouTubePlaylist = playlistId.startsWith("PL") || playlistId.startsWith("RD") || playlistId.startsWith("VL") || playlistId.startsWith("OLAK5uy_")
-        if (isDownloads || !isRemoteYouTubePlaylist) {
+        val isAlbumPlaylist = playlistId.startsWith("album_") || playlistId.startsWith("user_album_")
+        if (isDownloads || (!isRemoteYouTubePlaylist && !isAlbumPlaylist)) {
             isRefreshing = false
             isLoading = false
             return
         }
         isRefreshing = true
         val online = withContext(Dispatchers.IO) {
-            YouTubeSyncEngine.fetchPlaylistVideos(playlistId)
+            if (isAlbumPlaylist) {
+                val album = com.videoguard.app.data.AlbumDataRepository.getAllAlbums().find { it.id == playlistId }
+                if (album != null) {
+                    com.videoguard.app.data.AlbumDataRepository.getOrFetchAlbumTracks(album)
+                } else {
+                    com.videoguard.app.data.YouTubeSearchEngine.searchVideos("${playlist.title} full album", isMusicOnly = true)
+                }
+            } else {
+                YouTubeSyncEngine.fetchPlaylistVideos(playlistId)
+            }
         }
         if (online.isNotEmpty()) {
             UserDataRepository.updatePlaylistVideos(playlistId, online)

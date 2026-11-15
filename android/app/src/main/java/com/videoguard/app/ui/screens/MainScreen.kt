@@ -165,6 +165,7 @@ fun MainScreen() {
     // Channel page & Playlist page navigation states
     var activeChannelVideo by remember { mutableStateOf<VideoItem?>(null) }
     var activePlaylist by remember { mutableStateOf<UserPlaylist?>(null) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
 
     // Mode-aware back button handling
     BackHandler(
@@ -360,6 +361,9 @@ fun MainScreen() {
                             } else {
                                 showAccountSheet = true
                             }
+                        },
+                        onSettingsClick = {
+                            showSettingsSheet = true
                         }
                     )
                 }
@@ -488,6 +492,9 @@ fun MainScreen() {
                                             onTrackSelected = { track, queue ->
                                                 PlaybackController.playTrack(track, queue)
                                                 isPlayerExpanded = true
+                                            },
+                                            onPlaylistClick = { playlist ->
+                                                activePlaylist = playlist
                                             },
                                             scrollToTopTrigger = homeScrollToTopTrigger
                                         )
@@ -712,6 +719,13 @@ fun MainScreen() {
             GoogleAuthDialog(
                 onDismiss = { showGoogleAuthDialog = false },
                 onLoginSuccess = { showGoogleAuthDialog = false }
+            )
+        }
+
+        // Settings Bottom Sheet (ByTune Suggestions, Streaming Quality, Volume Leveling, Playback)
+        if (showSettingsSheet) {
+            com.videoguard.app.ui.components.PlayerSettingsBottomSheet(
+                onDismiss = { showSettingsSheet = false }
             )
         }
     }

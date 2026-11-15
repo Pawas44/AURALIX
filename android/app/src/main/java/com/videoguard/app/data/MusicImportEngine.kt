@@ -1518,12 +1518,19 @@ object MusicImportEngine {
                 }
                 val encoding = conn.getHeaderField("Content-Encoding")
                 val rawStream = if (code in 200..299) conn.inputStream else conn.errorStream ?: return ""
-                val stream = if (encoding?.equals("gzip", ignoreCase = true) == true) {
-                    java.util.zip.GZIPInputStream(rawStream)
+                val bytes = rawStream.readBytes()
+                val isGzip = encoding?.equals("gzip", ignoreCase = true) == true ||
+                        (bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte())
+                val text = if (isGzip) {
+                    try {
+                        java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(bytes)).bufferedReader().use { it.readText() }
+                    } catch (e: Exception) {
+                        String(bytes, Charsets.UTF_8)
+                    }
                 } else {
-                    rawStream
+                    String(bytes, Charsets.UTF_8)
                 }
-                return stream.bufferedReader().use { it.readText() }
+                return text
             }
             ""
         } catch (e: Exception) {
