@@ -348,8 +348,9 @@ object PlaybackController {
             if (queue.isNotEmpty()) {
                 if (_isShuffleEnabled.value && queue.size > 1) {
                     unShuffledQueue = queue
-                    val others = queue.filter { it.id != track.id }.shuffled()
-                    _playbackQueue.value = listOf(track) + others
+                    val trackIdx = queue.indexOfFirst { it === track || it.id == track.id }.coerceAtLeast(0)
+                    val others = queue.filterIndexed { idx, _ -> idx != trackIdx }.shuffled()
+                    _playbackQueue.value = listOf(queue[trackIdx]) + others
                 } else {
                     unShuffledQueue = emptyList()
                     _playbackQueue.value = queue

@@ -271,15 +271,18 @@ fun MusicPlayerScreen(
     val safeActiveQueue = remember(activeQueue) {
         if (activeQueue.isNotEmpty()) activeQueue else listOf(track)
     }
+    val queueKey = remember(safeActiveQueue) {
+        "${safeActiveQueue.size}_" + safeActiveQueue.take(6).joinToString("_") { it.id }
+    }
     val initialIndex = remember(safeActiveQueue, track.id) {
         val idx = safeActiveQueue.indexOfFirst { it.id == track.id }
         if (idx >= 0) idx else 0
     }
-    val pagerState = key(safeActiveQueue.firstOrNull()?.id ?: track.id) {
+    val pagerState = key(queueKey) {
         rememberPagerState(
             initialPage = initialIndex.coerceIn(0, (safeActiveQueue.size - 1).coerceAtLeast(0))
         ) {
-            safeActiveQueue.size.coerceAtLeast(1)
+            maxOf(safeActiveQueue.size, 1)
         }
     }
 
@@ -627,9 +630,10 @@ fun MusicPlayerScreen(
                 modifier = Modifier.fillMaxSize()
             ) { pageIndex ->
                 val itemTrack = safeActiveQueue.getOrNull(pageIndex) ?: track
-                val pageOffset = abs((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction).coerceIn(0f, 1f)
-                val scale = 0.88f + (1f - 0.88f) * (1f - pageOffset)
-                val alpha = 0.45f + (1f - 0.45f) * (1f - pageOffset)
+                val rawOffset = abs((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction)
+                val pageOffset = if (rawOffset.isNaN()) 0f else rawOffset.coerceIn(0f, 1f)
+                val scale = (0.88f + (1f - 0.88f) * (1f - pageOffset)).coerceIn(0.5f, 1.5f)
+                val alpha = (0.45f + (1f - 0.45f) * (1f - pageOffset)).coerceIn(0f, 1f)
                 val itemPalette = remember(itemTrack.id) { getTrackPalette(itemTrack) }
 
                 Box(
@@ -650,7 +654,7 @@ fun MusicPlayerScreen(
                                     this.alpha = alpha
                                 }
                                 .shadow(
-                                    elevation = (22 * (1f - pageOffset)).dp,
+                                    elevation = ((22 * (1f - pageOffset)).coerceAtLeast(0f)).dp,
                                     shape = RoundedCornerShape(18.dp),
                                     spotColor = itemPalette.primary.copy(alpha = 0.65f)
                                 )

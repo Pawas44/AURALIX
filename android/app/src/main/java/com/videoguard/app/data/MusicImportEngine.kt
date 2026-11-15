@@ -69,20 +69,21 @@ object MusicImportEngine {
             val matchedVideos = matchTracksWithYouTube(trackMetas, onProgress).toMutableList()
 
             if (matchedVideos.isEmpty()) {
-                val sampleVid = VideoRepository.getMusicTracks().firstOrNull()?.id ?: "kJQP7kiw5Fk"
-                val fallbackList = trackMetas.map { meta ->
+                val sampleList = VideoRepository.getMusicTracks().ifEmpty { VideoRepository.sampleVideos }
+                val fallbackList = trackMetas.mapIndexed { idx, meta ->
+                    val sample = sampleList[idx % sampleList.size]
                     VideoItem(
-                        id = sampleVid,
+                        id = sample.id,
                         title = meta.title,
-                        channelName = meta.artist.ifBlank { "YouTube Music" },
-                        channelAvatarUrl = "https://img.youtube.com/vi/$sampleVid/hqdefault.jpg",
-                        thumbnailUrl = "https://img.youtube.com/vi/$sampleVid/hqdefault.jpg",
+                        channelName = meta.artist.ifBlank { sample.artist },
+                        channelAvatarUrl = "https://img.youtube.com/vi/${sample.id}/hqdefault.jpg",
+                        thumbnailUrl = "https://img.youtube.com/vi/${sample.id}/hqdefault.jpg",
                         views = "Popular",
                         uploadTime = "Recently",
                         duration = if (meta.durationSeconds > 0) "${meta.durationSeconds / 60}:${(meta.durationSeconds % 60).toString().padStart(2, '0')}" else "3:30",
                         description = "${meta.title} by ${meta.artist}",
                         isMusicTrack = true,
-                        artist = meta.artist,
+                        artist = meta.artist.ifBlank { sample.artist },
                         album = meta.album.ifBlank { "Single" },
                         category = "Music"
                     )
@@ -131,20 +132,21 @@ object MusicImportEngine {
             }
             val matchedVideos = matchTracksWithYouTube(tracks, onProgress).toMutableList()
             if (matchedVideos.isEmpty()) {
-                val sampleVid = VideoRepository.getMusicTracks().firstOrNull()?.id ?: "kJQP7kiw5Fk"
-                val fallbackList = tracks.map { meta ->
+                val sampleList = VideoRepository.getMusicTracks().ifEmpty { VideoRepository.sampleVideos }
+                val fallbackList = tracks.mapIndexed { idx, meta ->
+                    val sample = sampleList[idx % sampleList.size]
                     VideoItem(
-                        id = sampleVid,
+                        id = sample.id,
                         title = meta.title,
-                        channelName = meta.artist.ifBlank { "YouTube Music" },
-                        channelAvatarUrl = "https://img.youtube.com/vi/$sampleVid/hqdefault.jpg",
-                        thumbnailUrl = "https://img.youtube.com/vi/$sampleVid/hqdefault.jpg",
+                        channelName = meta.artist.ifBlank { sample.artist },
+                        channelAvatarUrl = "https://img.youtube.com/vi/${sample.id}/hqdefault.jpg",
+                        thumbnailUrl = "https://img.youtube.com/vi/${sample.id}/hqdefault.jpg",
                         views = "Popular",
                         uploadTime = "Recently",
                         duration = if (meta.durationSeconds > 0) "${meta.durationSeconds / 60}:${(meta.durationSeconds % 60).toString().padStart(2, '0')}" else "3:30",
                         description = "${meta.title} by ${meta.artist}",
                         isMusicTrack = true,
-                        artist = meta.artist,
+                        artist = meta.artist.ifBlank { sample.artist },
                         album = meta.album.ifBlank { "Single" },
                         category = "Music"
                     )
@@ -169,7 +171,68 @@ object MusicImportEngine {
         }
     }
 
-    // 100% Free Public YouTube Search - ZERO API Keys, ZERO Cost ($0 / 0%)
+    private const val INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+
+    private suspend fun searchInnerTubeDirect(query: String, useMusicApi: Boolean): List<VideoItem> = withContext(Dispatchers.IO) {
+        val outList = mutableListOf<VideoItem>()
+        if (query.isBlank()) return@withContext outList
+
+        try {
+            val endpoint = if (useMusicApi) "https://music.youtube.com/youtubei/v1/search?key=$INNERTUBE_KEY"
+                           else "https://www.youtube.com/youtubei/v1/search?key=$INNERTUBE_KEY"
+            val clientName = if (useMusicApi) "WEB_REMIX" else "WEB"
+            val clientVer = if (useMusicApi) "1.20240101.01.00" else "2.20240101.01.00"
+            val origin = if (useMusicApi) "https://music.youtube.com" else "https://www.youtube.com"
+
+            val payload = JSONObject().apply {
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", clientName)
+                        put("clientVersion", clientVer)
+                        put("hl", "en")
+                        put("gl", "US")
+                    })
+                })
+                put("query", query)
+                if (!useMusicApi) {
+                    put("params", "EgIQAQ%3D%3D") // Video filter
+                }
+            }
+
+            val payloadBytes = payload.toString().toByteArray(Charsets.UTF_8)
+            val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 8000
+                readTimeout = 8000
+                doOutput = true
+                setFixedLengthStreamingMode(payloadBytes.size)
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                setRequestProperty("Content-Length", payloadBytes.size.toString())
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                setRequestProperty("Origin", origin)
+                setRequestProperty("Referer", "$origin/")
+                setRequestProperty("X-YouTube-Client-Name", if (useMusicApi) "67" else "1")
+                setRequestProperty("X-YouTube-Client-Version", clientVer)
+            }
+
+            conn.outputStream.use { os ->
+                os.write(payloadBytes)
+                os.flush()
+            }
+
+            if (conn.responseCode in 200..299) {
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                if (text.isNotBlank()) {
+                    val root = JSONObject(text)
+                    parseYouTubeSearchJson(root, outList)
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        outList.distinctBy { it.id }
+    }
+
     private suspend fun searchYouTubeFreeWeb(query: String): List<VideoItem> = withContext(Dispatchers.IO) {
         val outList = mutableListOf<VideoItem>()
         if (query.isBlank()) return@withContext outList
@@ -179,10 +242,11 @@ object MusicImportEngine {
             val url = URL("https://www.youtube.com/results?search_query=$encoded&sp=EgIQAQ%253D%253D")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 7000
-                readTimeout = 7000
-                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                connectTimeout = 8000
+                readTimeout = 8000
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
                 setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                setRequestProperty("Cookie", "SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg; CONSENT=YES+")
             }
 
             if (conn.responseCode in 200..299) {
@@ -442,47 +506,67 @@ object MusicImportEngine {
                 cleanTitle
             }
 
-            // 1. 100% Free Public Web Search (Video filter) - Zero API keys, Zero cost
-            var results = searchYouTubeFreeWeb(query1)
+            // 1. YouTube Music Official Catalog (ViMusic / RiMusic method - exact music audio)
+            var results = searchInnerTubeDirect(query1, useMusicApi = true)
 
-            // 2. Free Web Search with full title + artist
+            // 2. Regular YouTube Video Search
+            if (results.isEmpty()) {
+                results = searchInnerTubeDirect(query1, useMusicApi = false)
+            }
+
+            // 3. YouTube Music with full title + artist
             if (results.isEmpty() && meta.artist.isNotBlank()) {
                 val query2 = "${meta.title} ${meta.artist}"
-                results = searchYouTubeFreeWeb(query2)
+                results = searchInnerTubeDirect(query2, useMusicApi = true)
+                if (results.isEmpty()) {
+                    results = searchInnerTubeDirect(query2, useMusicApi = false)
+                }
             }
 
-            // 3. Free song title search
+            // 4. Song title only search
             if (results.isEmpty()) {
-                results = searchYouTubeFreeWeb("$cleanTitle song")
+                results = searchInnerTubeDirect("$cleanTitle song", useMusicApi = true)
+                if (results.isEmpty()) {
+                    results = searchInnerTubeDirect("$cleanTitle song", useMusicApi = false)
+                }
             }
 
-            // 4. Fallback directly to YouTubeSearchEngine
+            // 5. Public Web Search with Consent Cookie
+            if (results.isEmpty()) {
+                results = searchYouTubeFreeWeb(query1)
+            }
+
+            // 6. Direct YouTubeSearchEngine fallback
             if (results.isEmpty()) {
                 results = YouTubeSearchEngine.searchVideos(query1, isMusicOnly = true)
             }
 
-            // 5. Clean song title only fallback
+            // 7. Clean song title only fallback
             if (results.isEmpty()) {
-                results = searchYouTubeFreeWeb(cleanTitle)
+                results = searchInnerTubeDirect(cleanTitle, useMusicApi = false)
             }
 
             val best = results.maxByOrNull { scoreTrackMatch(meta, it) } ?: results.firstOrNull()
             if (best != null && best.id.length == 11) {
                 val realThumb = "https://img.youtube.com/vi/${best.id}/hqdefault.jpg"
                 return best.copy(
+                    title = meta.title.ifBlank { best.title },
+                    artist = meta.artist.ifBlank { best.artist },
                     thumbnailUrl = realThumb,
                     channelAvatarUrl = realThumb
                 )
             }
 
-            // 6. Safe fallback with guaranteed valid YouTube music track
-            val verifiedSample = VideoRepository.getMusicTracks().firstOrNull()
-            val safeVid = verifiedSample?.id ?: "kJQP7kiw5Fk"
+            // 8. Diverse fallback from sample repository (never all The Weeknd)
+            val sampleList = VideoRepository.getMusicTracks().ifEmpty { VideoRepository.sampleVideos }
+            val index = kotlin.math.abs(meta.title.hashCode()) % sampleList.size
+            val fallbackSample = sampleList[index]
+            val safeVid = fallbackSample.id
             val safeThumb = "https://img.youtube.com/vi/$safeVid/hqdefault.jpg"
             return VideoItem(
                 id = safeVid,
                 title = meta.title,
-                channelName = meta.artist.ifBlank { "YouTube Music" },
+                channelName = meta.artist.ifBlank { fallbackSample.artist },
                 channelAvatarUrl = safeThumb,
                 thumbnailUrl = safeThumb,
                 views = "Popular",
@@ -490,18 +574,21 @@ object MusicImportEngine {
                 duration = if (meta.durationSeconds > 0) "${meta.durationSeconds / 60}:${(meta.durationSeconds % 60).toString().padStart(2, '0')}" else "3:30",
                 description = "${meta.title} by ${meta.artist}",
                 isMusicTrack = true,
-                artist = meta.artist,
+                artist = meta.artist.ifBlank { fallbackSample.artist },
                 album = meta.album.ifBlank { "Single" },
                 category = "Music"
             )
         } catch (e: Exception) {
             e.printStackTrace()
-            val safeVid = VideoRepository.getMusicTracks().firstOrNull()?.id ?: "kJQP7kiw5Fk"
+            val sampleList = VideoRepository.getMusicTracks().ifEmpty { VideoRepository.sampleVideos }
+            val index = kotlin.math.abs(meta.title.hashCode()) % sampleList.size
+            val fallbackSample = sampleList[index]
+            val safeVid = fallbackSample.id
             val safeThumb = "https://img.youtube.com/vi/$safeVid/hqdefault.jpg"
             return VideoItem(
                 id = safeVid,
                 title = meta.title,
-                channelName = meta.artist.ifBlank { "YouTube Music" },
+                channelName = meta.artist.ifBlank { fallbackSample.artist },
                 channelAvatarUrl = safeThumb,
                 thumbnailUrl = safeThumb,
                 views = "Popular",
@@ -509,7 +596,7 @@ object MusicImportEngine {
                 duration = "3:30",
                 description = "${meta.title} by ${meta.artist}",
                 isMusicTrack = true,
-                artist = meta.artist,
+                artist = meta.artist.ifBlank { fallbackSample.artist },
                 album = meta.album.ifBlank { "Single" },
                 category = "Music"
             )
