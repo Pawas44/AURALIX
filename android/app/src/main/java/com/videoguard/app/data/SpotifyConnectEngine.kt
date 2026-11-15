@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import com.videoguard.app.model.VideoItem
 import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
@@ -42,6 +43,7 @@ object SpotifyConnectEngine {
     private const val KEY_SP_DC = "sp_dc_cookie"
     private const val KEY_DISPLAY_NAME = "user_display_name"
     private const val KEY_CACHED_PLAYLISTS = "cached_playlists_json"
+    private const val KEY_CACHED_TASTE = "cached_spotify_taste_tracks"
     private const val KEY_CACHED_SECRET = "cached_player_secret"
     private const val KEY_CACHED_SECRET_VER = "cached_player_secret_ver"
 
@@ -58,6 +60,9 @@ object SpotifyConnectEngine {
 
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
+
+    private val _spotifyTasteTracks = MutableStateFlow<List<VideoItem>>(emptyList())
+    val spotifyTasteTracks: StateFlow<List<VideoItem>> = _spotifyTasteTracks.asStateFlow()
 
     // Query hashes dynamically extracted or verified fallback
     private val KNOWN_HASHES = mutableMapOf(
@@ -107,6 +112,37 @@ object SpotifyConnectEngine {
             }
         }
 
+        val cachedTasteJson = sp.getString(KEY_CACHED_TASTE, null)
+        if (!cachedTasteJson.isNullOrBlank()) {
+            try {
+                val arr = JSONArray(cachedTasteJson)
+                val list = mutableListOf<VideoItem>()
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i) ?: continue
+                    list.add(
+                        VideoItem(
+                            id = obj.optString("id"),
+                            title = obj.optString("title"),
+                            channelName = obj.optString("channelName"),
+                            channelAvatarUrl = obj.optString("channelAvatarUrl"),
+                            thumbnailUrl = obj.optString("thumbnailUrl"),
+                            views = obj.optString("views", "Spotify"),
+                            uploadTime = obj.optString("uploadTime", "Favorite"),
+                            duration = obj.optString("duration", "3:30"),
+                            description = obj.optString("description"),
+                            isMusicTrack = true,
+                            artist = obj.optString("artist"),
+                            album = obj.optString("album", "Spotify"),
+                            category = "Music"
+                        )
+                    )
+                }
+                _spotifyTasteTracks.value = list
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
         if (!cookie.isNullOrBlank()) {
             _isConnected.value = true
             _userDisplayName.value = name
@@ -140,12 +176,14 @@ object SpotifyConnectEngine {
             ?.remove(KEY_SP_DC)
             ?.remove(KEY_DISPLAY_NAME)
             ?.remove(KEY_CACHED_PLAYLISTS)
+            ?.remove(KEY_CACHED_TASTE)
             ?.apply()
         cachedAccessToken = null
         tokenExpiresAtMs = 0L
         _isConnected.value = false
         _userDisplayName.value = null
         _userPlaylists.value = emptyList()
+        _spotifyTasteTracks.value = emptyList()
 
         if (clearCookies) {
             try {
@@ -410,6 +448,7 @@ object SpotifyConnectEngine {
         try {
             fetchUserProfile()
             fetchUserPlaylists()
+            fetchAndSyncSpotifyTaste()
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -417,6 +456,88 @@ object SpotifyConnectEngine {
         } finally {
             _isSyncing.value = false
         }
+    }
+
+        suspend fun fetchAndSyncSpotifyTaste(): List<VideoItem> = withContext(Dispatchers.IO) {
+        val tasteMetas = mutableListOf<ImportTrackMeta>()
+
+        // 1. Fetch user's Liked Songs (highest indicator of user taste!)
+        try {
+            val liked = fetchLikedSongs()
+            if (liked.isNotEmpty()) {
+                tasteMetas.addAll(liked.take(50))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 2. Fetch tracks from user's first 3 playlists
+        val playlists = _userPlaylists.value
+        for (pl in playlists.take(3)) {
+            try {
+                val plTracks = fetchPlaylistTracks(pl.id)
+                tasteMetas.addAll(plTracks.take(20))
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        val distinctMetas = tasteMetas.distinctBy { "${it.title.lowercase()}_${it.artist.lowercase()}" }
+        val videos = distinctMetas.map { meta ->
+            val sId = if (meta.spotifyId.isNotBlank()) "spotify_${meta.spotifyId}" else "spotify_${java.util.UUID.randomUUID().toString().take(11)}"
+            val durStr = if (meta.durationSeconds > 0) {
+                "${meta.durationSeconds / 60}:${String.format(java.util.Locale.US, "%02d", meta.durationSeconds % 60)}"
+            } else "3:30"
+            VideoItem(
+                id = sId,
+                title = meta.title,
+                channelName = meta.artist,
+                channelAvatarUrl = meta.coverUrl,
+                thumbnailUrl = meta.coverUrl,
+                views = "Spotify",
+                uploadTime = "Favorite",
+                duration = durStr,
+                description = meta.title,
+                isMusicTrack = true,
+                artist = meta.artist,
+                album = meta.album.ifBlank { "Spotify" },
+                category = "Music"
+            )
+        }
+
+        _spotifyTasteTracks.value = videos
+
+        // Cache in SharedPreferences
+        try {
+            val arr = JSONArray()
+            for (v in videos.take(100)) {
+                val obj = JSONObject().apply {
+                    put("id", v.id)
+                    put("title", v.title)
+                    put("artist", v.artist)
+                    put("album", v.album)
+                    put("channelName", v.channelName)
+                    put("channelAvatarUrl", v.channelAvatarUrl)
+                    put("thumbnailUrl", v.thumbnailUrl)
+                    put("duration", v.duration)
+                    put("views", v.views)
+                    put("uploadTime", v.uploadTime)
+                    put("description", v.description)
+                }
+                arr.put(obj)
+            }
+            prefs?.edit()?.putString(KEY_CACHED_TASTE, arr.toString())?.apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // Enrich UserTasteProfile with Spotify taste & refresh home feed!
+        if (videos.isNotEmpty()) {
+            com.videoguard.app.recommendation.UserTasteProfile.get().enrichFromImportedTracks(videos)
+            com.videoguard.app.recommendation.RecommendationEngine.refreshHomeFeed(forceRefresh = true)
+        }
+
+        videos
     }
 
     suspend fun fetchUserProfile(): String? = withContext(Dispatchers.IO) {

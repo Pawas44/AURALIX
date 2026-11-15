@@ -304,6 +304,29 @@ fun PlaylistDetailScreen(
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Shuffle", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
+
+                        if (!isDownloads) {
+                            IconButton(
+                                onClick = {
+                                    val safeList = currentVideos.filter { it.id.isNotBlank() }
+                                    if (safeList.isNotEmpty()) {
+                                        UserDataRepository.downloadAllSongs(context, safeList, playlist.title)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(Color(0xFF272727)),
+                                enabled = currentVideos.isNotEmpty()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Download all songs",
+                                    tint = Color(0xFF1DB954),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                     }
 
                     if (!isDownloads) {

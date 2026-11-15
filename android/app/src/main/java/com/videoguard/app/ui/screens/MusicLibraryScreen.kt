@@ -1597,6 +1597,33 @@ fun MusicLibraryScreen(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
+                // Download all songs
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            val pl = targetPlaylist
+                            selectedPlaylistForOptions = null
+                            UserDataRepository.downloadAllSongs(context, pl)
+                        }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = "Download All Songs",
+                        tint = Color(0xFF1DB954),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Text(
+                        text = "Download all songs",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
                 // Clear all songs
                 Row(
                     modifier = Modifier

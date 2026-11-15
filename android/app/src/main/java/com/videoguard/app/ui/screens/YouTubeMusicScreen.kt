@@ -29,6 +29,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.compose.ui.res.painterResource
+import com.videoguard.app.R
+import com.videoguard.app.data.SpotifyConnectEngine
 import com.videoguard.app.data.AlbumDataRepository
 import com.videoguard.app.data.AlbumItem
 import com.videoguard.app.data.UserDataRepository
@@ -60,6 +63,9 @@ fun YouTubeMusicScreen(
     val smartFeed by RecommendationEngine.feedState.collectAsState()
     val userHistory by UserDataRepository.history.collectAsState()
     val userPlaylists by UserDataRepository.playlists.collectAsState()
+    val isSpotifyConnected by SpotifyConnectEngine.isConnected.collectAsState()
+    val spotifyUserName by SpotifyConnectEngine.userDisplayName.collectAsState()
+    val spotifyTasteTracks by SpotifyConnectEngine.spotifyTasteTracks.collectAsState()
 
     var selectedTrackForOptions by remember { mutableStateOf<VideoItem?>(null) }
     var selectedVideoForPlaylist by remember { mutableStateOf<VideoItem?>(null) }
@@ -67,8 +73,11 @@ fun YouTubeMusicScreen(
     var showSettingsSheet by remember { mutableStateOf(false) }
     val albumsList = remember(userPlaylists.size, userHistory.size) { AlbumDataRepository.getAllAlbums() }
 
-    // Initial load and whenever mood changes or user history updates
-    LaunchedEffect(selectedMood, userHistory.size, userPlaylists.size) {
+    // Initial load and whenever mood changes, user history updates, or Spotify connects
+    LaunchedEffect(selectedMood, userHistory.size, userPlaylists.size, isSpotifyConnected) {
+        if (isSpotifyConnected && spotifyTasteTracks.isEmpty()) {
+            coroutineScope.launch { SpotifyConnectEngine.syncAll() }
+        }
         YouTubeSyncEngine.fetchMusicHomeFeed(selectedMood.ifBlank { null })
         RecommendationEngine.refreshHomeFeed(selectedMood.ifBlank { null })
     }
@@ -212,6 +221,65 @@ fun YouTubeMusicScreen(
                 onClick = { onTrackSelected(track, madeForYouList) },
                 onMoreClick = { selectedTrackForOptions = track }
             )
+        }
+
+        // Section: Based on your Spotify Taste
+        if (isSpotifyConnected && spotifyTasteTracks.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(20.dp))
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_spotify),
+                                    contentDescription = null,
+                                    tint = Color(0xFF1DB954),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (!spotifyUserName.isNullOrBlank()) "FROM ${spotifyUserName?.uppercase()}'S SPOTIFY" else "FROM YOUR SPOTIFY",
+                                    color = Color(0xFF1DB954),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp
+                                )
+                            }
+                            Text(
+                                text = "Based on Your Spotify Taste",
+                                color = Color.White,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                onTrackSelected(spotifyTasteTracks.first(), spotifyTasteTracks)
+                            }
+                        ) {
+                            Text("Play all", color = Color(0xFF1DB954), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        items(spotifyTasteTracks.take(20), key = { "sp_taste_${it.id}" }) { track ->
+                            SpotifyTasteCard(
+                                track = track,
+                                onClick = { onTrackSelected(track, spotifyTasteTracks) }
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // Section: Featured Albums & Mixtapes
@@ -1142,6 +1210,65 @@ private fun HomeAlbumCard(
 
         Text(
             text = "${album.artist} • ${album.year}",
+            color = Color(0xFFAAAAAA),
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun SpotifyTasteCard(
+    track: VideoItem,
+    onClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .width(130.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(130.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFF1C1C1C))
+        ) {
+            AsyncImage(
+                model = track.thumbnailUrl,
+                contentDescription = track.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            // Spotify badge in bottom-right corner
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(6.dp)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.75f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_spotify),
+                    contentDescription = null,
+                    tint = Color(0xFF1DB954),
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = track.title,
+            color = Color.White,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = track.artist.ifBlank { track.channelName },
             color = Color(0xFFAAAAAA),
             fontSize = 11.sp,
             maxLines = 1,

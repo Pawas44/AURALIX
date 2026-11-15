@@ -308,88 +308,23 @@ object UserDataRepository {
         }
 
         repoScope.launch {
-            // Guarantee real metadata before initiating download and task notifications
-            var targetVideo = video
-            if (targetVideo.title.contains("YouTube Video", ignoreCase = true) ||
-                targetVideo.title.contains(targetVideo.id) ||
-                targetVideo.title.isBlank() ||
-                targetVideo.artist == "Artist" ||
-                targetVideo.artist == "YouTube Channel"
-            ) {
-                val realMeta = fetchRealVideoMeta(targetVideo.id)
-                if (realMeta != null && realMeta.first.isNotBlank()) {
-                    targetVideo = targetVideo.copy(
-                        title = realMeta.first,
-                        artist = if (targetVideo.artist.isBlank() || targetVideo.artist == "Artist" || targetVideo.artist == "YouTube Channel") realMeta.second else targetVideo.artist,
-                        channelName = if (targetVideo.channelName == "YouTube Channel" || targetVideo.channelName.isBlank()) realMeta.second else targetVideo.channelName,
-                        thumbnailUrl = if (targetVideo.thumbnailUrl.isBlank()) realMeta.third else targetVideo.thumbnailUrl
-                    )
-                }
-            }
-
             withContext(Dispatchers.Main) {
                 android.widget.Toast.makeText(
                     context,
-                    "Downloading \"${targetVideo.title}\" for offline playback...",
+                    "Downloading \"${video.title}\" for offline playback...",
                     android.widget.Toast.LENGTH_SHORT
                 ).show()
             }
-
-            val dir = File(context.filesDir, "downloads")
-            if (!dir.exists()) dir.mkdirs()
-            val targetFile = File(dir, "${targetVideo.id}.m4a")
-
-            val notifManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
-            val channelId = "downloads_channel"
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                val channel = android.app.NotificationChannel(
-                    channelId,
-                    "Downloads",
-                    android.app.NotificationManager.IMPORTANCE_LOW
-                )
-                notifManager?.createNotificationChannel(channel)
-            }
-            val notifId = targetVideo.id.hashCode()
-
-            _currentDownload.value = DownloadTask(
-                videoId = targetVideo.id,
-                title = targetVideo.title,
-                progress = 5,
-                bytesText = "Connecting...",
-                isComplete = false
-            )
-
-            var isRealStreamDownloaded = false
-            val candidateFormats = mutableListOf<AudioStreamFormat>()
-
-            // 1. Primary Priority: Format 18 (mp4 video container with clean unthrottled AAC audio stream)
-            fetchMuxedFormat18(targetVideo.id)?.let { candidateFormats.add(it) }
-
-            // 2. Secondary fallback: Other InnerTube audio formats
-            val primary = fetchRealYouTubeAudioFormat(targetVideo.id)
-            if (primary != null && candidateFormats.none { it.url == primary.url }) {
-                candidateFormats.add(primary)
-            }
-
-            for (format in candidateFormats) {
-                if (targetFile.exists()) targetFile.delete()
-                val ok = downloadStreamToFile(context, targetVideo, format, targetFile, notifManager, channelId, notifId)
-                if (ok && targetFile.exists() && targetFile.length() > 100_000L) {
-                    isRealStreamDownloaded = true
-                    break
-                } else {
-                    if (targetFile.exists()) targetFile.delete()
+            val ok = downloadSingleTrackDirect(context, video)
+            if (ok) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "✓ \"${video.title}\" is ready for offline playback",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
                 }
-            }
-
-            if (!isRealStreamDownloaded) {
-                _currentDownload.value = DownloadTask(
-                    videoId = targetVideo.id,
-                    title = targetVideo.title,
-                    progress = 0,
-                    bytesText = "Download failed (network error)",
-                    isComplete = true
-                )
+            } else {
                 withContext(Dispatchers.Main) {
                     android.widget.Toast.makeText(
                         context,
@@ -397,48 +332,186 @@ object UserDataRepository {
                         android.widget.Toast.LENGTH_SHORT
                     ).show()
                 }
-                kotlinx.coroutines.delay(2000)
-                _currentDownload.value = null
-                return@launch
             }
-
-            // Mark download as 100% complete
-            _currentDownload.value = DownloadTask(
-                videoId = targetVideo.id,
-                title = targetVideo.title,
-                progress = 100,
-                bytesText = "Complete",
-                isComplete = true
-            )
-
-            withContext(Dispatchers.Main) {
-                android.widget.Toast.makeText(
-                    context,
-                    "✓ \"${targetVideo.title}\" is ready for offline playback",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
-            }
-
-            try {
-                val completeNotif = androidx.core.app.NotificationCompat.Builder(context, channelId)
-                    .setContentTitle("Download Complete")
-                    .setContentText("${targetVideo.title} is ready for offline playback")
-                    .setSmallIcon(android.R.drawable.stat_sys_download_done)
-                    .setProgress(0, 0, false)
-                    .setAutoCancel(true)
-                    .build()
-                notifManager?.notify(notifId, completeNotif)
-            } catch (e: Exception) {}
-
-            val current = _offlineTracks.value.toMutableList()
-            current.removeAll { it.id == targetVideo.id }
-            current.add(0, targetVideo)
-            _offlineTracks.value = current
-            saveOfflineTracks()
-
             kotlinx.coroutines.delay(1200)
             _currentDownload.value = null
         }
+    }
+
+    fun downloadAllSongs(context: Context, playlist: UserPlaylist) {
+        downloadAllSongs(context, playlist.videos, playlist.title)
+    }
+
+    fun downloadAllSongs(context: Context, videos: List<VideoItem>, playlistTitle: String) {
+        val toDownload = videos.filter { !isDownloaded(it.id) }
+        if (toDownload.isEmpty()) {
+            android.widget.Toast.makeText(context, "All songs in \"$playlistTitle\" are already downloaded!", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        android.widget.Toast.makeText(
+            context,
+            "Downloading ${toDownload.size} songs from \"$playlistTitle\" in background...",
+            android.widget.Toast.LENGTH_LONG
+        ).show()
+
+        repoScope.launch {
+            var completedCount = 0
+            for ((index, video) in toDownload.withIndex()) {
+                val ok = downloadSingleTrackDirect(
+                    context = context,
+                    video = video,
+                    batchIndex = index + 1,
+                    batchTotal = toDownload.size
+                )
+                if (ok) completedCount++
+            }
+            _currentDownload.value = null
+            withContext(Dispatchers.Main) {
+                android.widget.Toast.makeText(
+                    context,
+                    "✓ All songs downloaded ($completedCount/${toDownload.size}) from \"$playlistTitle\"",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    suspend fun downloadSingleTrackDirect(
+        context: Context,
+        video: VideoItem,
+        batchIndex: Int = 0,
+        batchTotal: Int = 0
+    ): Boolean = withContext(Dispatchers.IO) {
+        var targetVideo = video
+
+        // 1. Resolve placeholder IDs (e.g. spotify_...)
+        if (targetVideo.id.startsWith("spotify_") || targetVideo.id.length != 11) {
+            val cleanTitle = targetVideo.title.trim()
+            val cleanArtist = targetVideo.artist.split(",").firstOrNull()?.trim() ?: targetVideo.artist.trim()
+            val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
+            val best = try {
+                YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true).firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
+            } catch (e: Exception) { null }
+                ?: YouTubeSearchEngine.searchVideos(query, isMusicOnly = true).firstOrNull { it.id.length == 11 }
+                ?: MusicImportEngine.resolveSingleTrack(targetVideo.title, targetVideo.artist)
+
+            if (best != null && best.id.length == 11) {
+                targetVideo = targetVideo.copy(
+                    id = best.id,
+                    duration = if (targetVideo.duration != "0:00" && targetVideo.duration.isNotBlank()) targetVideo.duration else best.duration,
+                    thumbnailUrl = if (targetVideo.thumbnailUrl.isNotBlank() && !targetVideo.thumbnailUrl.contains("default")) targetVideo.thumbnailUrl else best.thumbnailUrl
+                )
+            }
+        }
+
+        if (targetVideo.id.length != 11) return@withContext false
+        if (isDownloaded(targetVideo.id)) return@withContext true
+
+        // 2. Guarantee real metadata before initiating download
+        if (targetVideo.title.contains("YouTube Video", ignoreCase = true) ||
+            targetVideo.title.contains(targetVideo.id) ||
+            targetVideo.title.isBlank() ||
+            targetVideo.artist == "Artist" ||
+            targetVideo.artist == "YouTube Channel"
+        ) {
+            val realMeta = fetchRealVideoMeta(targetVideo.id)
+            if (realMeta != null && realMeta.first.isNotBlank()) {
+                targetVideo = targetVideo.copy(
+                    title = realMeta.first,
+                    artist = if (targetVideo.artist.isBlank() || targetVideo.artist == "Artist" || targetVideo.artist == "YouTube Channel") realMeta.second else targetVideo.artist,
+                    channelName = if (targetVideo.channelName == "YouTube Channel" || targetVideo.channelName.isBlank()) realMeta.second else targetVideo.channelName,
+                    thumbnailUrl = if (targetVideo.thumbnailUrl.isBlank()) realMeta.third else targetVideo.thumbnailUrl
+                )
+            }
+        }
+
+        val dir = File(context.filesDir, "downloads")
+        if (!dir.exists()) dir.mkdirs()
+        val targetFile = File(dir, "${targetVideo.id}.m4a")
+
+        val notifManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? android.app.NotificationManager
+        val channelId = "downloads_channel"
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                channelId,
+                "Downloads",
+                android.app.NotificationManager.IMPORTANCE_LOW
+            )
+            notifManager?.createNotificationChannel(channel)
+        }
+        val notifId = targetVideo.id.hashCode()
+
+        val batchPrefix = if (batchTotal > 0) "($batchIndex/$batchTotal) " else ""
+        _currentDownload.value = DownloadTask(
+            videoId = targetVideo.id,
+            title = "$batchPrefix${targetVideo.title}",
+            progress = 5,
+            bytesText = if (batchTotal > 0) "Track $batchIndex of $batchTotal" else "Connecting...",
+            isComplete = false
+        )
+
+        var isRealStreamDownloaded = false
+        val candidateFormats = mutableListOf<AudioStreamFormat>()
+
+        // 1. Primary Priority: Format 18 (mp4 video container with clean unthrottled AAC audio stream)
+        fetchMuxedFormat18(targetVideo.id)?.let { candidateFormats.add(it) }
+
+        // 2. Secondary fallback: Other InnerTube audio formats
+        val primary = fetchRealYouTubeAudioFormat(targetVideo.id)
+        if (primary != null && candidateFormats.none { it.url == primary.url }) {
+            candidateFormats.add(primary)
+        }
+
+        for (format in candidateFormats) {
+            if (targetFile.exists()) targetFile.delete()
+            val ok = downloadStreamToFile(context, targetVideo, format, targetFile, notifManager, channelId, notifId)
+            if (ok && targetFile.exists() && targetFile.length() > 100_000L) {
+                isRealStreamDownloaded = true
+                break
+            } else {
+                if (targetFile.exists()) targetFile.delete()
+            }
+        }
+
+        if (!isRealStreamDownloaded) {
+            _currentDownload.value = DownloadTask(
+                videoId = targetVideo.id,
+                title = targetVideo.title,
+                progress = 0,
+                bytesText = "Download failed",
+                isComplete = true
+            )
+            return@withContext false
+        }
+
+        // Mark download as 100% complete
+        _currentDownload.value = DownloadTask(
+            videoId = targetVideo.id,
+            title = targetVideo.title,
+            progress = 100,
+            bytesText = "Complete",
+            isComplete = true
+        )
+
+        val current = _offlineTracks.value.toMutableList()
+        current.removeAll { it.id == targetVideo.id }
+        current.add(0, targetVideo)
+        _offlineTracks.value = current
+        saveOfflineTracks()
+
+        try {
+            val completeNotif = androidx.core.app.NotificationCompat.Builder(context, channelId)
+                .setContentTitle("Download Complete")
+                .setContentText("${targetVideo.title} is ready for offline playback")
+                .setSmallIcon(android.R.drawable.stat_sys_download_done)
+                .setProgress(0, 0, false)
+                .setAutoCancel(true)
+                .build()
+            notifManager?.notify(notifId, completeNotif)
+        } catch (e: Exception) {}
+
+        true
     }
 
     private suspend fun downloadStreamToFile(
