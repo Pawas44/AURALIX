@@ -21,7 +21,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.ui.platform.LocalContext
 import com.videoguard.app.data.AccountRepository
+import com.videoguard.app.data.SpotifyConnectEngine
 import com.videoguard.app.model.AppMode
 import com.videoguard.app.ui.theme.YouTubeRed
 import kotlinx.coroutines.launch
@@ -35,7 +38,11 @@ fun AccountBottomSheet(
 ) {
     val currentAccount by AccountRepository.currentAccount.collectAsState()
     val isIncognito by AccountRepository.isIncognito.collectAsState()
+    val isSpotifyConnected by SpotifyConnectEngine.isConnected.collectAsState()
+    val spotifyUserName by SpotifyConnectEngine.userDisplayName.collectAsState()
     var showGoogleAuthDialog by remember { mutableStateOf(false) }
+    var showSpotifyLoginDialogInSheet by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     val scope = rememberCoroutineScope()
     val accountPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -283,6 +290,83 @@ fun AccountBottomSheet(
                 }
             }
 
+            // Spotify Integration Status Row
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF141F17)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1DB954).copy(alpha = 0.3f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1DB954).copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MusicNote,
+                                contentDescription = "Spotify",
+                                tint = Color(0xFF1DB954),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Spotify",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = if (isSpotifyConnected) "Connected as ${spotifyUserName ?: "Listener"}" else "Not connected",
+                                color = if (isSpotifyConnected) Color(0xFF1DB954) else Color(0xFFAAAAAA),
+                                fontSize = 11.sp
+                            )
+                        }
+
+                        if (isSpotifyConnected) {
+                            OutlinedButton(
+                                onClick = {
+                                    SpotifyConnectEngine.disconnect(clearCookies = true)
+                                    android.widget.Toast.makeText(context, "Logged out from Spotify", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5252)),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text("Log out", fontSize = 11.sp, color = Color(0xFFFF5252))
+                            }
+                        } else {
+                            Button(
+                                onClick = { showSpotifyLoginDialogInSheet = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)),
+                                shape = RoundedCornerShape(16.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text("Connect", fontSize = 11.sp, color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+            }
+
             // Quick Actions: Incognito, Channels, Settings
             item {
                 AccountMenuItem(
@@ -334,6 +418,15 @@ fun AccountBottomSheet(
             onDismiss = { showGoogleAuthDialog = false },
             onLoginSuccess = {
                 showGoogleAuthDialog = false
+            }
+        )
+    }
+
+    if (showSpotifyLoginDialogInSheet) {
+        SpotifyLoginDialog(
+            onDismiss = { showSpotifyLoginDialogInSheet = false },
+            onLoginSuccess = {
+                showSpotifyLoginDialogInSheet = false
             }
         )
     }

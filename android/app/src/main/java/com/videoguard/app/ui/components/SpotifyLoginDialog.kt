@@ -16,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -255,6 +256,34 @@ fun SpotifyLoginDialog(
                                 onClick = {
                                     showMenu = false
                                     showTokenDialog = true
+                                }
+                            )
+
+                            HorizontalDivider(color = Color(0xFF383838), modifier = Modifier.padding(vertical = 4.dp))
+
+                            DropdownMenuItem(
+                                text = { Text("Log Out & Switch Account", color = Color(0xFFFF6B6B)) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Logout,
+                                        contentDescription = "Log Out",
+                                        tint = Color(0xFFFF6B6B)
+                                    )
+                                },
+                                onClick = {
+                                    showMenu = false
+                                    try {
+                                        CookieManager.getInstance().removeAllCookies(null)
+                                        CookieManager.getInstance().flush()
+                                        WebStorage.getInstance().deleteAllData()
+                                        webViewInstance?.clearCache(true)
+                                        webViewInstance?.clearHistory()
+                                    } catch (e: Exception) {}
+                                    SpotifyConnectEngine.disconnect(clearCookies = true)
+                                    isCaptured = false
+                                    currentUrl = "https://accounts.spotify.com/en/logout"
+                                    webViewInstance?.loadUrl("https://accounts.spotify.com/en/logout")
+                                    Toast.makeText(context, "Logged out from Spotify. You can now log into a different account.", Toast.LENGTH_SHORT).show()
                                 }
                             )
                         }

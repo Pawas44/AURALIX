@@ -135,7 +135,7 @@ object SpotifyConnectEngine {
 
     fun handleAuthCallback(redirectedUrl: String): Boolean = false
 
-    fun disconnect() {
+    fun disconnect(clearCookies: Boolean = true) {
         prefs?.edit()
             ?.remove(KEY_SP_DC)
             ?.remove(KEY_DISPLAY_NAME)
@@ -146,6 +146,16 @@ object SpotifyConnectEngine {
         _isConnected.value = false
         _userDisplayName.value = null
         _userPlaylists.value = emptyList()
+
+        if (clearCookies) {
+            try {
+                android.webkit.CookieManager.getInstance().removeAllCookies(null)
+                android.webkit.CookieManager.getInstance().flush()
+                android.webkit.WebStorage.getInstance().deleteAllData()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     // --- RFC 4226 / 6238 TOTP computation matching Spotify Web Player ---

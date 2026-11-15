@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -86,6 +87,7 @@ fun MusicLibraryScreen(
     val spotifyPlaylists by SpotifyConnectEngine.userPlaylists.collectAsState()
     val isSpotifySyncing by SpotifyConnectEngine.isSyncing.collectAsState()
     var showSpotifyLoginDialog by remember { mutableStateOf(false) }
+    var showSpotifyLogoutDialog by remember { mutableStateOf(false) }
 
     val likedPlaylist = playlists.find { it.id == "liked_videos" }
     val likedCount = likedPlaylist?.videoCount ?: 0
@@ -336,15 +338,27 @@ fun MusicLibraryScreen(
                                         )
                                     }
 
-                                    // Disconnect
-                                    IconButton(
-                                        onClick = { SpotifyConnectEngine.disconnect() }
+                                    // Clear Log out button
+                                    OutlinedButton(
+                                        onClick = { showSpotifyLogoutDialog = true },
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF5252)),
+                                        border = BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.5f)),
+                                        shape = RoundedCornerShape(20.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(30.dp)
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.Close,
-                                            contentDescription = "Disconnect",
-                                            tint = Color(0xFF888888),
-                                            modifier = Modifier.size(18.dp)
+                                            imageVector = Icons.AutoMirrored.Filled.Logout,
+                                            contentDescription = "Log out",
+                                            tint = Color(0xFFFF5252),
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Log out",
+                                            color = Color(0xFFFF5252),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
                                         )
                                     }
                                 }
@@ -1028,6 +1042,39 @@ fun MusicLibraryScreen(
             onLoginSuccess = {
                 showSpotifyLoginDialog = false
             }
+        )
+    }
+
+    // Spotify Logout Confirmation Dialog
+    if (showSpotifyLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showSpotifyLogoutDialog = false },
+            title = { Text("Log out from Spotify?", color = Color.White) },
+            text = {
+                Text(
+                    "Are you sure you want to log out of Spotify (${spotifyUserName ?: "Connected Account"})? You can log in with another account anytime.",
+                    color = Color(0xFFAAAAAA),
+                    fontSize = 13.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showSpotifyLogoutDialog = false
+                        SpotifyConnectEngine.disconnect(clearCookies = true)
+                        android.widget.Toast.makeText(context, "Logged out from Spotify", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF4444))
+                ) {
+                    Text("Log out", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSpotifyLogoutDialog = false }) {
+                    Text("Cancel", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF1E1E1E)
         )
     }
 
