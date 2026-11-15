@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -27,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -34,14 +36,16 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.videoguard.app.BuildConfig
+import com.videoguard.app.R
 import com.videoguard.app.data.AppUpdateManager
 
 // ========================================================
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
 // ========================================================
 // Put your exact UPI VPA here (e.g. pawas@oksbi, pawas@paytm, etc.)
-const val PAWAS_UPI_ID = "findex13@nyes"
-const val PAWAS_NAME = "Pawas"
+const val PAWAS_UPI_ID = "9315135782@naviaxis"
+const val PAWAS_NAME = "PAWAS PANT"
+const val PAWAS_PHONE_NUMBER = "9315135782"
 private const val RAZORPAY_URL = "https://razorpay.me/@pawas"
 private const val BMC_PROFILE_URL = "https://buymeacoffee.com/findex"
 
@@ -169,30 +173,159 @@ fun SupportScreen(
                     }
                 }
 
-                // UPI ID Details Pill
+                // Pawas Navi UPI QR Code Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp, horizontal = 14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.pawas_upi_qr),
+                            contentDescription = "Pawas Navi UPI QR Code",
+                            modifier = Modifier
+                                .size(176.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "Scan & Pay with Any UPI App",
+                                color = Color(0xFF1E293B),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "GPay • PhonePe • Paytm • Navi • Cred • BHIM",
+                                color = Color(0xFF64748B),
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+
+                // 1-Tap Copyable UPI ID Pill
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.06f))
+                        .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                        .clickable {
+                            clipboardManager.setText(AnnotatedString(PAWAS_UPI_ID))
+                            Toast.makeText(context, "UPI ID copied: $PAWAS_UPI_ID", Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "UPI ID",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp
+                        )
+                        Text(
+                            text = PAWAS_UPI_ID,
+                            color = Color.White,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy UPI ID",
+                            tint = RazorpayAccent,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Copy",
+                            color = RazorpayAccent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // 1-Tap Copyable Mobile Number Pill (For PhonePe/GPay direct transfer & gallery limit bypass)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.06f))
+                        .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+                        .clickable {
+                            clipboardManager.setText(AnnotatedString(PAWAS_PHONE_NUMBER))
+                            Toast.makeText(context, "Mobile number copied: $PAWAS_PHONE_NUMBER", Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Mobile / UPI Number ($PAWAS_NAME)",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.sp
+                        )
+                        Text(
+                            text = PAWAS_PHONE_NUMBER,
+                            color = Color.White,
+                            fontSize = 13.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy Phone Number",
+                            tint = MintAccent,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = "Copy",
+                            color = MintAccent,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Tip Box for gallery scan limits
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color.White.copy(alpha = 0.05f))
-                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .background(Color(0xFF0F2942))
+                        .border(1.dp, RazorpayAccent.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+                        .padding(10.dp)
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        Text(text = "💡", fontSize = 13.sp)
                         Text(
-                            text = "UPI ID: $PAWAS_UPI_ID",
+                            text = "If your UPI app has a gallery limit (e.g. ₹2,000) or scan issue, pay directly to mobile number 9315135782 in PhonePe/GPay/Paytm or scan the QR code above.",
                             color = Color(0xFFCBD5E1),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "Tap button to pay",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 11.sp
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
                         )
                     }
                 }
@@ -675,8 +808,9 @@ fun OfficialBmcBadge(modifier: Modifier = Modifier) {
  * with pre-filled payee name and amount. Falls back to Razorpay if no UPI apps exist.
  */
 private fun openUpiPayment(context: Context, amount: String) {
+    val encodedName = Uri.encode(PAWAS_NAME)
     val upiUri = Uri.parse(
-        "upi://pay?pa=$PAWAS_UPI_ID&pn=$PAWAS_NAME&am=$amount&cu=INR&tn=Support%20AURALIX"
+        "upi://pay?pa=$PAWAS_UPI_ID&pn=$encodedName&am=$amount&cu=INR&tn=Support%20AURALIX"
     )
     val upiIntent = Intent(Intent.ACTION_VIEW, upiUri).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

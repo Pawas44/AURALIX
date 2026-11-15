@@ -437,7 +437,7 @@ fun SearchScreen(
                                             )
                                             onPlaylistClick(com.videoguard.app.data.AlbumDataRepository.toUserPlaylist(album))
                                         } else {
-                                            onVideoSelected(track, searchResults)
+                                            onVideoSelected(track, listOf(track))
                                         }
                                     }
                                     .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -496,8 +496,7 @@ fun SearchScreen(
                                 YouTubeVideoCard(
                                     video = video,
                                     onClick = {
-                                        val playableQueue = searchResults.filter { it.category != "Channel" && !it.id.startsWith("channel_") }
-                                        onVideoSelected(video, playableQueue)
+                                        onVideoSelected(video, listOf(video))
                                     },
                                     onChannelClick = { onChannelClick(video) },
                                     onMoreClick = { selectedVideoForPlaylist = video }

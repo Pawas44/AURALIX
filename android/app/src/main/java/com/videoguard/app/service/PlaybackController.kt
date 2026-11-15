@@ -804,6 +804,16 @@ object PlaybackController {
         return "$cleanTitle|$cleanArtist"
     }
 
+    fun cleanSongTitle(raw: String): String {
+        return raw.lowercase(java.util.Locale.ROOT)
+            .replace(Regex("""\([^)]*\)"""), " ")
+            .replace(Regex("""\[[^]]*\]"""), " ")
+            .replace(Regex("""(?i)\b(official|video|audio|lyrics?|remix|hd|4k|song|full video|dance|dj|status|ringtone|slowed|reverb)\b"""), " ")
+            .replace(Regex("""[^a-zA-Z0-9\u0900-\u097F]"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+    }
+
     /**
      * User explicitly marks a song as "Don't play this" (ByTune style).
      * The song and identical versions are blocked from current queue and future auto-play recommendations in this session.
@@ -937,6 +947,13 @@ object PlaybackController {
                 // ByTune Smart Filtering:
                 // 1. Exclude blocked IDs and blocked song keys
                 // 2. Diversity cap: max 2 songs per artist (3 for seed artist)
+                // Deduplicate by title to ensure different, fresh songs are queued instead of variations/remixes of the same song!
+                val existingTitles = currentQueue.map { cleanSongTitle(it.title) }.filter { it.length >= 3 }.toMutableSet()
+                val seedTitleClean = cleanSongTitle(effectiveSeed.title)
+                if (seedTitleClean.length >= 3) {
+                    existingTitles.add(seedTitleClean)
+                }
+
                 val seedArtist = (effectiveSeed.artist.ifBlank { effectiveSeed.channelName }).lowercase(java.util.Locale.ROOT).trim()
                 val artistCounts = mutableMapOf<String, Int>()
                 val accepted = mutableListOf<VideoItem>()
@@ -947,6 +964,18 @@ object PlaybackController {
                     val key = normalizeSongKey(cand.title, cand.artist)
                     if (key.isNotBlank() && key in sessionBlockedKeys) continue
 
+                    // Diversity & Deduplication Check:
+                    // Never play alternate covers/remixes/uploads of the exact same song that is already queued or played!
+                    val candTitleClean = cleanSongTitle(cand.title)
+                    if (candTitleClean.length >= 3) {
+                        val isSameSong = existingTitles.any { existing ->
+                            existing == candTitleClean ||
+                            (candTitleClean.length >= 5 && existing.contains(candTitleClean)) ||
+                            (existing.length >= 5 && candTitleClean.contains(existing))
+                        }
+                        if (isSameSong) continue
+                    }
+
                     val candArtist = (cand.artist.ifBlank { cand.channelName }).lowercase(java.util.Locale.ROOT).trim()
                     val maxCap = if (candArtist.isNotBlank() && (candArtist.contains(seedArtist) || seedArtist.contains(candArtist))) 3 else 2
                     val currentCount = artistCounts.getOrDefault(candArtist, 0)
@@ -954,6 +983,9 @@ object PlaybackController {
                         artistCounts[candArtist] = currentCount + 1
                         accepted.add(cand)
                         existingIds.add(cand.id)
+                        if (candTitleClean.length >= 3) {
+                            existingTitles.add(candTitleClean)
+                        }
                         if (accepted.size >= 8) break
                     }
                 }

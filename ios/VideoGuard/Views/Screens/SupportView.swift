@@ -3,8 +3,9 @@ import SwiftUI
 // ========================================================
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
 // ========================================================
-private let pawasUpiId = "findex13@nyes"
-private let pawasName = "Pawas"
+private let pawasUpiId = "9315135782@naviaxis"
+private let pawasName = "PAWAS PANT"
+private let pawasPhoneNumber = "9315135782"
 private let razorpayURL = URL(string: "https://razorpay.me/@pawas")!
 private let bmcProfileURL = URL(string: "https://buymeacoffee.com/findex")!
 
@@ -84,23 +85,88 @@ struct SupportView: View {
                         }
                     }
 
-                    // UPI ID details pill
-                    HStack {
-                        Text("UPI ID: \(pawasUpiId)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(Color(hex: 0xCBD5E1))
-                        Spacer()
-                        Text("Tap button to pay")
-                            .font(.system(size: 11))
-                            .foregroundColor(Color(hex: 0x94A3B8))
+                    // 1-Tap Copyable UPI ID pill
+                    Button(action: {
+                        UIPasteboard.general.string = pawasUpiId
+                        triggerToast("UPI ID copied: \(pawasUpiId)")
+                    }) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("UPI ID")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Color(hex: 0x94A3B8))
+                                Text(pawasUpiId)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(razorpayAccent)
+                                Text("Copy")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(razorpayAccent)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.06))
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                        )
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(0.05))
+
+                    // 1-Tap Copyable Mobile Number pill
+                    Button(action: {
+                        UIPasteboard.general.string = pawasPhoneNumber
+                        triggerToast("Mobile number copied: \(pawasPhoneNumber)")
+                    }) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Mobile / UPI Number (\(pawasName))")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Color(hex: 0x94A3B8))
+                                Text(pawasPhoneNumber)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(mintAccent)
+                                Text("Copy")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(mintAccent)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.06))
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                        )
+                    }
+
+                    // Limit / direct transfer tip
+                    HStack(alignment: .top, spacing: 8) {
+                        Text("💡")
+                            .font(.system(size: 12))
+                        Text("If your UPI app has a gallery limit (e.g. ₹2,000) or scan issue, pay directly to mobile number \(pawasPhoneNumber) in PhonePe/GPay or scan the QR code.")
+                            .font(.system(size: 11))
+                            .foregroundColor(Color(hex: 0xCBD5E1))
+                    }
+                    .padding(10)
+                    .background(Color(hex: 0x0F2942))
                     .cornerRadius(10)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10)
-                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                            .strokeBorder(razorpayAccent.opacity(0.3), lineWidth: 1)
                     )
 
                     Text("Select Amount (INR):")
@@ -267,7 +333,8 @@ struct SupportView: View {
     }
 
     private func openUpiPayment(amount: String) {
-        let upiString = "upi://pay?pa=\(pawasUpiId)&pn=\(pawasName)&am=\(amount)&cu=INR&tn=Support%20AURALIX"
+        let nameEncoded = pawasName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? pawasName
+        let upiString = "upi://pay?pa=\(pawasUpiId)&pn=\(nameEncoded)&am=\(amount)&cu=INR&tn=Support%20AURALIX"
         if let encoded = upiString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
            let upiURL = URL(string: encoded),
            UIApplication.shared.canOpenURL(upiURL) {
