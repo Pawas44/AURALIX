@@ -560,7 +560,13 @@ class YouTubeSyncEngine: ObservableObject {
             }
 
             let combinedMoodTracks = Self.distinctVideos(searchedMoodTracks + unpackedMoodTracks + allParsedTracks)
-                .map { VideoItem(id: $0.id, title: $0.title, channelName: $0.channelName, channelId: $0.channelId, views: $0.views, uploadDate: $0.uploadDate, duration: $0.duration, thumbnailURL: $0.thumbnailURL, category: mood, isLive: $0.isLive, subscriberCount: $0.subscriberCount, channelAvatarURL: $0.channelAvatarURL, verifiedBadge: $0.verifiedBadge, isMusicTrack: true, artist: $0.artist, album: $0.album, mood: mood) }
+                .map { track -> VideoItem in
+                    var t = track
+                    t.mood = mood
+                    t.category = mood
+                    t.isMusicTrack = true
+                    return t
+                }
 
             let finalTracks = combinedMoodTracks.isEmpty ? VideoRepository.shared.getMusicByMood(mood: mood) : combinedMoodTracks
             let mQuickPicks = Array(finalTracks.prefix(15))
