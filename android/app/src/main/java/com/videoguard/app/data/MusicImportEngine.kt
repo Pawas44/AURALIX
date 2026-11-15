@@ -665,6 +665,22 @@ object MusicImportEngine {
                 if (matched != null) return matched
             }
 
+            // 8. Resilient catalog fallback: Top search result on YouTube Music / YouTube with basic title relevance
+            for (q in queries) {
+                val emergencyResults = searchInnerTubeDirect(q, useMusicApi = true, params = YTM_SONGS_FILTER)
+                    .ifEmpty { searchInnerTubeDirect(q, useMusicApi = false, params = "") }
+                for (cand in emergencyResults) {
+                    if (cand.id.length != 11) continue
+                    if (versionMarks(meta.title) != versionMarks(cand.title)) continue
+                    val wt = titleWords(meta.title)
+                    val wc = titleWords(cand.title)
+                    val sim = similarity(wt, wc)
+                    if (sim >= 0.45f || wc.contains(wt) || wt.contains(wc)) {
+                        return cand
+                    }
+                }
+            }
+
             return null
         } catch (e: Exception) {
             e.printStackTrace()
@@ -844,7 +860,8 @@ object MusicImportEngine {
                     ?: pageProps?.optJSONObject("track")
 
                 // Extract anonymous token if present for Pathfinder queries
-                foundToken = pageProps?.optJSONObject("state")?.optJSONObject("data")?.optJSONObject("settings")?.optJSONObject("session")?.optString("accessToken")
+                foundToken = pageProps?.optJSONObject("state")?.optJSONObject("settings")?.optJSONObject("session")?.optString("accessToken")
+                    ?: pageProps?.optJSONObject("state")?.optJSONObject("data")?.optJSONObject("settings")?.optJSONObject("session")?.optString("accessToken")
                     ?: data.optJSONObject("props")?.optJSONObject("pageProps")?.optJSONObject("session")?.optString("accessToken")
 
                 if (entity != null) {
@@ -1479,8 +1496,8 @@ object MusicImportEngine {
     }
 
     private val VERSION_REGEX = Regex("""(?i)\b(remix|live|acoustic|instrumental|unplugged|karaoke|slowed|reverb|sped|nightcore|lo-?fi|cover|reprise|mashup|8d)\b""")
-    private const val MAX_LENGTH_GAP = 15
-    private const val MIN_TITLE_SIMILARITY = 0.80f
+    private const val MAX_LENGTH_GAP = 180
+    private const val MIN_TITLE_SIMILARITY = 0.60f
 
     private fun normalizeTitle(title: String): String {
         return title
@@ -1570,8 +1587,8 @@ object MusicImportEngine {
         val wordsCand = titleWords(candidate.title)
         val sim = similarity(wordsTarget, wordsCand)
         val exactOrContains = wordsTarget == wordsCand ||
-                (wordsTarget.length >= 4 && wordsCand.contains(wordsTarget)) ||
-                (wordsCand.length >= 4 && wordsTarget.contains(wordsCand))
+                (wordsTarget.length >= 3 && wordsCand.contains(wordsTarget)) ||
+                (wordsCand.length >= 3 && wordsTarget.contains(wordsCand))
         if (sim < MIN_TITLE_SIMILARITY && !exactOrContains) return null
 
         val candSec = parseDurationSec(candidate.duration)
@@ -1579,15 +1596,19 @@ object MusicImportEngine {
         if (gap != null && gap > MAX_LENGTH_GAP) return null
 
         val wanted = artistNames(target.artist)
-        val credited = artistNames(candidate.artist) + artistNames(candidate.channelName)
-        val shared = wanted.filter { credited.contains(it) }.size
-        if (wanted.isNotEmpty() && credited.isNotEmpty() && shared == 0) return null
+        val candFullText = "${candidate.artist} ${candidate.channelName} ${candidate.title}".lowercase().replace(" ", "")
+        val sharedArtist = wanted.any { it.length >= 3 && candFullText.contains(it) }
 
-        var score = sim * 100f + (if (shared > 0) 30f + 10f * (shared.toFloat() / wanted.size) else 0f)
+        // If target specifies artists, candidate must share artist UNLESS title similarity is very high or exact match
+        if (wanted.isNotEmpty() && !sharedArtist && sim < 0.82f && !exactOrContains) return null
+
+        var score = sim * 100f + (if (sharedArtist) 35f else 0f)
         if (gap != null) {
             score += when {
-                gap <= 3 -> 20f
-                gap <= 8 -> 10f
+                gap <= 4 -> 25f
+                gap <= 10 -> 15f
+                gap <= 25 -> 5f
+                gap > 60 -> -15f
                 else -> 0f
             }
         }
