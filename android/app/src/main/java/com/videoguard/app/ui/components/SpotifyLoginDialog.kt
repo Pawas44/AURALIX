@@ -5,14 +5,17 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.net.http.SslError
+import android.os.Build
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.*
-import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,22 +28,24 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import com.videoguard.app.data.SpotifyConnectEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private const val SPOTIFY_LOGIN_URL =
+private const val SPOTIFY_ACCOUNTS_URL =
     "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
 
-private const val CHROME_UA =
-    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+private const val SPOTIFY_WEB_PLAYER_URL =
+    "https://open.spotify.com"
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -49,20 +54,49 @@ fun SpotifyLoginDialog(
     onLoginSuccess: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val localView = LocalView.current
     val scope = rememberCoroutineScope()
     var isLoading by remember { mutableStateOf(true) }
     var loadProgress by remember { mutableIntStateOf(0) }
-    var currentUrl by remember { mutableStateOf(SPOTIFY_LOGIN_URL) }
+    var currentUrl by remember { mutableStateOf(SPOTIFY_ACCOUNTS_URL) }
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     var isCaptured by remember { mutableStateOf(false) }
     var webErrorDesc by remember { mutableStateOf<String?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     var showTokenDialog by remember { mutableStateOf(false) }
     var tokenInput by remember { mutableStateOf("") }
+    var pageLoadTimer by remember { mutableIntStateOf(0) }
+
+    // Ensure Dialog window has Hardware Acceleration enabled to prevent black screen bugs
+    DisposableEffect(localView) {
+        var p = localView.parent
+        while (p != null) {
+            if (p is DialogWindowProvider) {
+                p.window.setFlags(
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+                )
+                break
+            }
+            p = p.parent
+        }
+        onDispose {}
+    }
 
     // Ensure engine is initialized
     LaunchedEffect(Unit) {
         SpotifyConnectEngine.init(context)
+    }
+
+    // Track load timer to show helpful alternative pill if accounts page is delayed
+    LaunchedEffect(isLoading) {
+        if (isLoading) {
+            pageLoadTimer = 0
+            while (isLoading && pageLoadTimer < 8) {
+                delay(1000L)
+                pageLoadTimer++
+            }
+        }
     }
 
     fun checkAndExtractCookie(view: WebView?) {
@@ -92,10 +126,10 @@ fun SpotifyLoginDialog(
         }
     }
 
-    // Auto-check for login cookie every 600ms
+    // Auto-check for login cookie every 500ms
     LaunchedEffect(isCaptured) {
         while (!isCaptured) {
-            delay(600L)
+            delay(500L)
             checkAndExtractCookie(webViewInstance)
         }
     }
@@ -116,7 +150,7 @@ fun SpotifyLoginDialog(
                     .fillMaxSize()
                     .statusBarsPadding()
             ) {
-                // Header Bar (Matching GoogleAuthDialog)
+                // Header Bar
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -229,7 +263,12 @@ fun SpotifyLoginDialog(
                             )
 
                             DropdownMenuItem(
-                                text = { Text("Load Web Player", color = Color.White) },
+                                text = {
+                                    Text(
+                                        if (currentUrl.contains("open.spotify.com")) "Load Accounts Login" else "Load Web Player",
+                                        color = Color.White
+                                    )
+                                },
                                 leadingIcon = {
                                     Icon(
                                         imageVector = Icons.Default.Language,
@@ -239,8 +278,9 @@ fun SpotifyLoginDialog(
                                 },
                                 onClick = {
                                     showMenu = false
-                                    currentUrl = "https://open.spotify.com"
-                                    webViewInstance?.loadUrl("https://open.spotify.com")
+                                    val target = if (currentUrl.contains("open.spotify.com")) SPOTIFY_ACCOUNTS_URL else SPOTIFY_WEB_PLAYER_URL
+                                    currentUrl = target
+                                    webViewInstance?.loadUrl(target)
                                 }
                             )
 
@@ -337,105 +377,208 @@ fun SpotifyLoginDialog(
                     }
                 }
 
-                // The Interactive WebView - Wrapped in FrameLayout for rock-solid Android sizing
+                // Quick Mode Switch Bar (Allows instant 1-tap toggle between Accounts and Web Player)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF202020))
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val isAccounts = currentUrl.contains("accounts.spotify.com")
+                        Surface(
+                            onClick = {
+                                currentUrl = SPOTIFY_ACCOUNTS_URL
+                                webViewInstance?.loadUrl(SPOTIFY_ACCOUNTS_URL)
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isAccounts) Color(0xFF1DB954) else Color(0xFF2C2C2C)
+                        ) {
+                            Text(
+                                text = "Accounts Login",
+                                color = if (isAccounts) Color.Black else Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+
+                        val isWebPlayer = currentUrl.contains("open.spotify.com")
+                        Surface(
+                            onClick = {
+                                currentUrl = SPOTIFY_WEB_PLAYER_URL
+                                webViewInstance?.loadUrl(SPOTIFY_WEB_PLAYER_URL)
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isWebPlayer) Color(0xFF1DB954) else Color(0xFF2C2C2C)
+                        ) {
+                            Text(
+                                text = "Web Player",
+                                color = if (isWebPlayer) Color.Black else Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Paste Token",
+                        color = Color(0xFF1DB954),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier
+                            .clickable { showTokenDialog = true }
+                            .padding(4.dp)
+                    )
+                }
+
+                // The Interactive WebView
                 AndroidView(
                     factory = { ctx ->
-                        FrameLayout(ctx).apply {
+                        WebView(ctx).apply {
                             layoutParams = ViewGroup.LayoutParams(
                                 ViewGroup.LayoutParams.MATCH_PARENT,
                                 ViewGroup.LayoutParams.MATCH_PARENT
                             )
+                            setBackgroundColor(android.graphics.Color.parseColor("#121212"))
+                            setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+                            webViewInstance = this
 
-                            val webView = WebView(ctx).apply {
-                                layoutParams = FrameLayout.LayoutParams(
-                                    FrameLayout.LayoutParams.MATCH_PARENT,
-                                    FrameLayout.LayoutParams.MATCH_PARENT
-                                )
-                                webViewInstance = this
+                            val cookieManager = CookieManager.getInstance()
+                            cookieManager.setAcceptCookie(true)
+                            cookieManager.setAcceptThirdPartyCookies(this, true)
 
-                                val cookieManager = CookieManager.getInstance()
-                                cookieManager.setAcceptCookie(true)
-                                cookieManager.setAcceptThirdPartyCookies(this, true)
+                            // Sanitize User-Agent to mirror authentic Chrome while omitting WebView indicators
+                            val defaultUa = WebSettings.getDefaultUserAgent(ctx)
+                            val cleanChromeUa = defaultUa
+                                .replace("; wv", "")
+                                .replace("Version/4.0 ", "")
 
-                                settings.apply {
-                                    javaScriptEnabled = true
-                                    domStorageEnabled = true
-                                    databaseEnabled = true
-                                    useWideViewPort = true
-                                    loadWithOverviewMode = true
-                                    loadsImagesAutomatically = true
-                                    allowFileAccess = true
-                                    allowContentAccess = true
-                                    cacheMode = WebSettings.LOAD_DEFAULT
-                                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                                    userAgentString = CHROME_UA
-                                    setSupportMultipleWindows(false)
-                                }
-
-                                webChromeClient = object : WebChromeClient() {
-                                    override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                                        loadProgress = newProgress
-                                        if (newProgress >= 80) {
-                                            isLoading = false
-                                        }
-                                        checkAndExtractCookie(view)
-                                    }
-                                }
-
-                                webViewClient = object : WebViewClient() {
-                                    override fun shouldOverrideUrlLoading(
-                                        view: WebView?,
-                                        request: WebResourceRequest?
-                                    ): Boolean {
-                                        val url = request?.url?.toString() ?: ""
-                                        // Prevent the page from jumping into installed external Spotify app
-                                        if (url.startsWith("intent:") || url.startsWith("spotify:")) {
-                                            return true
-                                        }
-                                        currentUrl = url
-                                        checkAndExtractCookie(view)
-                                        return false
-                                    }
-
-                                    override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                                        super.onPageStarted(view, url, favicon)
-                                        url?.let { currentUrl = it }
-                                        isLoading = true
-                                        checkAndExtractCookie(view)
-                                    }
-
-                                    override fun onPageFinished(view: WebView?, url: String?) {
-                                        super.onPageFinished(view, url)
-                                        url?.let { currentUrl = it }
-                                        isLoading = false
-                                        CookieManager.getInstance().flush()
-                                        checkAndExtractCookie(view)
-                                    }
-
-                                    override fun onReceivedError(
-                                        view: WebView?,
-                                        request: WebResourceRequest?,
-                                        error: WebResourceError?
-                                    ) {
-                                        super.onReceivedError(view, request, error)
-                                        if (request?.isForMainFrame == true) {
-                                            webErrorDesc = error?.description?.toString() ?: "Connection error"
-                                        }
-                                    }
-                                }
-
-                                loadUrl(SPOTIFY_LOGIN_URL)
+                            settings.apply {
+                                javaScriptEnabled = true
+                                domStorageEnabled = true
+                                databaseEnabled = true
+                                useWideViewPort = true
+                                loadWithOverviewMode = true
+                                loadsImagesAutomatically = true
+                                allowFileAccess = true
+                                allowContentAccess = true
+                                javaScriptCanOpenWindowsAutomatically = true
+                                setSupportMultipleWindows(true)
+                                cacheMode = WebSettings.LOAD_DEFAULT
+                                mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                userAgentString = cleanChromeUa
                             }
-                            addView(webView)
+
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                                WebView.setWebContentsDebuggingEnabled(true)
+                            }
+
+                            webChromeClient = object : WebChromeClient() {
+                                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                                    loadProgress = newProgress
+                                    if (newProgress >= 70) {
+                                        isLoading = false
+                                    }
+                                    checkAndExtractCookie(view)
+                                }
+
+                                override fun onCreateWindow(
+                                    view: WebView?,
+                                    isDialog: Boolean,
+                                    isUserGesture: Boolean,
+                                    resultMsg: android.os.Message?
+                                ): Boolean {
+                                    val transport = resultMsg?.obj as? WebView.WebViewTransport
+                                    val popupWebView = WebView(ctx).apply {
+                                        webViewClient = object : WebViewClient() {
+                                            override fun shouldOverrideUrlLoading(v: WebView?, req: WebResourceRequest?): Boolean {
+                                                val u = req?.url?.toString() ?: ""
+                                                view?.loadUrl(u)
+                                                return true
+                                            }
+                                        }
+                                    }
+                                    transport?.webView = popupWebView
+                                    resultMsg?.sendToTarget()
+                                    return true
+                                }
+
+                                override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                                    android.util.Log.d(
+                                        "SpotifyWebView",
+                                        "[${consoleMessage?.messageLevel()}] ${consoleMessage?.message()} (${consoleMessage?.sourceId()}:${consoleMessage?.lineNumber()})"
+                                    )
+                                    return true
+                                }
+                            }
+
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(
+                                    view: WebView?,
+                                    request: WebResourceRequest?
+                                ): Boolean {
+                                    val url = request?.url?.toString() ?: ""
+                                    // Prevent jumping into external native Spotify app
+                                    if (url.startsWith("intent:") || url.startsWith("spotify:")) {
+                                        return true
+                                    }
+                                    currentUrl = url
+                                    checkAndExtractCookie(view)
+                                    return false
+                                }
+
+                                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                    super.onPageStarted(view, url, favicon)
+                                    url?.let { currentUrl = it }
+                                    isLoading = true
+                                    checkAndExtractCookie(view)
+                                }
+
+                                override fun onPageFinished(view: WebView?, url: String?) {
+                                    super.onPageFinished(view, url)
+                                    url?.let { currentUrl = it }
+                                    isLoading = false
+                                    CookieManager.getInstance().flush()
+                                    checkAndExtractCookie(view)
+                                }
+
+                                override fun onReceivedSslError(
+                                    view: WebView?,
+                                    handler: SslErrorHandler?,
+                                    error: SslError?
+                                ) {
+                                    // Bypass minor cert or DNS issues on CDNs to prevent black/blank screens
+                                    handler?.proceed()
+                                }
+
+                                override fun onReceivedError(
+                                    view: WebView?,
+                                    request: WebResourceRequest?,
+                                    error: WebResourceError?
+                                ) {
+                                    super.onReceivedError(view, request, error)
+                                    if (request?.isForMainFrame == true) {
+                                        webErrorDesc = error?.description?.toString() ?: "Connection error"
+                                    }
+                                }
+                            }
+
+                            loadUrl(SPOTIFY_ACCOUNTS_URL)
                         }
                     },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
                 )
             }
         }
     }
 
-    // Optional Token Dialog (Hidden in 3-dot overflow menu)
+    // Optional Token Dialog (Also accessible via 3-dot overflow menu & Quick Mode Bar)
     if (showTokenDialog) {
         AlertDialog(
             onDismissRequest = { showTokenDialog = false },

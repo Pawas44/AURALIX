@@ -134,6 +134,51 @@ object MusicImportEngine {
         }
     }
 
+    private suspend fun resolveTrackOnYouTube(meta: ImportTrackMeta): VideoItem? {
+        try {
+            val cleanTitle = meta.title.replace(Regex("""[([{【「『][^)\]}】」』]*[)\]}】」』]"""), " ").trim()
+            val primaryArtist = meta.artist.split(Regex("[,&+/;]")).firstOrNull()?.trim() ?: meta.artist
+
+            // 1. Primary Query: Clean title + primary artist via InnerTube API (Never blocked by YouTube web scraping!)
+            val query1 = if (primaryArtist.isNotBlank() && !cleanTitle.contains(primaryArtist, ignoreCase = true)) {
+                "$cleanTitle $primaryArtist"
+            } else {
+                cleanTitle
+            }
+
+            var results = YouTubeSyncEngine.searchVideosInnerTube(query1)
+            if (results.isEmpty()) {
+                results = YouTubeSearchEngine.searchVideos(query1, isMusicOnly = true)
+            }
+
+            // 2. Secondary Query: Full title + artist
+            if (results.isEmpty() && meta.artist.isNotBlank()) {
+                val query2 = "${meta.title} ${meta.artist}"
+                results = YouTubeSyncEngine.searchVideosInnerTube(query2)
+                if (results.isEmpty()) {
+                    results = YouTubeSearchEngine.searchVideos(query2, isMusicOnly = true)
+                }
+            }
+
+            // 3. Tertiary Query: Clean title + audio
+            if (results.isEmpty()) {
+                results = YouTubeSyncEngine.searchVideosInnerTube("$cleanTitle audio")
+                if (results.isEmpty()) {
+                    results = YouTubeSearchEngine.searchVideos(cleanTitle, isMusicOnly = true)
+                }
+            }
+
+            if (results.isEmpty()) return null
+
+            // Pick highest scoring candidate or top YouTube search result
+            val best = results.maxByOrNull { scoreTrackMatch(meta, it) }
+            return best ?: results.firstOrNull()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        }
+    }
+
     private suspend fun matchTracksWithYouTube(
         trackMetas: List<ImportTrackMeta>,
         onProgress: (ImportProgress) -> Unit
@@ -142,25 +187,14 @@ object MusicImportEngine {
         onProgress(ImportProgress("Matching tracks with YouTube Music...", 0, total))
 
         val matchedVideos = mutableListOf<VideoItem>()
-        val batchSize = 4 // process in controlled parallel batches for faster 100+ tracks import
+        val batchSize = 3 // controlled parallel batch
 
         for (i in trackMetas.indices step batchSize) {
             val batch = trackMetas.subList(i, minOf(i + batchSize, total))
             val resolvedBatch = coroutineScope {
                 batch.map { meta ->
                     async {
-                        try {
-                            val query = if (meta.artist.isNotBlank()) "${meta.title} ${meta.artist}" else meta.title
-                            var results = YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)
-                            if (results.isEmpty() && meta.artist.isNotBlank()) {
-                                results = YouTubeSearchEngine.searchVideos(meta.title, isMusicOnly = true)
-                            }
-                            // Pick best match using ByTune scoring
-                            val bestCandidate = results.maxByOrNull { scoreTrackMatch(meta, it) }
-                            bestCandidate ?: results.firstOrNull()
-                        } catch (e: Exception) {
-                            null
-                        }
+                        resolveTrackOnYouTube(meta)
                     }
                 }.awaitAll()
             }
@@ -683,8 +717,8 @@ object MusicImportEngine {
 
     private fun cleanTitleWords(title: String): String {
         return title.replace(Regex("""[([{【「『][^)\]}】」』]*[)\]}】」』]"""), " ")
-            .replace(Regex("""\s[-–—]\s.*$"""), " ")
-            .replace(Regex("""[^a-zA-Z0-9\s]"""), "")
+            .replace(Regex("""(?i)\b(official\s+video|official\s+audio|music\s+video|lyric\s+video|lyrics|audio|video|hd|4k|ft\.?|feat\.?)\b"""), " ")
+            .replace(Regex("""[^a-zA-Z0-9\s]"""), " ")
             .replace(Regex("""\s+"""), " ")
             .trim()
             .lowercase()
@@ -693,8 +727,10 @@ object MusicImportEngine {
     private fun diceSimilarity(a: String, b: String): Float {
         val x = a.replace(" ", "")
         val y = b.replace(" ", "")
+        if (x.isEmpty() || y.isEmpty()) return 0f
         if (x == y) return 1f
-        if (x.length < 2 || y.length < 2) return if (x.contains(y) || y.contains(x)) 0.8f else 0f
+        if (x.contains(y) || y.contains(x)) return 0.85f
+        if (x.length < 2 || y.length < 2) return 0f
         val pairs = mutableMapOf<String, Int>()
         for (i in 0 until x.length - 1) {
             val pair = x.substring(i, i + 2)
@@ -716,20 +752,28 @@ object MusicImportEngine {
         val metaTitle = cleanTitleWords(meta.title)
         val candTitle = cleanTitleWords(candidate.title)
 
-        // Version markers (remix, acoustic, live) must agree
+        // Version markers (remix, acoustic, live)
         val metaVersions = extractVersionMarkers(meta.title)
         val candVersions = extractVersionMarkers(candidate.title)
-        if (metaVersions != candVersions) return -100
+        var score = 0
+        if (metaVersions == candVersions) {
+            score += 20
+        } else if (metaVersions.isNotEmpty() && candVersions.isEmpty()) {
+            score -= 15
+        }
 
-        val sim = diceSimilarity(metaTitle, candTitle)
-        if (sim < 0.60f) return -100
-
-        var score = (sim * 100).toInt()
+        // Substring & Dice similarity
+        if (candTitle.contains(metaTitle) || metaTitle.contains(candTitle)) {
+            score += 60
+        } else {
+            val sim = diceSimilarity(metaTitle, candTitle)
+            score += (sim * 50).toInt()
+        }
 
         // Artist overlap
         if (meta.artist.isNotBlank() && (candidate.artist.isNotBlank() || candidate.channelName.isNotBlank())) {
             val targetArtists = meta.artist.split(Regex("[,&+/;]")).map { it.trim().lowercase().replace(" ", "") }.filter { it.isNotBlank() }
-            val candArtistStr = "${candidate.artist} ${candidate.channelName}".lowercase().replace(" ", "")
+            val candArtistStr = "${candidate.artist} ${candidate.channelName} ${candidate.title}".lowercase().replace(" ", "")
             val hasOverlap = targetArtists.any { it.length > 2 && candArtistStr.contains(it) }
             if (hasOverlap) score += 30
         }
@@ -738,9 +782,9 @@ object MusicImportEngine {
         val candSec = parseDurationSec(candidate.duration)
         if (meta.durationSeconds > 0 && candSec > 0) {
             val gap = kotlin.math.abs(meta.durationSeconds - candSec)
-            if (gap <= 4) score += 25
-            else if (gap <= 10) score += 15
-            else if (gap > 20) score -= 30
+            if (gap <= 5) score += 25
+            else if (gap <= 15) score += 15
+            else if (gap > 45) score -= 20
         }
 
         return score

@@ -546,6 +546,128 @@ fun MusicLibraryScreen(
                 }
             }
 
+            // 1b. Full Spotify Playlists & Blends List (when Spotify filter is active)
+            if (selectedFilter == "Spotify" && isSpotifyConnected && spotifyPlaylists.isNotEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "All Spotify Playlists & Blends (${spotifyPlaylists.size})",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Tap to Import",
+                            color = Color(0xFF1DB954),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                items(spotifyPlaylists, key = { "sp_${it.id}" }) { pl ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedImportService = "Spotify"
+                                isImporting = true
+                                importProgress = ImportProgress("Reading ${pl.title}...", 0, 0)
+                                scope.launch {
+                                    val res = MusicImportEngine.importRemotePlaylist(pl) { prog ->
+                                        importProgress = prog
+                                    }
+                                    isImporting = false
+                                    res.onSuccess { imported ->
+                                        importedPlaylistResult = imported
+                                    }.onFailure { err ->
+                                        importProgress = ImportProgress("Failed", 0, 0, error = err.message ?: "Failed")
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(54.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF1C1C1C)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (!pl.coverUrl.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = pl.coverUrl,
+                                    contentDescription = pl.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = Color(0xFF1DB954),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = pl.title,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = pl.description.ifBlank { "Spotify Playlist" },
+                                color = Color(0xFFAAAAAA),
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        IconButton(
+                            onClick = {
+                                selectedImportService = "Spotify"
+                                isImporting = true
+                                importProgress = ImportProgress("Reading ${pl.title}...", 0, 0)
+                                scope.launch {
+                                    val res = MusicImportEngine.importRemotePlaylist(pl) { prog ->
+                                        importProgress = prog
+                                    }
+                                    isImporting = false
+                                    res.onSuccess { imported ->
+                                        importedPlaylistResult = imported
+                                    }.onFailure { err ->
+                                        importProgress = ImportProgress("Failed", 0, 0, error = err.message ?: "Failed")
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Download,
+                                contentDescription = "Import",
+                                tint = Color(0xFF1DB954),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
             // 2. Liked Songs Hero Card
             if (selectedFilter == "All" || selectedFilter == "Liked Songs") {
                 item {

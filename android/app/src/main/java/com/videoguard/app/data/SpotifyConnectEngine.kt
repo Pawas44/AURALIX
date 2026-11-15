@@ -420,17 +420,134 @@ object SpotifyConnectEngine {
     }
 
     suspend fun fetchUserProfile(): String? = withContext(Dispatchers.IO) {
-        val data = queryPathfinder("profileAttributes", JSONObject()) ?: return@withContext null
-        val profile = data.optJSONObject("me")?.optJSONObject("profile")
-        val name = profile?.optString("name")?.takeIf { it.isNotBlank() }
-            ?: profile?.optString("username")?.takeIf { it.isNotBlank() }
-            ?: "Spotify User"
-        _userDisplayName.value = name
-        prefs?.edit()?.putString(KEY_DISPLAY_NAME, name)?.apply()
-        name
+        val token = getValidAccessToken()
+        var name: String? = null
+
+        // 1. Primary: Spotify Web API /v1/me
+        if (!token.isNullOrBlank()) {
+            try {
+                val conn = (URL("https://api.spotify.com/v1/me").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                    setRequestProperty("Authorization", "Bearer $token")
+                    setRequestProperty("User-Agent", UA)
+                }
+                if (conn.responseCode in 200..299) {
+                    val text = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(text)
+                    name = json.optString("display_name").takeIf { it.isNotBlank() }
+                        ?: json.optString("id").takeIf { it.isNotBlank() }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 2. Secondary: Pathfinder profileAttributes
+        if (name.isNullOrBlank()) {
+            val data = queryPathfinder("profileAttributes", JSONObject())
+            val profile = data?.optJSONObject("me")?.optJSONObject("profile")
+            name = profile?.optString("name")?.takeIf { it.isNotBlank() }
+                ?: profile?.optString("username")?.takeIf { it.isNotBlank() }
+        }
+
+        val finalName = name ?: "Spotify User"
+        _userDisplayName.value = finalName
+        prefs?.edit()?.putString(KEY_DISPLAY_NAME, finalName)?.apply()
+        finalName
     }
 
     suspend fun fetchUserPlaylists(): List<RemotePlaylistSummary> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<RemotePlaylistSummary>()
+        val token = getValidAccessToken()
+
+        // 1. Primary: Spotify Web API /v1/me/playlists (Returns all user, followed, and blend playlists)
+        if (!token.isNullOrBlank()) {
+            try {
+                var nextUrl: String? = "https://api.spotify.com/v1/me/playlists?limit=50"
+                while (!nextUrl.isNullOrBlank() && results.size < 500) {
+                    val conn = (URL(nextUrl).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 12000
+                        readTimeout = 12000
+                        setRequestProperty("Authorization", "Bearer $token")
+                        setRequestProperty("User-Agent", UA)
+                    }
+
+                    if (conn.responseCode in 200..299) {
+                        val text = conn.inputStream.bufferedReader().use { it.readText() }
+                        val json = JSONObject(text)
+                        val items = json.optJSONArray("items")
+                        if (items != null) {
+                            for (i in 0 until items.length()) {
+                                val item = items.optJSONObject(i) ?: continue
+                                val id = item.optString("id")
+                                val name = item.optString("name")
+                                if (id.isBlank() || name.isBlank()) continue
+
+                                var coverUrl: String? = null
+                                val images = item.optJSONArray("images")
+                                if (images != null && images.length() > 0) {
+                                    coverUrl = images.optJSONObject(0)?.optString("url")
+                                }
+
+                                val ownerName = item.optJSONObject("owner")?.optString("display_name") ?: ""
+                                val trackCount = item.optJSONObject("tracks")?.optInt("total", 0) ?: 0
+                                val desc = item.optString("description").ifBlank {
+                                    if (ownerName.isNotBlank()) "By $ownerName" else "Spotify Playlist"
+                                }
+
+                                results.add(
+                                    RemotePlaylistSummary(
+                                        id = id,
+                                        title = name,
+                                        description = desc,
+                                        trackCount = trackCount,
+                                        coverUrl = coverUrl,
+                                        sourceProvider = "Spotify"
+                                    )
+                                )
+                            }
+                        }
+                        nextUrl = json.optString("next").takeIf { it.isNotBlank() }
+                    } else {
+                        break
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 2. Secondary fallback: Pathfinder libraryV3
+        if (results.isEmpty()) {
+            results.addAll(fetchPlaylistsPathfinder())
+        }
+
+        _userPlaylists.value = results
+
+        // Cache locally for offline/fast restart
+        try {
+            val jsonArr = JSONArray()
+            for (p in results) {
+                jsonArr.put(JSONObject().apply {
+                    put("id", p.id)
+                    put("title", p.title)
+                    put("description", p.description)
+                    put("trackCount", p.trackCount)
+                    put("coverUrl", p.coverUrl ?: "")
+                })
+            }
+            prefs?.edit()?.putString(KEY_CACHED_PLAYLISTS, jsonArr.toString())?.apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        results
+    }
+
+    private suspend fun fetchPlaylistsPathfinder(): List<RemotePlaylistSummary> = withContext(Dispatchers.IO) {
         val results = mutableListOf<RemotePlaylistSummary>()
         var offset = 0
         val limit = 50
@@ -463,12 +580,11 @@ object SpotifyConnectEngine {
                 val entry = items.optJSONObject(i) ?: continue
                 val wrapper = entry.optJSONObject("item") ?: continue
                 val itemData = wrapper.optJSONObject("data") ?: continue
-                val type = itemData.optString("__typename")
                 val uri = wrapper.optString("_uri", "")
                 val id = if (uri.startsWith("spotify:playlist:")) uri.removePrefix("spotify:playlist:") else ""
                 val name = itemData.optString("name", "")
 
-                if (type == "Playlist" && id.isNotBlank() && name.isNotBlank()) {
+                if (id.isNotBlank() && name.isNotBlank()) {
                     var cover: String? = null
                     val images = itemData.optJSONObject("images")?.optJSONArray("items")
                     if (images != null && images.length() > 0) {
@@ -494,35 +610,91 @@ object SpotifyConnectEngine {
             offset += items.length()
             if (items.length() == 0 || offset >= totalCount) break
         }
-
-        _userPlaylists.value = results
-
-        // Cache locally for offline/fast restart
-        try {
-            val jsonArr = JSONArray()
-            for (p in results) {
-                jsonArr.put(JSONObject().apply {
-                    put("id", p.id)
-                    put("title", p.title)
-                    put("description", p.description)
-                    put("trackCount", p.trackCount)
-                    put("coverUrl", p.coverUrl ?: "")
-                })
-            }
-            prefs?.edit()?.putString(KEY_CACHED_PLAYLISTS, jsonArr.toString())?.apply()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
         results
     }
 
     suspend fun fetchLikedSongs(onProgress: (ImportProgress) -> Unit = {}): List<ImportTrackMeta> = withContext(Dispatchers.IO) {
         val tracks = mutableListOf<ImportTrackMeta>()
-        var offset = 0
-        val limit = 100
+        val token = getValidAccessToken()
 
         onProgress(ImportProgress("Reading Spotify Liked Songs...", 0, 0))
+
+        // 1. Primary: Spotify Web API /v1/me/tracks
+        if (!token.isNullOrBlank()) {
+            try {
+                var nextUrl: String? = "https://api.spotify.com/v1/me/tracks?limit=50"
+                var total = 0
+
+                while (!nextUrl.isNullOrBlank() && tracks.size < 5000) {
+                    val conn = (URL(nextUrl).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 12000
+                        readTimeout = 12000
+                        setRequestProperty("Authorization", "Bearer $token")
+                        setRequestProperty("User-Agent", UA)
+                    }
+
+                    if (conn.responseCode in 200..299) {
+                        val text = conn.inputStream.bufferedReader().use { it.readText() }
+                        val json = JSONObject(text)
+                        total = json.optInt("total", total)
+                        val items = json.optJSONArray("items")
+                        if (items != null) {
+                            for (i in 0 until items.length()) {
+                                val item = items.optJSONObject(i) ?: continue
+                                val track = item.optJSONObject("track") ?: continue
+                                val name = track.optString("name", "")
+                                val id = track.optString("id", "")
+                                val durMs = track.optLong("duration_ms", 0L)
+                                val albumName = track.optJSONObject("album")?.optString("name", "") ?: ""
+
+                                val artistsArr = track.optJSONArray("artists")
+                                val artistNames = mutableListOf<String>()
+                                if (artistsArr != null) {
+                                    for (a in 0 until artistsArr.length()) {
+                                        val aObj = artistsArr.optJSONObject(a)
+                                        val aName = aObj?.optString("name", "") ?: ""
+                                        if (aName.isNotBlank()) artistNames.add(aName)
+                                    }
+                                }
+                                val artist = artistNames.joinToString(", ")
+
+                                if (name.isNotBlank()) {
+                                    tracks.add(
+                                        ImportTrackMeta(
+                                            title = name,
+                                            artist = artist,
+                                            album = albumName,
+                                            durationSeconds = (durMs / 1000).toInt(),
+                                            spotifyId = id
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        onProgress(ImportProgress("Reading Spotify Liked Songs...", tracks.size, total))
+                        nextUrl = json.optString("next").takeIf { it.isNotBlank() }
+                    } else {
+                        break
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 2. Secondary fallback: Pathfinder fetchLibraryTracks
+        if (tracks.isEmpty()) {
+            tracks.addAll(fetchLikedSongsPathfinder(onProgress))
+        }
+
+        tracks
+    }
+
+    private suspend fun fetchLikedSongsPathfinder(onProgress: (ImportProgress) -> Unit): List<ImportTrackMeta> = withContext(Dispatchers.IO) {
+        val tracks = mutableListOf<ImportTrackMeta>()
+        var offset = 0
+        val limit = 100
 
         while (offset < 5000) {
             val vars = JSONObject().apply {
@@ -585,10 +757,89 @@ object SpotifyConnectEngine {
         }
 
         val tracks = mutableListOf<ImportTrackMeta>()
-        var offset = 0
-        val limit = 100
+        val token = getValidAccessToken()
 
         onProgress(ImportProgress("Reading Spotify Playlist...", 0, 0))
+
+        // 1. Primary: Spotify Web API /v1/playlists/{id}/tracks
+        if (!token.isNullOrBlank()) {
+            try {
+                var nextUrl: String? = "https://api.spotify.com/v1/playlists/$playlistId/tracks?limit=100"
+                var total = 0
+
+                while (!nextUrl.isNullOrBlank() && tracks.size < 5000) {
+                    val conn = (URL(nextUrl).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 12000
+                        readTimeout = 12000
+                        setRequestProperty("Authorization", "Bearer $token")
+                        setRequestProperty("User-Agent", UA)
+                    }
+
+                    if (conn.responseCode in 200..299) {
+                        val text = conn.inputStream.bufferedReader().use { it.readText() }
+                        val json = JSONObject(text)
+                        total = json.optInt("total", total)
+                        val items = json.optJSONArray("items")
+                        if (items != null) {
+                            for (i in 0 until items.length()) {
+                                val item = items.optJSONObject(i) ?: continue
+                                val track = item.optJSONObject("track") ?: continue
+                                val name = track.optString("name", "")
+                                val id = track.optString("id", "")
+                                val durMs = track.optLong("duration_ms", 0L)
+                                val albumName = track.optJSONObject("album")?.optString("name", "") ?: ""
+
+                                val artistsArr = track.optJSONArray("artists")
+                                val artistNames = mutableListOf<String>()
+                                if (artistsArr != null) {
+                                    for (a in 0 until artistsArr.length()) {
+                                        val aObj = artistsArr.optJSONObject(a)
+                                        val aName = aObj?.optString("name", "") ?: ""
+                                        if (aName.isNotBlank()) artistNames.add(aName)
+                                    }
+                                }
+                                val artist = artistNames.joinToString(", ")
+
+                                if (name.isNotBlank()) {
+                                    tracks.add(
+                                        ImportTrackMeta(
+                                            title = name,
+                                            artist = artist,
+                                            album = albumName,
+                                            durationSeconds = (durMs / 1000).toInt(),
+                                            spotifyId = id
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                        onProgress(ImportProgress("Reading Spotify Playlist...", tracks.size, total))
+                        nextUrl = json.optString("next").takeIf { it.isNotBlank() }
+                    } else {
+                        break
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 2. Secondary: Pathfinder fallback
+        if (tracks.isEmpty()) {
+            tracks.addAll(fetchPlaylistTracksPathfinder(playlistId, onProgress))
+        }
+
+        tracks
+    }
+
+    private suspend fun fetchPlaylistTracksPathfinder(
+        playlistId: String,
+        onProgress: (ImportProgress) -> Unit
+    ): List<ImportTrackMeta> = withContext(Dispatchers.IO) {
+        val tracks = mutableListOf<ImportTrackMeta>()
+        var offset = 0
+        val limit = 100
 
         while (offset < 5000) {
             val vars = JSONObject().apply {
@@ -650,6 +901,23 @@ object SpotifyConnectEngine {
 
     suspend fun fetchPlaylistTitle(playlistId: String): String = withContext(Dispatchers.IO) {
         if (playlistId == "liked") return@withContext "Liked Songs (Spotify)"
+        val token = getValidAccessToken()
+        if (!token.isNullOrBlank()) {
+            try {
+                val conn = (URL("https://api.spotify.com/v1/playlists/$playlistId").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 10000
+                    readTimeout = 10000
+                    setRequestProperty("Authorization", "Bearer $token")
+                    setRequestProperty("User-Agent", UA)
+                }
+                if (conn.responseCode in 200..299) {
+                    val text = conn.inputStream.bufferedReader().use { it.readText() }
+                    val name = JSONObject(text).optString("name")
+                    if (name.isNotBlank()) return@withContext name
+                }
+            } catch (e: Exception) {}
+        }
         val vars = JSONObject().apply {
             put("uri", "spotify:playlist:$playlistId")
             put("offset", 0)
