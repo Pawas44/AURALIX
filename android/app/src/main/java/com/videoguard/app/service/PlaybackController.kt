@@ -10,6 +10,7 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import com.videoguard.app.data.VideoRepository
 import com.videoguard.app.model.VideoItem
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -356,13 +357,13 @@ object PlaybackController {
                 val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
 
                 // Parallel instant resolution: query both InnerTube and YouTubeSearchEngine concurrently
-                val d1 = kotlinx.coroutines.async {
+                val d1 = async {
                     try {
                         com.videoguard.app.data.YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true)
                             .firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
                     } catch (e: Exception) { null }
                 }
-                val d2 = kotlinx.coroutines.async {
+                val d2 = async {
                     try {
                         com.videoguard.app.data.YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)
                             .firstOrNull { it.id.length == 11 }
