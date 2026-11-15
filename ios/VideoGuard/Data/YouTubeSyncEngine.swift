@@ -580,7 +580,9 @@ class YouTubeSyncEngine: ObservableObject {
                 recommendedVideos: mRecommended,
                 trendingCharts: mTrending
             )
-            musicFeed = result
+            await MainActor.run {
+                self.musicFeed = result
+            }
             return result
         }
 
