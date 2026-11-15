@@ -502,9 +502,9 @@ object PlaybackController {
             _durationSeconds.value = dur
             val ctx = appContext
             if (ctx != null) {
+                val resolvedId = getResolvedSpotifyId(track.id)
                 try {
                     val dir = java.io.File(ctx.filesDir, "downloads")
-                    val resolvedId = getResolvedSpotifyId(track.id)
                     val candidateIds = listOfNotNull(track.id, resolvedId).distinct()
                     val f = candidateIds.flatMap { cid ->
                         listOf(
