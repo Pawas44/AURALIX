@@ -31,6 +31,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import com.videoguard.app.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -215,7 +217,7 @@ fun MusicLibraryScreen(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.MusicNote,
+                                            painter = painterResource(id = R.drawable.ic_spotify),
                                             contentDescription = "Spotify",
                                             tint = Color(0xFF1DB954),
                                             modifier = Modifier.size(20.dp)
@@ -249,7 +251,7 @@ fun MusicLibraryScreen(
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                        Icon(painter = painterResource(id = R.drawable.ic_spotify), contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text("Connect", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                     }
@@ -300,7 +302,7 @@ fun MusicLibraryScreen(
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.MusicNote,
+                                            painter = painterResource(id = R.drawable.ic_spotify),
                                             contentDescription = "Spotify",
                                             tint = Color(0xFF1DB954),
                                             modifier = Modifier.size(20.dp)
@@ -495,7 +497,7 @@ fun MusicLibraryScreen(
                                                         )
                                                     } else {
                                                         Icon(
-                                                            imageVector = Icons.Default.MusicNote,
+                                                            painter = painterResource(id = R.drawable.ic_spotify),
                                                             contentDescription = null,
                                                             tint = Color(0xFF1DB954),
                                                             modifier = Modifier.size(36.dp)
@@ -610,7 +612,7 @@ fun MusicLibraryScreen(
                                 )
                             } else {
                                 Icon(
-                                    imageVector = Icons.Default.MusicNote,
+                                    painter = painterResource(id = R.drawable.ic_spotify),
                                     contentDescription = null,
                                     tint = Color(0xFF1DB954),
                                     modifier = Modifier.size(28.dp)
@@ -1284,7 +1286,7 @@ fun MusicLibraryScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Default.MusicNote,
+                            painter = painterResource(id = R.drawable.ic_spotify),
                             contentDescription = null,
                             tint = brandColor,
                             modifier = Modifier.size(18.dp)

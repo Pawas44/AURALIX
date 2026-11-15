@@ -29,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
+import com.videoguard.app.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -167,10 +169,10 @@ fun SpotifyLoginDialog(
                     }
 
                     Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "Secure",
+                        painter = painterResource(id = R.drawable.ic_spotify),
+                        contentDescription = "Spotify",
                         tint = Color(0xFF1DB954),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(20.dp)
                     )
 
                     Spacer(modifier = Modifier.width(8.dp))

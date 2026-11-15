@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import com.videoguard.app.R
 import com.videoguard.app.data.AccountRepository
 import com.videoguard.app.data.SpotifyConnectEngine
 import com.videoguard.app.model.AppMode
@@ -315,7 +317,7 @@ fun AccountBottomSheet(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.MusicNote,
+                                painter = painterResource(id = R.drawable.ic_spotify),
                                 contentDescription = "Spotify",
                                 tint = Color(0xFF1DB954),
                                 modifier = Modifier.size(18.dp)

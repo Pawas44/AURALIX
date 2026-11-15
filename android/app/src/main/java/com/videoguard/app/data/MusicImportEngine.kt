@@ -48,7 +48,7 @@ object MusicImportEngine {
 
             var (playlistName, trackMetas) = when {
                 trimmed.startsWith("{") && trimmed.contains("\"tracks\"") -> parseDomTracksJson(trimmed)
-                trimmed.contains("spotify.com") -> parseSpotify(trimmed, onProgress)
+                isSpotifyInput(trimmed) -> parseSpotify(trimmed, onProgress)
                 trimmed.contains("music.amazon.") || (trimmed.contains("amazon.") && trimmed.contains("music")) || trimmed.contains("amzn.to") -> parseAmazonMusic(trimmed, onProgress)
                 trimmed.contains("music.apple.com") || trimmed.contains("apple.com") -> parseAppleMusic(trimmed, onProgress)
                 else -> parsePlainTextList(trimmed)
@@ -767,82 +767,152 @@ object MusicImportEngine {
         matchedVideos
     }
 
-    private fun parseSpotify(url: String, onProgress: (ImportProgress) -> Unit): Pair<String, List<ImportTrackMeta>> {
-        val cleanUrl = url.substringBefore("?").trimEnd('/')
-        val isTrack = url.contains("/track/")
-        val isAlbum = url.contains("/album/")
-        val isPlaylist = url.contains("/playlist/") || (!isTrack && !isAlbum)
+    private fun extractFirstUrl(text: String): String? {
+        val urlRegex = Regex("""https?://[^\s<>"']+""")
+        return urlRegex.find(text)?.value
+    }
 
-        val id = Regex("(?:playlist|album|track)/([a-zA-Z0-9]+)").find(url)?.groupValues?.get(1)
-            ?: cleanUrl.substringAfterLast("/")
+    private fun isSpotifyInput(text: String): Boolean {
+        val lower = text.lowercase()
+        return lower.contains("spotify.com") ||
+               lower.contains("spotify.link") ||
+               lower.contains("spoti.fi") ||
+               lower.contains("spotify:")
+    }
 
+    private suspend fun parseSpotify(input: String, onProgress: (ImportProgress) -> Unit): Pair<String, List<ImportTrackMeta>> {
+        var rawUrl = extractFirstUrl(input) ?: input.trim()
+
+        // Handle Spotify URI e.g. spotify:playlist:xxx, spotify:user:xxx:playlist:yyy
+        val uriMatch = Regex("""spotify:(?:user:[^:]+:)?(playlist|album|track):([a-zA-Z0-9]+)""").find(input)
+        val uriType = uriMatch?.groupValues?.get(1)
+        val uriId = uriMatch?.groupValues?.get(2)
+
+        // Resolve redirects if it's a short link (spotify.link / spoti.fi / link / bit.ly)
+        if (rawUrl.contains("spotify.link") || rawUrl.contains("spoti.fi") || rawUrl.contains("link.") || rawUrl.contains("t.co")) {
+            onProgress(ImportProgress("Resolving Spotify link...", 0, 0))
+            val resolved = resolveRedirectUrl(rawUrl)
+            if (resolved.isNotBlank()) {
+                rawUrl = resolved
+            }
+        }
+
+        if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://") && !rawUrl.startsWith("spotify:")) {
+            rawUrl = "https://$rawUrl"
+        }
+
+        // Determine item type and ID from URL or URI
+        val typeAndId = Regex("""(?:intl-[a-z]{2}/)?(playlist|album|track)[/:]([a-zA-Z0-9]+)""").find(rawUrl)
+        val itemType = uriType ?: typeAndId?.groupValues?.get(1) ?: when {
+            rawUrl.contains("/track/") -> "track"
+            rawUrl.contains("/album/") -> "album"
+            else -> "playlist"
+        }
+        val id = uriId ?: typeAndId?.groupValues?.get(2) ?: rawUrl.substringBefore("?").trimEnd('/').substringAfterLast("/").substringAfterLast(":")
+
+        val isTrack = itemType == "track"
+        val isAlbum = itemType == "album"
+        val isPlaylist = itemType == "playlist"
+
+        // 1. Single track fast-path via oEmbed
         if (isTrack) {
-            val oembedUrl = "https://open.spotify.com/oembed?url=" + java.net.URLEncoder.encode("https://open.spotify.com/track/$id", "UTF-8")
-            val jsonStr = httpGet(oembedUrl)
-            if (jsonStr.isNotBlank() && jsonStr.startsWith("{")) {
-                val json = JSONObject(jsonStr)
-                val title = json.optString("title", "Spotify Track")
-                val author = json.optString("author_name", "")
-                return Pair(title, listOf(ImportTrackMeta(title, author)))
-            }
-        }
-
-        if (isPlaylist) {
-            if (SpotifyConnectEngine.isConnected.value || !SpotifyConnectEngine.getSpDcCookie().isNullOrBlank()) {
-                try {
-                    val (pTitle, connectedTracks) = kotlinx.coroutines.runBlocking {
-                        val title = SpotifyConnectEngine.fetchPlaylistTitle(id)
-                        val tracks = SpotifyConnectEngine.fetchPlaylistTracks(id) { prog ->
-                            onProgress(prog)
-                        }
-                        Pair(title, tracks)
+            try {
+                val oembedUrl = "https://open.spotify.com/oembed?url=" + URLEncoder.encode("https://open.spotify.com/track/$id", "UTF-8")
+                val jsonStr = httpGet(oembedUrl)
+                if (jsonStr.isNotBlank() && jsonStr.startsWith("{")) {
+                    val json = JSONObject(jsonStr)
+                    val title = json.optString("title", "Spotify Track").trim()
+                    val author = json.optString("author_name", "").trim()
+                    if (title.isNotBlank()) {
+                        return Pair(title, listOf(ImportTrackMeta(title = title, artist = author, spotifyId = id)))
                     }
-                    if (connectedTracks.isNotEmpty()) {
-                        return Pair(pTitle, connectedTracks)
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
 
-        val embedUrl = if (isAlbum) {
-            "https://open.spotify.com/embed/album/$id"
-        } else {
-            "https://open.spotify.com/embed/playlist/$id"
+        // 2. If user is connected via SpotifyConnectEngine, attempt authenticated high-fidelity sync
+        if (isPlaylist && SpotifyConnectEngine.isConnected.value) {
+            try {
+                val title = SpotifyConnectEngine.fetchPlaylistTitle(id)
+                val connectedTracks = SpotifyConnectEngine.fetchPlaylistTracks(id) { prog ->
+                    onProgress(prog)
+                }
+                if (connectedTracks.isNotEmpty()) {
+                    return Pair(title.ifBlank { "Spotify Playlist" }, connectedTracks)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
+        // 3. Public Web Embed Extraction
+        val embedUrl = when {
+            isTrack -> "https://open.spotify.com/embed/track/$id"
+            isAlbum -> "https://open.spotify.com/embed/album/$id"
+            else -> "https://open.spotify.com/embed/playlist/$id"
+        }
+
+        onProgress(ImportProgress("Reading Spotify tracks...", 0, 0))
         val html = httpGet(embedUrl)
 
         var playlistTitle = "Spotify Playlist"
         val tracks = mutableListOf<ImportTrackMeta>()
+        var foundToken: String? = null
 
-        // 1. __NEXT_DATA__ JSON blob
+        // 3a. __NEXT_DATA__ JSON blob
         val nextDataPattern = Pattern.compile("<script id=\"__NEXT_DATA__\"[^>]*>(.*?)</script>", Pattern.DOTALL)
         val matcher = nextDataPattern.matcher(html)
         if (matcher.find()) {
             val jsonStr = matcher.group(1) ?: ""
             try {
                 val data = JSONObject(jsonStr)
-                val entity = data.optJSONObject("props")
-                    ?.optJSONObject("pageProps")
-                    ?.optJSONObject("state")
-                    ?.optJSONObject("data")
-                    ?.optJSONObject("entity")
+                val pageProps = data.optJSONObject("props")?.optJSONObject("pageProps")
+                val entity = pageProps?.optJSONObject("state")?.optJSONObject("data")?.optJSONObject("entity")
+                    ?: pageProps?.optJSONObject("entity")
+                    ?: pageProps?.optJSONObject("playlist")
+                    ?: pageProps?.optJSONObject("album")
+                    ?: pageProps?.optJSONObject("track")
+
+                // Extract anonymous token if present for potential Pathfinder queries
+                foundToken = pageProps?.optJSONObject("state")?.optJSONObject("data")?.optJSONObject("settings")?.optJSONObject("session")?.optString("accessToken")
+                    ?: data.optJSONObject("props")?.optJSONObject("pageProps")?.optJSONObject("session")?.optString("accessToken")
 
                 if (entity != null) {
-                    playlistTitle = entity.optString("name", "Spotify Playlist")
+                    val name = entity.optString("name").ifBlank { entity.optString("title") }
+                    if (name.isNotBlank()) playlistTitle = name
+
                     val trackList = entity.optJSONArray("trackList")
-                    if (trackList != null) {
+                    if (trackList != null && trackList.length() > 0) {
                         for (i in 0 until trackList.length()) {
                             val t = trackList.optJSONObject(i) ?: continue
-                            val title = t.optString("title", "").trim()
+                            val title = t.optString("title", "").ifBlank { t.optString("name", "") }.trim()
                             val subtitle = t.optString("subtitle", "").replace('\u00A0', ' ').trim()
                             val durMs = t.optLong("duration", 0L)
                             val durSec = if (durMs > 0) (durMs / 1000).toInt() else 0
+                            val tUri = t.optString("uri", "")
+                            val sId = if (tUri.startsWith("spotify:track:")) tUri.removePrefix("spotify:track:") else ""
                             if (title.isNotBlank()) {
-                                tracks.add(ImportTrackMeta(title = title, artist = subtitle, durationSeconds = durSec))
+                                tracks.add(ImportTrackMeta(title = title, artist = subtitle, durationSeconds = durSec, spotifyId = sId))
                             }
+                        }
+                    }
+
+                    // Single track entity fallback
+                    if (tracks.isEmpty() && isTrack) {
+                        val trackArtists = entity.optJSONArray("artists")
+                        val artistList = mutableListOf<String>()
+                        if (trackArtists != null) {
+                            for (a in 0 until trackArtists.length()) {
+                                val aName = trackArtists.optJSONObject(a)?.optString("name", "") ?: ""
+                                if (aName.isNotBlank()) artistList.add(aName)
+                            }
+                        }
+                        val durMs = entity.optLong("duration", 0L)
+                        val durSec = if (durMs > 0) (durMs / 1000).toInt() else 0
+                        if (name.isNotBlank()) {
+                            tracks.add(ImportTrackMeta(title = name, artist = artistList.joinToString(", "), durationSeconds = durSec, spotifyId = id))
                         }
                     }
                 }
@@ -851,10 +921,13 @@ object MusicImportEngine {
             }
         }
 
-        // 2. Fallback to oEmbed for playlist title
-        if (tracks.isEmpty()) {
+        // 3b. Fallback to oEmbed for Title
+        if (playlistTitle == "Spotify Playlist") {
             try {
-                val oembedUrl = "https://open.spotify.com/oembed?url=" + java.net.URLEncoder.encode("https://open.spotify.com/playlist/$id", "UTF-8")
+                val oembedUrl = "https://open.spotify.com/oembed?url=" + URLEncoder.encode(
+                    if (isAlbum) "https://open.spotify.com/album/$id" else "https://open.spotify.com/playlist/$id",
+                    "UTF-8"
+                )
                 val oembedJson = httpGet(oembedUrl)
                 if (oembedJson.isNotBlank() && oembedJson.startsWith("{")) {
                     val obj = JSONObject(oembedJson)
@@ -864,20 +937,103 @@ object MusicImportEngine {
             } catch (e: Exception) {}
         }
 
-        // 3. Fallback regex match for title/subtitle in HTML
+        // 3c. Fallback HTML regex match for title/subtitle
         if (tracks.isEmpty()) {
             val trackRegex = Pattern.compile("\"title\":\"([^\"]+)\"[^}]*?\"subtitle\":\"([^\"]+)\"")
             val trMatcher = trackRegex.matcher(html)
             while (trMatcher.find()) {
-                val t = trMatcher.group(1) ?: ""
-                val s = trMatcher.group(2) ?: ""
-                if (t.isNotBlank() && !t.contains("Spotify")) {
+                val t = trMatcher.group(1)?.trim() ?: ""
+                val s = trMatcher.group(2)?.replace('\u00A0', ' ')?.trim() ?: ""
+                if (t.isNotBlank() && !t.contains("Spotify") && !t.equals("Home", ignoreCase = true)) {
                     tracks.add(ImportTrackMeta(t, s))
                 }
             }
         }
 
+        // 3d. Fallback: If still empty, query Pathfinder using anonymous token if available
+        if (tracks.isEmpty() && !foundToken.isNullOrBlank() && isPlaylist) {
+            try {
+                val pfTracks = fetchPlaylistPathfinderWithToken(id, foundToken)
+                if (pfTracks.isNotEmpty()) {
+                    tracks.addAll(pfTracks)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
         return Pair(playlistTitle, tracks)
+    }
+
+    private fun fetchPlaylistPathfinderWithToken(playlistId: String, token: String): List<ImportTrackMeta> {
+        val tracks = mutableListOf<ImportTrackMeta>()
+        try {
+            val conn = (URL("https://api-partner.spotify.com/pathfinder/v2/query").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 12000
+                readTimeout = 12000
+                doOutput = true
+                setRequestProperty("Authorization", "Bearer $token")
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Content-Type", "application/json;charset=UTF-8")
+                setRequestProperty("App-Platform", "WebPlayer")
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+            }
+
+            val payload = JSONObject().apply {
+                put("variables", JSONObject().apply {
+                    put("uri", "spotify:playlist:$playlistId")
+                    put("offset", 0)
+                    put("limit", 100)
+                    put("enableWatchFeedEntrypoint", false)
+                })
+                put("operationName", "fetchPlaylist")
+                put("extensions", JSONObject().apply {
+                    put("persistedQuery", JSONObject().apply {
+                        put("version", 1)
+                        put("sha256Hash", "21ea11a6ac75a5f3e01fd365d29c18e0a4a8b7dc09f89bbb5d73910190c6acaf")
+                    })
+                })
+            }
+
+            conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
+
+            if (conn.responseCode in 200..299) {
+                val text = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(text)
+                val items = json.optJSONObject("data")
+                    ?.optJSONObject("playlistV2")
+                    ?.optJSONObject("content")
+                    ?.optJSONArray("items")
+
+                if (items != null) {
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        val tData = item.optJSONObject("itemV2")?.optJSONObject("data") ?: continue
+                        val name = tData.optString("name", "")
+                        val uri = tData.optString("uri", "")
+                        val spotifyId = if (uri.startsWith("spotify:track:")) uri.removePrefix("spotify:track:") else ""
+                        val durMs = tData.optJSONObject("trackDuration")?.optLong("totalMilliseconds", 0L) ?: 0L
+
+                        val artistsArr = tData.optJSONObject("artists")?.optJSONArray("items")
+                        val artistList = mutableListOf<String>()
+                        if (artistsArr != null) {
+                            for (a in 0 until artistsArr.length()) {
+                                val aName = artistsArr.optJSONObject(a)?.optJSONObject("profile")?.optString("name") ?: ""
+                                if (aName.isNotBlank()) artistList.add(aName)
+                            }
+                        }
+                        val artist = artistList.joinToString(", ")
+                        if (name.isNotBlank()) {
+                            tracks.add(ImportTrackMeta(title = name, artist = artist, durationSeconds = (durMs / 1000).toInt(), spotifyId = spotifyId))
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return tracks
     }
 
     private suspend fun parseAmazonMusic(rawUrl: String, onProgress: (ImportProgress) -> Unit): Pair<String, List<ImportTrackMeta>> {
@@ -1034,18 +1190,44 @@ object MusicImportEngine {
 
     private fun resolveRedirectUrl(urlStr: String): String {
         return try {
-            var curUrl = urlStr
+            var curUrl = if (!urlStr.startsWith("http://") && !urlStr.startsWith("https://")) "https://$urlStr" else urlStr
             var hops = 0
-            while (hops < 5) {
+            while (hops < 7) {
                 val url = URL(curUrl)
-                val conn = (url.openConnection() as HttpURLConnection).apply {
+                var conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "HEAD"
-                    connectTimeout = 6000
-                    readTimeout = 6000
+                    connectTimeout = 8000
+                    readTimeout = 8000
                     instanceFollowRedirects = false
                     setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                 }
-                val code = conn.responseCode
+                var code = conn.responseCode
+                if (code == 405 || code == 400 || code == 403 || code in 200..299) {
+                    if (curUrl.contains("spotify.link") || curUrl.contains("spoti.fi") || curUrl.contains("amzn.to") || curUrl.contains("t.co")) {
+                        conn = (url.openConnection() as HttpURLConnection).apply {
+                            requestMethod = "GET"
+                            connectTimeout = 8000
+                            readTimeout = 8000
+                            instanceFollowRedirects = false
+                            setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+                        }
+                        code = conn.responseCode
+                        if (code in 300..399) {
+                            val loc = conn.getHeaderField("Location")
+                            if (!loc.isNullOrBlank()) {
+                                curUrl = if (loc.startsWith("http")) loc else URL(url, loc).toString()
+                                hops++
+                                continue
+                            }
+                        } else if (code in 200..299) {
+                            val body = conn.inputStream.bufferedReader().use { it.readText() }
+                            val targetMatch = Regex("""https://open\.spotify\.com/(?:intl-[a-z]{2}/)?(playlist|album|track)/[a-zA-Z0-9]+""").find(body)
+                            if (targetMatch != null) {
+                                return targetMatch.value
+                            }
+                        }
+                    }
+                }
                 if (code in 300..399) {
                     val loc = conn.getHeaderField("Location")
                     if (!loc.isNullOrBlank()) {
@@ -1183,6 +1365,13 @@ object MusicImportEngine {
                 cleaned.equals("Track", ignoreCase = true) ||
                 cleaned.equals("Song", ignoreCase = true) ||
                 cleaned.startsWith("Track Title", ignoreCase = true)) {
+                continue
+            }
+
+            // Do not treat bare URLs as song titles if someone pastes an unhandled link
+            if (cleaned.startsWith("http://", ignoreCase = true) ||
+                cleaned.startsWith("https://", ignoreCase = true) ||
+                cleaned.startsWith("spotify:", ignoreCase = true)) {
                 continue
             }
 
