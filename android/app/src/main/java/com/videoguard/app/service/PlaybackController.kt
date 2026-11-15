@@ -88,6 +88,9 @@ object PlaybackController {
     var isOfflineModeActive: Boolean = false
         private set
 
+    // Fast in-memory cache for resolved Spotify tracks to ensure instantaneous (0ms) playback
+    private val spotifyResolvedCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
     // Listener to dispatch JavaScript commands directly to the active YouTube WebView
     private var webViewCommandListener: ((String) -> Unit)? = null
 
@@ -335,24 +338,44 @@ object PlaybackController {
 
     fun playTrack(track: VideoItem, queue: List<VideoItem> = emptyList()) {
         if (track.id.startsWith("spotify_") || track.id.startsWith("pending_") || track.id.length != 11) {
+            val cleanTitle = track.title.trim()
+            val cleanArtist = track.artist.split(",").firstOrNull()?.trim() ?: track.artist.trim()
+            val cacheKey = "${cleanTitle.lowercase()}_${cleanArtist.lowercase()}"
+            val cachedId = spotifyResolvedCache[track.id] ?: spotifyResolvedCache[cacheKey]
+
+            if (cachedId != null && cachedId.length == 11) {
+                val targetTrack = track.copy(id = cachedId)
+                val updatedQueue = if (queue.isNotEmpty()) queue.map { if (it.id == track.id) targetTrack else it } else emptyList()
+                playTrack(targetTrack, updatedQueue)
+                return
+            }
+
             _currentTrack.value = track
             _isPlaying.value = true
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                val cleanTitle = track.title.trim()
-                val cleanArtist = track.artist.split(",").firstOrNull()?.trim() ?: track.artist.trim()
                 val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
 
-                // Fast instant InnerTube lookup (~200ms)
-                val fastResults = try {
-                    com.videoguard.app.data.YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true)
-                } catch (e: Exception) {
-                    emptyList()
+                // Parallel instant resolution: query both InnerTube and YouTubeSearchEngine concurrently
+                val d1 = kotlinx.coroutines.async {
+                    try {
+                        com.videoguard.app.data.YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true)
+                            .firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
+                    } catch (e: Exception) { null }
                 }
-                val best = fastResults.firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
-                    ?: com.videoguard.app.data.YouTubeSearchEngine.searchVideos(query, isMusicOnly = true).firstOrNull { it.id.length == 11 }
+                val d2 = kotlinx.coroutines.async {
+                    try {
+                        com.videoguard.app.data.YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)
+                            .firstOrNull { it.id.length == 11 }
+                    } catch (e: Exception) { null }
+                }
+
+                val best = d1.await() ?: d2.await()
                     ?: com.videoguard.app.data.MusicImportEngine.resolveSingleTrack(track.title, track.artist)
 
                 if (best != null && best.id.length == 11) {
+                    spotifyResolvedCache[track.id] = best.id
+                    spotifyResolvedCache[cacheKey] = best.id
+
                     val targetTrack = track.copy(
                         id = best.id,
                         duration = if (track.duration != "0:00" && track.duration.isNotBlank()) track.duration else best.duration,
@@ -362,7 +385,8 @@ object PlaybackController {
                         com.videoguard.app.data.UserDataRepository.updateTrackInPlaylists(track.id, targetTrack)
                     } catch (e: Exception) {}
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        playTrack(targetTrack, queue)
+                        val updatedQueue = if (queue.isNotEmpty()) queue.map { if (it.id == track.id) targetTrack else it } else emptyList()
+                        playTrack(targetTrack, updatedQueue)
                     }
                 }
             }
@@ -419,6 +443,33 @@ object PlaybackController {
 
             // Proactively check and replenish queue
             replenishQueueIfNeeded(track)
+
+            // Prefetch and pre-resolve upcoming Spotify queue tracks so Next Track plays with 0ms delay!
+            val upcomingSpotifyTracks = queue.dropWhile { it.id != track.id }.drop(1).take(3)
+                .filter { it.id.startsWith("spotify_") || it.id.length != 11 }
+            if (upcomingSpotifyTracks.isNotEmpty()) {
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                    for (upNext in upcomingSpotifyTracks) {
+                        val cTitle = upNext.title.trim()
+                        val cArtist = upNext.artist.split(",").firstOrNull()?.trim() ?: upNext.artist.trim()
+                        val k = "${cTitle.lowercase()}_${cArtist.lowercase()}"
+                        if (!spotifyResolvedCache.containsKey(upNext.id) && !spotifyResolvedCache.containsKey(k)) {
+                            val q = if (cArtist.isNotBlank()) "$cTitle $cArtist" else cTitle
+                            try {
+                                val found = com.videoguard.app.data.YouTubeSyncEngine.searchVideosInnerTube(q, filterToVideos = true)
+                                    .firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
+                                    ?: com.videoguard.app.data.YouTubeSearchEngine.searchVideos(q, isMusicOnly = true).firstOrNull { it.id.length == 11 }
+                                if (found != null && found.id.length == 11) {
+                                    spotifyResolvedCache[upNext.id] = found.id
+                                    spotifyResolvedCache[k] = found.id
+                                    val resolved = upNext.copy(id = found.id)
+                                    com.videoguard.app.data.UserDataRepository.updateTrackInPlaylists(upNext.id, resolved)
+                                }
+                            } catch (e: Exception) {}
+                        }
+                    }
+                }
+            }
         }
     }
 

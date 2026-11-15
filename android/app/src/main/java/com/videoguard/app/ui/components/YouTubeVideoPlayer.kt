@@ -133,12 +133,11 @@ fun YouTubeVideoPlayer(
                     )
                     setBackgroundColor(AndroidColor.BLACK)
 
-                    clearCache(true)
                     settings.apply {
                         javaScriptEnabled = true
                         mediaPlaybackRequiresUserGesture = false
                         domStorageEnabled = true
-                        cacheMode = WebSettings.LOAD_NO_CACHE
+                        cacheMode = WebSettings.LOAD_DEFAULT
                         allowContentAccess = true
                         allowFileAccess = true
                         allowFileAccessFromFileURLs = true
@@ -151,81 +150,7 @@ fun YouTubeVideoPlayer(
 
                     val chromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
                     settings.userAgentString = chromeUserAgent
-
-                    webViewClient = object : WebViewClient() {
-                        override fun shouldInterceptRequest(
-                            view: WebView?,
-                            request: android.webkit.WebResourceRequest?
-                        ): android.webkit.WebResourceResponse? {
-                            val url = request?.url?.toString() ?: ""
-                            if (url.contains(".css") && (url.contains("player") || url.contains("embed") || url.contains("ss/k=ytembeds"))) {
-                                try {
-                                    val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                                    connection.requestMethod = "GET"
-                                    request?.requestHeaders?.forEach { (k, v) ->
-                                        connection.setRequestProperty(k, v)
-                                    }
-                                    connection.connect()
-                                    val originalCss = connection.inputStream.bufferedReader().use { it.readText() }
-                                    val hideRules = """
-                                        .ytPlayerControlsContainerHost,
-                                        .ytPlayerControlsContainerRendered,
-                                        .ytmCustomControlHost,
-                                        .ytmWatchPlayerControlsHost,
-                                        .player-controls-content,
-                                        .player-controls-background-container,
-                                        .player-controls-background,
-                                        .player-controls-top,
-                                        .player-controls-middle,
-                                        .player-controls-bottom,
-                                        .ytwPlayerTopControlsHost,
-                                        .ytwPlayerBottomControlsHost,
-                                        .ytwPlayerMiddleControlsHost,
-                                        .ytmVideoInfoHost,
-                                        .ytwPlayerSeekOverlayHost,
-                                        .ytwPlayerFullscreenControlsHost,
-                                        .ytp-player-content,
-                                        .ytp-unmute,
-                                        .ytp-chrome-top,
-                                        .ytp-show-cards-title,
-                                        .ytp-pause-overlay,
-                                        .ytp-pause-overlay-container,
-                                        .ytp-youtube-button,
-                                        .ytp-watermark,
-                                        .ytp-copylink-button,
-                                        .ytp-impression-link,
-                                        .ytp-title,
-                                        .ytp-title-text,
-                                        .ytp-title-channel,
-                                        .ytp-endscreen-content,
-                                        .ytp-ce-element,
-                                        .ytp-cards-teaser,
-                                        .ytp-cards-button,
-                                        .ytp-gradient-top,
-                                        .ytp-gradient-bottom,
-                                        .ytp-chrome-bottom,
-                                        .ytp-scroll-min {
-                                            display: none !important;
-                                            opacity: 0 !important;
-                                            visibility: hidden !important;
-                                            pointer-events: none !important;
-                                            height: 0 !important;
-                                            width: 0 !important;
-                                        }
-                                    """.trimIndent()
-                                    val modifiedCss = originalCss + "\n" + hideRules
-                                    return android.webkit.WebResourceResponse(
-                                        "text/css",
-                                        "UTF-8",
-                                        java.io.ByteArrayInputStream(modifiedCss.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
-                                    )
-                                } catch (e: Exception) {
-                                    android.util.Log.e("InterceptReq", "Error modifying CSS", e)
-                                }
-                            }
-                            return super.shouldInterceptRequest(view, request)
-                        }
-                    }
+                    webViewClient = WebViewClient()
 
                     val bridge = YouTubeBridge(
                         readyCallback = {
@@ -309,6 +234,50 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             body, html { width: 100%; height: 100%; background-color: #000; overflow: hidden; pointer-events: none; user-select: none; }
             #player-wrapper { width: 100%; height: 100%; position: relative; overflow: hidden; background-color: #000; }
             #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
+            .ytPlayerControlsContainerHost,
+            .ytPlayerControlsContainerRendered,
+            .ytmCustomControlHost,
+            .ytmWatchPlayerControlsHost,
+            .player-controls-content,
+            .player-controls-background-container,
+            .player-controls-background,
+            .player-controls-top,
+            .player-controls-middle,
+            .player-controls-bottom,
+            .ytwPlayerTopControlsHost,
+            .ytwPlayerBottomControlsHost,
+            .ytwPlayerMiddleControlsHost,
+            .ytmVideoInfoHost,
+            .ytwPlayerSeekOverlayHost,
+            .ytwPlayerFullscreenControlsHost,
+            .ytp-player-content,
+            .ytp-unmute,
+            .ytp-chrome-top,
+            .ytp-show-cards-title,
+            .ytp-pause-overlay,
+            .ytp-pause-overlay-container,
+            .ytp-youtube-button,
+            .ytp-watermark,
+            .ytp-copylink-button,
+            .ytp-impression-link,
+            .ytp-title,
+            .ytp-title-text,
+            .ytp-title-channel,
+            .ytp-endscreen-content,
+            .ytp-ce-element,
+            .ytp-cards-teaser,
+            .ytp-cards-button,
+            .ytp-gradient-top,
+            .ytp-gradient-bottom,
+            .ytp-chrome-bottom,
+            .ytp-scroll-min {
+                display: none !important;
+                opacity: 0 !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
+                height: 0 !important;
+                width: 0 !important;
+            }
           </style>
           <script>
             window.userWantsPlay = true;

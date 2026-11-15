@@ -267,7 +267,7 @@ fun MainScreen() {
         val showVideoInYT = isPlayerExpanded && appMode == AppMode.YOUTUBE
 
         // Persistent Audio & Video Player Engine (Stays alive across all navigations & backgrounding!)
-        if (currentVideo != null) {
+        if (currentVideo != null && currentVideo!!.id.length == 11 && !currentVideo!!.id.startsWith("spotify_")) {
             val playerModifier = when {
                 isFullscreen -> Modifier
                     .fillMaxSize()
@@ -387,28 +387,6 @@ fun MainScreen() {
                     .fillMaxWidth()
             ) {
                 when {
-                    isSearchActive -> {
-                        SearchScreen(
-                            currentMode = appMode,
-                            onBack = { isSearchActive = false },
-                            onVideoSelected = { video, queue ->
-                                PlaybackController.playTrack(video, queue)
-                                isPlayerExpanded = true
-                                isSearchActive = false
-                            },
-                            onPlaylistClick = { pl ->
-                                activePlaylist = pl
-                                isSearchActive = false
-                            },
-                            onChannelClick = { video ->
-                                activeChannelVideo = video
-                                isSearchActive = false
-                            }
-                        )
-                    }
-                    isSupportActive -> {
-                        SupportScreen()
-                    }
                     activePlaylist != null -> {
                         PlaylistDetailScreen(
                             playlistId = activePlaylist!!.id,
@@ -438,6 +416,25 @@ fun MainScreen() {
                                 activePlaylist = playlist
                             }
                         )
+                    }
+                    isSearchActive -> {
+                        SearchScreen(
+                            currentMode = appMode,
+                            onBack = { isSearchActive = false },
+                            onVideoSelected = { video, queue ->
+                                PlaybackController.playTrack(video, queue)
+                                isPlayerExpanded = true
+                            },
+                            onPlaylistClick = { pl ->
+                                activePlaylist = pl
+                            },
+                            onChannelClick = { video ->
+                                activeChannelVideo = video
+                            }
+                        )
+                    }
+                    isSupportActive -> {
+                        SupportScreen()
                     }
                     isLibraryActive -> {
                         MusicLibraryScreen(

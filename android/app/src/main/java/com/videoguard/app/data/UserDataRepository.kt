@@ -1110,6 +1110,16 @@ object UserDataRepository {
             current[index] = pl.copy(videos = videos, customCoverUrl = cover)
             _playlists.value = current
             savePlaylists()
+        } else {
+            val newPl = UserPlaylist(
+                id = playlistId,
+                title = "Album",
+                videos = videos,
+                customCoverUrl = videos.firstOrNull()?.thumbnailUrl
+            )
+            current.add(newPl)
+            _playlists.value = current
+            savePlaylists()
         }
     }
 

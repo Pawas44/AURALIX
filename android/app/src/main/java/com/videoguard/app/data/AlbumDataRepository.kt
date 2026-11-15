@@ -280,6 +280,16 @@ object AlbumDataRepository {
                                 val pidMatch = pidRegex.find(itStr)
                                 val pid = pidMatch?.groupValues?.get(1) ?: ""
 
+                                val browseRegex = Regex(""""browseId":\s*"(MPREb_[^"]+)"""")
+                                val browseMatch = browseRegex.find(itStr)
+                                val browseId = browseMatch?.groupValues?.get(1) ?: ""
+
+                                val effectiveAlbumId = when {
+                                    pid.isNotBlank() -> pid
+                                    browseId.isNotBlank() -> browseId
+                                    else -> "album_${kotlin.math.abs(title.hashCode())}"
+                                }
+
                                 val thumbs = itObj.optJSONObject("thumbnail")?.optJSONObject("musicThumbnailRenderer")
                                     ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                                 val thumb = if (thumbs != null && thumbs.length() > 0) {
@@ -312,7 +322,7 @@ object AlbumDataRepository {
                                 val artistName = if (artists.isNotEmpty()) artists.joinToString(", ") else query
                                 outList.add(
                                     AlbumItem(
-                                        id = if (pid.isNotBlank()) pid else "album_${kotlin.math.abs(title.hashCode())}",
+                                        id = effectiveAlbumId,
                                         title = title,
                                         artist = artistName,
                                         coverUrl = thumb,
@@ -342,8 +352,8 @@ object AlbumDataRepository {
     suspend fun getOrFetchAlbumTracks(album: AlbumItem): List<VideoItem> = withContext(Dispatchers.IO) {
         if (album.tracks.isNotEmpty()) return@withContext album.tracks
 
-        // If it's a real YouTube Music album playlist (OLAK5uy_...)
-        if (album.id.startsWith("OLAK5uy_")) {
+        // If it's a real YouTube Music album playlist, browseId, or YouTube playlist
+        if (album.id.startsWith("OLAK5uy_") || album.id.startsWith("MPREb_") || album.id.startsWith("PL") || album.id.startsWith("VL")) {
             val plTracks = YouTubeSyncEngine.fetchPlaylistVideos(album.id)
             if (plTracks.isNotEmpty()) {
                 return@withContext plTracks.map {
@@ -355,12 +365,15 @@ object AlbumDataRepository {
             }
         }
 
-        val query = "${album.title} ${album.artist} full album songs"
-        val results = YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)
+        // Secondary fallback: search for individual tracks of this album
+        val query = "${album.title} ${album.artist} songs"
+        val results = YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true).ifEmpty {
+            YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)
+        }
         results.map {
             it.copy(
                 album = album.title,
-                artist = album.artist
+                artist = if (it.artist.isNotBlank() && it.artist != "YouTube Music") it.artist else album.artist
             )
         }
     }

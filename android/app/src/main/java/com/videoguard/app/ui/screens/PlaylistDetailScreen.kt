@@ -59,12 +59,24 @@ fun PlaylistDetailScreen(
         iconType = if (isDownloads) "download" else "playlist"
     )
 
-    val currentVideos = if (isDownloads) offlineTracks else (repoPlaylist?.videos ?: initialPlaylist?.videos ?: emptyList())
+    var dynamicVideos by remember(playlistId) {
+        mutableStateOf(if (isDownloads) offlineTracks else (repoPlaylist?.videos?.takeIf { it.isNotEmpty() } ?: initialPlaylist?.videos ?: emptyList()))
+    }
+
+    LaunchedEffect(repoPlaylist?.videos, offlineTracks) {
+        if (isDownloads) {
+            dynamicVideos = offlineTracks
+        } else if (repoPlaylist?.videos != null && repoPlaylist.videos.isNotEmpty()) {
+            dynamicVideos = repoPlaylist.videos
+        }
+    }
+
+    val currentVideos = dynamicVideos
     val totalDurationStr = remember(currentVideos) {
         UserDataRepository.formatCombinedDuration(currentVideos)
     }
 
-    var isLoading by remember(playlistId) { mutableStateOf(!isDownloads && playlist.videos.isEmpty()) }
+    var isLoading by remember(playlistId) { mutableStateOf(!isDownloads && currentVideos.isEmpty()) }
     var isRefreshing by remember(playlistId) { mutableStateOf(false) }
     var showAddSongsSheet by remember { mutableStateOf(false) }
     var addSongSearchQuery by remember { mutableStateOf("") }
@@ -73,9 +85,9 @@ fun PlaylistDetailScreen(
     val scope = rememberCoroutineScope()
 
     suspend fun refreshVideos() {
-        val isRemoteYouTubePlaylist = playlistId.startsWith("PL") || playlistId.startsWith("RD") || playlistId.startsWith("VL") || playlistId.startsWith("OLAK5uy_")
-        val isAlbumPlaylist = playlistId.startsWith("album_") || playlistId.startsWith("user_album_")
-        if (isDownloads || (!isRemoteYouTubePlaylist && !isAlbumPlaylist)) {
+        val isRemoteYouTubePlaylist = playlistId.startsWith("PL") || playlistId.startsWith("RD") || playlistId.startsWith("VL") || playlistId.startsWith("OLAK5uy_") || playlistId.startsWith("MPREb_")
+        val isAlbumPlaylist = playlistId.startsWith("album_") || playlistId.startsWith("user_album_") || playlistId.startsWith("OLAK5uy_") || playlistId.startsWith("MPREb_")
+        if (isDownloads) {
             isRefreshing = false
             isLoading = false
             return
@@ -84,17 +96,25 @@ fun PlaylistDetailScreen(
         val online = withContext(Dispatchers.IO) {
             if (isAlbumPlaylist) {
                 val album = com.videoguard.app.data.AlbumDataRepository.getAllAlbums().find { it.id == playlistId }
-                if (album != null) {
-                    com.videoguard.app.data.AlbumDataRepository.getOrFetchAlbumTracks(album)
-                } else {
-                    com.videoguard.app.data.YouTubeSearchEngine.searchVideos("${playlist.title} full album", isMusicOnly = true)
-                }
+                    ?: com.videoguard.app.data.AlbumItem(
+                        id = playlistId,
+                        title = playlist.title,
+                        artist = playlist.description.substringAfter("• ").substringBefore(" •").trim().ifBlank { playlist.title },
+                        coverUrl = playlist.customCoverUrl ?: "",
+                        releaseType = "Album"
+                    )
+                com.videoguard.app.data.AlbumDataRepository.getOrFetchAlbumTracks(album)
             } else {
                 YouTubeSyncEngine.fetchPlaylistVideos(playlistId)
             }
         }
         if (online.isNotEmpty()) {
-            UserDataRepository.updatePlaylistVideos(playlistId, online)
+            dynamicVideos = online
+            val updatedPl = playlist.copy(
+                videos = online,
+                customCoverUrl = playlist.customCoverUrl ?: online.firstOrNull()?.thumbnailUrl
+            )
+            UserDataRepository.savePlaylist(updatedPl)
         }
         isRefreshing = false
         isLoading = false

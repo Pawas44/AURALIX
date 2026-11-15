@@ -936,18 +936,19 @@ object YouTubeSyncEngine {
         val cleanId = when (rawId) {
             "LL" -> "VLLL"
             "WL" -> "VLWL"
-            else -> "VL$rawId"
+            else -> if (rawId.startsWith("OLAK5uy_") || rawId.startsWith("MPREb_")) rawId else "VL$rawId"
         }
 
         // InnerTube browse runner with continuation loop
         suspend fun queryInnerTubeBrowse(browseId: String): List<VideoItem> {
             val collected = mutableListOf<VideoItem>()
+            val isMusicBrowse = browseId.startsWith("MPREb_") || browseId.startsWith("OLAK5uy_")
             try {
                 val payload = JSONObject().apply {
-                    put("context", buildContext())
+                    put("context", if (isMusicBrowse) buildMusicContext() else buildContext())
                     put("browseId", browseId)
                 }
-                var resp = callInnerTube("browse", payload)
+                var resp = if (isMusicBrowse) (callInnerTubeMusic("browse", payload) ?: callInnerTube("browse", payload)) else callInnerTube("browse", payload)
                 var iterations = 0
                 while (resp != null && iterations < 50 && collected.size < maxVideos) {
                     val batch = mutableListOf<VideoItem>()
@@ -961,10 +962,10 @@ object YouTubeSyncEngine {
 
                     iterations++
                     val contPayload = JSONObject().apply {
-                        put("context", buildContext())
+                        put("context", if (isMusicBrowse) buildMusicContext() else buildContext())
                         put("continuation", token)
                     }
-                    resp = callInnerTube("browse", contPayload)
+                    resp = if (isMusicBrowse) (callInnerTubeMusic("browse", contPayload) ?: callInnerTube("browse", contPayload)) else callInnerTube("browse", contPayload)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -1228,6 +1229,9 @@ object YouTubeSyncEngine {
     private fun extractVideosRecursively(obj: Any, outList: MutableList<VideoItem>) {
         when (obj) {
             is JSONObject -> {
+                if (obj.has("musicResponsiveListItemRenderer")) {
+                    parseMusicResponsiveListItemRenderer(obj.optJSONObject("musicResponsiveListItemRenderer"))?.let { outList.add(it) }
+                }
                 if (obj.has("channelRenderer")) {
                     parseChannelRenderer(obj.optJSONObject("channelRenderer"))?.let { outList.add(it) }
                 }

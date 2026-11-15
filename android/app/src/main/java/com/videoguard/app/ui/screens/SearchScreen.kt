@@ -427,7 +427,7 @@ fun SearchScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        if (track.category == "Album" || track.id.startsWith("OLAK5uy_") || track.id.startsWith("album_")) {
+                                        if (track.category == "Album" || track.id.startsWith("OLAK5uy_") || track.id.startsWith("album_") || track.id.startsWith("MPREb_") || track.views.equals("Album", ignoreCase = true)) {
                                             val album = com.videoguard.app.data.AlbumItem(
                                                 id = track.id,
                                                 title = track.title,
