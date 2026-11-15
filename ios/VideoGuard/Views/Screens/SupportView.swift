@@ -85,88 +85,26 @@ struct SupportView: View {
                         }
                     }
 
-                    // 1-Tap Copyable UPI ID pill
-                    Button(action: {
-                        UIPasteboard.general.string = pawasUpiId
-                        triggerToast("UPI ID copied: \(pawasUpiId)")
-                    }) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("UPI ID")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(Color(hex: 0x94A3B8))
-                                Text(pawasUpiId)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
-                            Spacer()
-                            HStack(spacing: 4) {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(razorpayAccent)
-                                Text("Copy")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundColor(razorpayAccent)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.06))
-                        .cornerRadius(10)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                        )
-                    }
-
-                    // 1-Tap Copyable Mobile Number pill
-                    Button(action: {
-                        UIPasteboard.general.string = pawasPhoneNumber
-                        triggerToast("Mobile number copied: \(pawasPhoneNumber)")
-                    }) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Mobile / UPI Number (\(pawasName))")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(Color(hex: 0x94A3B8))
-                                Text(pawasPhoneNumber)
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
-                            Spacer()
-                            HStack(spacing: 4) {
-                                Image(systemName: "doc.on.doc")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(mintAccent)
-                                Text("Copy")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundColor(mintAccent)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.06))
-                        .cornerRadius(10)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
-                        )
-                    }
-
-                    // Limit / direct transfer tip
-                    HStack(alignment: .top, spacing: 8) {
-                        Text("💡")
-                            .font(.system(size: 12))
-                        Text("If your UPI app has a gallery limit (e.g. ₹2,000) or scan issue, pay directly to mobile number \(pawasPhoneNumber) in PhonePe/GPay or scan the QR code.")
-                            .font(.system(size: 11))
+                    // Clean Direct Payee Pill (1-Tap No Manual Effort)
+                    HStack {
+                        Image(systemName: "checkmark.seal.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(mintAccent)
+                        Text("To: \(pawasName) (\(pawasPhoneNumber))")
+                            .font(.system(size: 12.5, weight: .semibold))
                             .foregroundColor(Color(hex: 0xCBD5E1))
+                        Spacer()
+                        Text("1-Tap Direct UPI")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundColor(razorpayAccent)
                     }
-                    .padding(10)
-                    .background(Color(hex: 0x0F2942))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(Color.white.opacity(0.05))
                     .cornerRadius(10)
                     .overlay(
                         RoundedRectangle(cornerRadius: 10)
-                            .strokeBorder(razorpayAccent.opacity(0.3), lineWidth: 1)
+                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
                     )
 
                     Text("Select Amount (INR):")
