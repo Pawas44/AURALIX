@@ -1180,6 +1180,25 @@ object UserDataRepository {
         savePlaylists()
     }
 
+    fun updateTrackInPlaylists(oldId: String, newTrack: VideoItem) {
+        val current = _playlists.value.toMutableList()
+        var changed = false
+        for (i in current.indices) {
+            val pl = current[i]
+            val vIdx = pl.videos.indexOfFirst { it.id == oldId }
+            if (vIdx != -1) {
+                val updatedVideos = pl.videos.toMutableList()
+                updatedVideos[vIdx] = newTrack
+                current[i] = pl.copy(videos = updatedVideos)
+                changed = true
+            }
+        }
+        if (changed) {
+            _playlists.value = current
+            savePlaylists()
+        }
+    }
+
     private fun savePlaylists() {
         val sp = prefs ?: return
         try {

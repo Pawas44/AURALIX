@@ -334,6 +334,32 @@ object PlaybackController {
     }
 
     fun playTrack(track: VideoItem, queue: List<VideoItem> = emptyList()) {
+        if (track.id.startsWith("spotify_") || track.id.startsWith("pending_") || track.id.length != 11) {
+            _currentTrack.value = track
+            _isPlaying.value = true
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                val resolved = com.videoguard.app.data.MusicImportEngine.resolveSingleTrack(track.title, track.artist)
+                val targetTrack = if (resolved != null && resolved.id.length == 11) {
+                    track.copy(id = resolved.id, duration = if (track.duration != "0:00" && track.duration.isNotBlank()) track.duration else resolved.duration)
+                } else {
+                    val fallbackResults = com.videoguard.app.data.YouTubeSearchEngine.searchVideos("${track.title} ${track.artist}", isMusicOnly = true)
+                    val first = fallbackResults.firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
+                    if (first != null) {
+                        track.copy(id = first.id, duration = if (track.duration != "0:00" && track.duration.isNotBlank()) track.duration else first.duration)
+                    } else null
+                }
+                if (targetTrack != null) {
+                    try {
+                        com.videoguard.app.data.UserDataRepository.updateTrackInPlaylists(track.id, targetTrack)
+                    } catch (e: Exception) {}
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        playTrack(targetTrack, queue)
+                    }
+                }
+            }
+            return
+        }
+
         synchronized(audioEngineLock) {
             // Guarantee previous audio source is 100% stopped and released before new playback starts
             stopAllAudioSources()

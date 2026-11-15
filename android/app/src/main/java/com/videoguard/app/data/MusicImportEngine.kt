@@ -68,7 +68,7 @@ object MusicImportEngine {
             }
 
             val matchedVideos = matchTracksWithYouTube(trackMetas, onProgress)
-                .filter { it.id.length == 11 && !it.id.startsWith("search_") }
+                .filter { (it.id.length == 11 || it.id.startsWith("spotify_")) && !it.id.startsWith("search_") }
                 .toMutableList()
 
             if (matchedVideos.isEmpty()) {
@@ -115,7 +115,7 @@ object MusicImportEngine {
                 return@withContext Result.failure(IllegalStateException("No tracks found in playlist"))
             }
             val matchedVideos = matchTracksWithYouTube(tracks, onProgress)
-                .filter { it.id.length == 11 && !it.id.startsWith("search_") }
+                .filter { (it.id.length == 11 || it.id.startsWith("spotify_")) && !it.id.startsWith("search_") }
                 .toMutableList()
 
             if (matchedVideos.isEmpty()) {
@@ -688,6 +688,11 @@ object MusicImportEngine {
         }
     }
 
+    suspend fun resolveSingleTrack(title: String, artist: String): VideoItem? = withContext(Dispatchers.IO) {
+        val meta = ImportTrackMeta(title = title, artist = artist)
+        resolveTrackOnYouTube(meta)
+    }
+
     private suspend fun matchTracksWithYouTube(
         trackMetas: List<ImportTrackMeta>,
         onProgress: (ImportProgress) -> Unit
@@ -696,7 +701,7 @@ object MusicImportEngine {
         onProgress(ImportProgress("Matching tracks with YouTube Music...", 0, total))
 
         val matchedVideos = mutableListOf<VideoItem>()
-        val batchSize = 2 // controlled parallel batch
+        val batchSize = 6 // Fast parallel batching (ByTune-style responsive sync)
 
         for (i in trackMetas.indices step batchSize) {
             val batch = trackMetas.subList(i, minOf(i + batchSize, total))
@@ -711,20 +716,19 @@ object MusicImportEngine {
             for (idx in resolvedBatch.indices) {
                 val resolved = resolvedBatch[idx]
                 val meta = batch[idx]
-                if (resolved != null) {
-                    val cleanTitle = meta.title.ifBlank { resolved.title }
-                    val cleanArtist = meta.artist.ifBlank { resolved.artist }
-                    val cleanAlbum = if (meta.album.isNotBlank()) meta.album else (if (resolved.album.isBlank() || resolved.album == "Single") "Single" else resolved.album)
+                val cleanTitle = meta.title.ifBlank { resolved?.title ?: "" }
+                val cleanArtist = meta.artist.ifBlank { resolved?.artist ?: "" }
+                val cleanAlbum = if (meta.album.isNotBlank()) meta.album else (resolved?.album ?: "Single")
 
-                    // BYTUNE RULE: Always prioritize the official Spotify / Source HD Cover Art!
-                    val finalThumb = if (meta.coverUrl.isNotBlank()) {
-                        meta.coverUrl
-                    } else if (resolved.thumbnailUrl.isNotBlank() && !resolved.thumbnailUrl.contains("unsplash")) {
-                        resolved.thumbnailUrl
-                    } else {
-                        "https://img.youtube.com/vi/${resolved.id}/hqdefault.jpg"
-                    }
+                val finalThumb = if (meta.coverUrl.isNotBlank()) {
+                    meta.coverUrl
+                } else if (resolved != null && resolved.thumbnailUrl.isNotBlank() && !resolved.thumbnailUrl.contains("unsplash")) {
+                    resolved.thumbnailUrl
+                } else {
+                    "https://img.youtube.com/vi/${resolved?.id ?: "default"}/hqdefault.jpg"
+                }
 
+                if (resolved != null && resolved.id.length == 11) {
                     matchedVideos.add(
                         resolved.copy(
                             title = cleanTitle,
@@ -732,6 +736,32 @@ object MusicImportEngine {
                             album = cleanAlbum,
                             thumbnailUrl = finalThumb,
                             channelAvatarUrl = finalThumb
+                        )
+                    )
+                } else {
+                    // ByTune Resilient Rule: Never drop imported songs! Retain authentic metadata for on-demand playback
+                    val fallbackId = if (meta.spotifyId.isNotBlank()) "spotify_${meta.spotifyId}" else "spotify_${UUID.randomUUID().toString().take(11)}"
+                    val durStr = if (meta.durationSeconds > 0) {
+                        val m = meta.durationSeconds / 60
+                        val s = meta.durationSeconds % 60
+                        "$m:${if (s < 10) "0$s" else "$s"}"
+                    } else "3:30"
+
+                    matchedVideos.add(
+                        VideoItem(
+                            id = fallbackId,
+                            title = cleanTitle,
+                            channelName = cleanArtist,
+                            channelAvatarUrl = finalThumb,
+                            thumbnailUrl = finalThumb,
+                            views = "Popular",
+                            uploadTime = "Imported",
+                            duration = durStr,
+                            description = cleanTitle,
+                            isMusicTrack = true,
+                            artist = cleanArtist,
+                            album = cleanAlbum,
+                            category = "Music"
                         )
                     )
                 }
@@ -1470,9 +1500,9 @@ object MusicImportEngine {
                 val url = URL(curUrl)
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
-                    connectTimeout = 10000
-                    readTimeout = 10000
-                    instanceFollowRedirects = false
+                    connectTimeout = 12000
+                    readTimeout = 12000
+                    instanceFollowRedirects = true
                     setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
                     setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                     setRequestProperty("Accept-Language", "en-US,en;q=0.9")
@@ -1486,7 +1516,13 @@ object MusicImportEngine {
                         continue
                     }
                 }
-                val stream = if (code in 200..299) conn.inputStream else conn.errorStream ?: return ""
+                val encoding = conn.getHeaderField("Content-Encoding")
+                val rawStream = if (code in 200..299) conn.inputStream else conn.errorStream ?: return ""
+                val stream = if (encoding?.equals("gzip", ignoreCase = true) == true) {
+                    java.util.zip.GZIPInputStream(rawStream)
+                } else {
+                    rawStream
+                }
                 return stream.bufferedReader().use { it.readText() }
             }
             ""
