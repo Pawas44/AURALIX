@@ -128,7 +128,7 @@ object PlaybackController {
         val volPercent = (multiplier * 100).toInt().coerceIn(0, 100)
         sendCommand("setVolume($volPercent)")
         try {
-            exoPlayer?.volume = multiplier.coerceIn(0f, 1f)
+            offlineMediaPlayer?.setVolume(multiplier.coerceIn(0f, 1f), multiplier.coerceIn(0f, 1f))
         } catch (e: Exception) {}
     }
 

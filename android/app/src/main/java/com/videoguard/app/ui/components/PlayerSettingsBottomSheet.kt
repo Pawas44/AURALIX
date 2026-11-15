@@ -193,45 +193,6 @@ fun PlayerSettingsBottomSheet(
         }
     }
 
-    // Quality Selection Dialog
-    if (showQualityDialog) {
-        val qualities = listOf("Auto (1080p)", "1080p", "720p", "480p", "360p")
-        AlertDialog(
-            onDismissRequest = { showQualityDialog = false },
-            title = { Text("Select Quality", color = Color.White, fontWeight = FontWeight.Bold) },
-            text = {
-                Column {
-                    qualities.forEach { q ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    PlaybackController.setPlaybackQuality(q)
-                                    showQualityDialog = false
-                                }
-                                .padding(vertical = 12.dp, horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(q, color = Color.White, fontSize = 16.sp)
-                            if (currentQuality == q) {
-                                Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF3EA6FF))
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showQualityDialog = false }) {
-                    Text("Close", color = Color(0xFFAAAAAA))
-                }
-            },
-            containerColor = Color(0xFF282828),
-            shape = RoundedCornerShape(16.dp)
-        )
-    }
-
     // Speed Selection Dialog
     if (showSpeedDialog) {
         val speeds = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f)
@@ -469,7 +430,7 @@ fun PlayerSettingsBottomSheet(
                     Text("Title: ${currentTrack?.title ?: "N/A"}", color = Color.White, fontSize = 13.sp)
                     Text("Channel: ${currentTrack?.channelName ?: "N/A"}", color = Color(0xFFAAAAAA), fontSize = 13.sp)
                     Text("Video ID: ${currentTrack?.id ?: "N/A"}", color = Color(0xFFAAAAAA), fontSize = 13.sp)
-                    Text("Resolution: $currentQuality", color = Color(0xFFAAAAAA), fontSize = 13.sp)
+                    Text("Quality: ${AppSettingsRepository.streamingQuality.value}", color = Color(0xFFAAAAAA), fontSize = 13.sp)
                     Text("Audio: High Bitrate WebM/Opus", color = Color(0xFFAAAAAA), fontSize = 13.sp)
                     Text("Background Play: ${if (isBackgroundPlay) "Active" else "Disabled"}", color = Color(0xFFAAAAAA), fontSize = 13.sp)
                 }
