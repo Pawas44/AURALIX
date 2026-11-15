@@ -132,6 +132,30 @@ object YouTubeSyncEngine {
     }
 
     /**
+     * Dedicated YouTube Music song search with official Song filter parameter.
+     */
+    suspend fun searchMusicVideosInnerTube(query: String): List<VideoItem> = withContext(Dispatchers.IO) {
+        val outVideos = mutableListOf<VideoItem>()
+        try {
+            val payload = JSONObject().apply {
+                put("context", buildMusicContext())
+                put("query", query)
+                put("params", "EgWKAQIIAWoQEAMQBBAJEAoQBRAREBAQFA%3D%3D") // Filter: Songs
+            }
+            val resp = callInnerTubeMusic("search", payload)
+            if (resp != null) {
+                extractVideosRecursively(resp, outVideos)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("YouTubeSyncEngine", "searchMusicVideosInnerTube error", e)
+        }
+        if (outVideos.isEmpty()) {
+            return@withContext searchVideosInnerTube("$query song", filterToVideos = true)
+        }
+        outVideos.distinctBy { it.id }
+    }
+
+    /**
      * Extracts personalized creator/channel topics from the user's authentic YouTube account,
      * watch history, search queries, subscribed channels, and profile.
      */
@@ -483,6 +507,55 @@ object YouTubeSyncEngine {
                     android.util.Log.e("YouTubeSyncEngine", "Unpack playlist error: $plId", e)
                 }
             }
+        }
+
+        // --- MOOD-SPECIFIC FEED (Workout, Energize, Relax, Focus, Party, Commute) ---
+        if (!mood.isNullOrBlank()) {
+            val moodQuery = when (mood.lowercase()) {
+                "workout" -> "Workout gym phonk pump up music"
+                "energize" -> "Energize pop dance high energy songs"
+                "relax" -> "Relax chill acoustic lofi songs"
+                "focus" -> "Focus study beats instrumental ambient"
+                "commute" -> "Commute road trip feel good car songs"
+                "party" -> "Party club dance edm festival hits"
+                else -> "$mood music songs hits"
+            }
+
+            // 1. Fetch targeted song search results from YouTube Music InnerTube
+            val searchedMoodTracks = searchMusicVideosInnerTube(moodQuery)
+
+            // 2. Unpack any playlists found in the mood browse payload
+            val unpackedMoodTracks = mutableListOf<VideoItem>()
+            if (playlistIdsToUnpack.isNotEmpty()) {
+                for (plId in playlistIdsToUnpack.take(3)) {
+                    try {
+                        val unpacked = fetchPlaylistVideos(plId, maxVideos = 25)
+                        unpackedMoodTracks.addAll(unpacked)
+                    } catch (_: Exception) {}
+                }
+            }
+
+            // Combine and tag every song with the mood
+            val combinedMoodTracks = (searchedMoodTracks + unpackedMoodTracks + allParsedTracks)
+                .distinctBy { it.id }
+                .map { it.copy(mood = mood, category = mood) }
+                .ifEmpty {
+                    VideoRepository.getMusicByMood(mood)
+                }
+
+            val mQuickPicks = combinedMoodTracks.take(15)
+            val mListenAgain = combinedMoodTracks.drop(5).take(15).ifEmpty { mQuickPicks }
+            val mRecommended = combinedMoodTracks.drop(10).take(15).ifEmpty { mQuickPicks }
+            val mTrending = combinedMoodTracks.drop(15).take(15).ifEmpty { mQuickPicks }
+
+            val result = MusicFeedData(
+                quickPicks = mQuickPicks,
+                listenAgain = mListenAgain,
+                recommendedVideos = mRecommended,
+                trendingCharts = mTrending
+            )
+            _musicFeed.value = result
+            return@withContext result
         }
 
         // --- Personalized User Account Integration ---
@@ -942,7 +1015,8 @@ object YouTubeSyncEngine {
         // InnerTube browse runner with continuation loop
         suspend fun queryInnerTubeBrowse(browseId: String): List<VideoItem> {
             val collected = mutableListOf<VideoItem>()
-            val isMusicBrowse = browseId.startsWith("MPREb_") || browseId.startsWith("OLAK5uy_")
+            val isMusicBrowse = browseId.startsWith("MPREb_") || browseId.startsWith("OLAK5uy_") ||
+                    browseId.startsWith("VLRDCL") || browseId.startsWith("RDCL") || browseId.startsWith("VL")
             try {
                 val payload = JSONObject().apply {
                     put("context", if (isMusicBrowse) buildMusicContext() else buildContext())

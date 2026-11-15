@@ -226,6 +226,22 @@ class YouTubeSyncEngine: ObservableObject {
         return Self.distinctVideos(outVideos)
     }
 
+    func searchMusicVideosInnerTube(query: String) async -> [VideoItem] {
+        var outVideos: [VideoItem] = []
+        let payload: [String: Any] = [
+            "context": buildMusicContext(),
+            "query": query,
+            "params": "EgWKAQIIAWoQEAMQBBAJEAoQBRAREBAQFA%3D%3D"
+        ]
+        if let resp = await callInnerTubeMusic(endpoint: "search", payload: payload) {
+            Self.extractVideosRecursively(resp, into: &outVideos)
+        }
+        if outVideos.isEmpty {
+            return await searchVideosInnerTube(query: "\(query) song", filterToVideos: true)
+        }
+        return Self.distinctVideos(outVideos)
+    }
+
     func getUserAccountTopics() -> [String] {
         let history = UserDataRepository.shared.watchHistory
         var counts: [String: Int] = [:]
@@ -521,6 +537,47 @@ class YouTubeSyncEngine: ObservableObject {
             }
         }
 
+        // --- MOOD-SPECIFIC FEED (Workout, Energize, Relax, Focus, Party, Commute) ---
+        if let mood = mood, !mood.isEmpty {
+            let moodQuery: String
+            switch mood.lowercased() {
+            case "workout": moodQuery = "Workout gym phonk pump up music"
+            case "energize": moodQuery = "Energize pop dance high energy songs"
+            case "relax": moodQuery = "Relax chill acoustic lofi songs"
+            case "focus": moodQuery = "Focus study beats instrumental ambient"
+            case "commute": moodQuery = "Commute road trip feel good car songs"
+            case "party": moodQuery = "Party club dance edm festival hits"
+            default: moodQuery = "\(mood) music songs hits"
+            }
+
+            let searchedMoodTracks = await searchMusicVideosInnerTube(query: moodQuery)
+            var unpackedMoodTracks: [VideoItem] = []
+            if !playlistIdsToUnpack.isEmpty {
+                for plId in playlistIdsToUnpack.prefix(3) {
+                    let unpacked = await fetchPlaylistVideos(playlistId: plId, maxVideos: 25)
+                    unpackedMoodTracks.append(contentsOf: unpacked)
+                }
+            }
+
+            let combinedMoodTracks = Self.distinctVideos(searchedMoodTracks + unpackedMoodTracks + allParsedTracks)
+                .map { VideoItem(id: $0.id, title: $0.title, channelName: $0.channelName, channelId: $0.channelId, views: $0.views, uploadDate: $0.uploadDate, duration: $0.duration, thumbnailURL: $0.thumbnailURL, category: mood, isLive: $0.isLive, subscriberCount: $0.subscriberCount, channelAvatarURL: $0.channelAvatarURL, verifiedBadge: $0.verifiedBadge, isMusicTrack: true, artist: $0.artist, album: $0.album, mood: mood) }
+
+            let finalTracks = combinedMoodTracks.isEmpty ? VideoRepository.shared.getMusicByMood(mood: mood) : combinedMoodTracks
+            let mQuickPicks = Array(finalTracks.prefix(15))
+            let mListenAgain = Array(finalTracks.dropFirst(5).prefix(15)).isEmpty ? mQuickPicks : Array(finalTracks.dropFirst(5).prefix(15))
+            let mRecommended = Array(finalTracks.dropFirst(10).prefix(15)).isEmpty ? mQuickPicks : Array(finalTracks.dropFirst(10).prefix(15))
+            let mTrending = Array(finalTracks.dropFirst(15).prefix(15)).isEmpty ? mQuickPicks : Array(finalTracks.dropFirst(15).prefix(15))
+
+            let result = MusicFeedData(
+                quickPicks: mQuickPicks,
+                listenAgain: mListenAgain,
+                recommendedVideos: mRecommended,
+                trendingCharts: mTrending
+            )
+            musicFeed = result
+            return result
+        }
+
         let userHistory = UserDataRepository.shared.watchHistory
         let accountMusicTracks = Self.distinctVideos(userHistory.filter {
             $0.isMusicTrack ||
@@ -679,10 +736,13 @@ class YouTubeSyncEngine: ObservableObject {
 
         func queryBrowse(_ browseId: String) async -> [VideoItem] {
             var collected: [VideoItem] = []
-            var resp = await callInnerTube(endpoint: "browse", payload: [
-                "context": buildContext(),
+            let isMusicBrowse = browseId.hasPrefix("MPREb_") || browseId.hasPrefix("OLAK5uy_") ||
+                browseId.hasPrefix("VLRDCL") || browseId.hasPrefix("RDCL") || browseId.hasPrefix("VL")
+            let initialPayload: [String: Any] = [
+                "context": isMusicBrowse ? buildMusicContext() : buildContext(),
                 "browseId": browseId
-            ])
+            ]
+            var resp = isMusicBrowse ? (await callInnerTubeMusic(endpoint: "browse", payload: initialPayload) ?? await callInnerTube(endpoint: "browse", payload: initialPayload)) : await callInnerTube(endpoint: "browse", payload: initialPayload)
             var iterations = 0
             while let r = resp, iterations < 50 && collected.count < maxVideos {
                 var batch: [VideoItem] = []
@@ -690,10 +750,11 @@ class YouTubeSyncEngine: ObservableObject {
                 if !batch.isEmpty { collected.append(contentsOf: batch) }
                 guard let token = Self.extractContinuationToken(r), !token.isEmpty else { break }
                 iterations += 1
-                resp = await callInnerTube(endpoint: "browse", payload: [
-                    "context": buildContext(),
+                let contPayload: [String: Any] = [
+                    "context": isMusicBrowse ? buildMusicContext() : buildContext(),
                     "continuation": token
-                ])
+                ]
+                resp = isMusicBrowse ? (await callInnerTubeMusic(endpoint: "browse", payload: contPayload) ?? await callInnerTube(endpoint: "browse", payload: contPayload)) : await callInnerTube(endpoint: "browse", payload: contPayload)
             }
             return Self.distinctVideos(collected)
         }

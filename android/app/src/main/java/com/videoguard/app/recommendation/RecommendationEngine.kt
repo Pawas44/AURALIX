@@ -81,14 +81,25 @@ object RecommendationEngine {
             // Deduplication tracker across all smart sections
             val placedTrackIds = mutableSetOf<String>()
 
-            // 1. Made For You (Top affinity + liked tracks + favorite artists)
-            val scoredMadeForYou = RecommendationRanker.rank(
-                candidates = candidatePool,
-                recentHistory = userHistory.take(15),
-                likedTracks = likedPlaylist,
-                discoveryFactor = 0.15,
-                maxPerArtist = 2
-            ).map { it.track }.filter { it.id !in placedTrackIds }.take(10)
+            // 1. Made For You / Selected Mood Mix
+            val scoredMadeForYou = if (!selectedMood.isNullOrBlank()) {
+                val moodCandidates = candidatePool.filter {
+                    it.mood.equals(selectedMood, ignoreCase = true) ||
+                    it.category.equals(selectedMood, ignoreCase = true)
+                }
+                val candidatesToUse = if (moodCandidates.isNotEmpty()) moodCandidates else candidatePool
+                val pool = if (forceRefresh) candidatesToUse.shuffled() else candidatesToUse
+                pool.filter { it.id !in placedTrackIds }.take(12)
+            } else {
+                val pool = if (forceRefresh) candidatePool.shuffled() else candidatePool
+                RecommendationRanker.rank(
+                    candidates = pool,
+                    recentHistory = userHistory.take(15),
+                    likedTracks = likedPlaylist,
+                    discoveryFactor = if (forceRefresh) 0.40 else 0.15,
+                    maxPerArtist = 2
+                ).map { it.track }.filter { it.id !in placedTrackIds }.take(10)
+            }
             placedTrackIds.addAll(scoredMadeForYou.map { it.id })
 
             // 2. Discover Weekly (~30 tracks, ~40% familiar / ~60% discovery, 7-day cache)
@@ -182,19 +193,22 @@ object RecommendationEngine {
             placedTrackIds.addAll(similarToPlaylist.map { it.id })
 
             // 12. Mood-based recommendations
-            val targetMood = selectedMood ?: "Energize"
-            val moodTracks = candidatePool.filter { track ->
+            val targetMood = selectedMood?.ifBlank { null } ?: "Energize"
+            val rawMoodTracks = candidatePool.filter { track ->
                 track.id !in placedTrackIds &&
                 (track.mood.equals(targetMood, ignoreCase = true) ||
                  track.category.equals(targetMood, ignoreCase = true))
-            }.take(10)
+            }
+            val moodTracks = if (forceRefresh) rawMoodTracks.shuffled().take(10) else rawMoodTracks.take(10)
 
             // Recommended for you (Fall-through / high ranking general)
+            val remainingCandidates = candidatePool.filter { it.id !in placedTrackIds }
+            val poolToRank = if (forceRefresh) remainingCandidates.shuffled() else remainingCandidates
             val recommendedForYou = RecommendationRanker.rank(
-                candidates = candidatePool.filter { it.id !in placedTrackIds },
+                candidates = poolToRank,
                 recentHistory = userHistory,
                 likedTracks = likedPlaylist,
-                discoveryFactor = 0.30,
+                discoveryFactor = if (forceRefresh) 0.45 else 0.30,
                 maxPerArtist = 2
             ).map { it.track }.take(12)
 

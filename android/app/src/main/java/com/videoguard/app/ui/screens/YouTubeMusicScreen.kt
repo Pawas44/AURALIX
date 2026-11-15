@@ -71,15 +71,26 @@ fun YouTubeMusicScreen(
     var selectedVideoForPlaylist by remember { mutableStateOf<VideoItem?>(null) }
     var explanationTrack by remember { mutableStateOf<VideoItem?>(null) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var isRefreshing by remember { mutableStateOf(false) }
     val albumsList = remember(userPlaylists.size, userHistory.size) { AlbumDataRepository.getAllAlbums() }
 
-    // Initial load and whenever mood changes, user history updates, or Spotify connects
-    LaunchedEffect(selectedMood, userHistory.size, userPlaylists.size, isSpotifyConnected) {
+    // Re-fetch music feed whenever mood changes
+    LaunchedEffect(selectedMood) {
+        isRefreshing = true
+        YouTubeSyncEngine.fetchMusicHomeFeed(selectedMood.ifBlank { null })
+        RecommendationEngine.refreshHomeFeed(selectedMood.ifBlank { null }, forceRefresh = true)
+        isRefreshing = false
+    }
+
+    // Initial load and updates on user history or Spotify connection
+    LaunchedEffect(userHistory.size, userPlaylists.size, isSpotifyConnected) {
         if (isSpotifyConnected && spotifyTasteTracks.isEmpty()) {
             coroutineScope.launch { SpotifyConnectEngine.syncAll() }
         }
-        YouTubeSyncEngine.fetchMusicHomeFeed(selectedMood.ifBlank { null })
-        RecommendationEngine.refreshHomeFeed(selectedMood.ifBlank { null })
+        if (selectedMood.isBlank()) {
+            YouTubeSyncEngine.fetchMusicHomeFeed(null)
+            RecommendationEngine.refreshHomeFeed(null)
+        }
     }
 
     val listState = rememberLazyListState()
@@ -161,20 +172,33 @@ fun YouTubeMusicScreen(
                                 .background(Color.White.copy(alpha = 0.10f))
                                 .border(1.dp, LiquidGlassDefaults.BorderSpecular, RoundedCornerShape(16.dp))
                                 .clickable {
-                                    coroutineScope.launch {
-                                        RecommendationEngine.refreshHomeFeed(selectedMood.ifBlank { null }, forceRefresh = true)
-                                        Toast.makeText(context, "Recommendations refreshed", Toast.LENGTH_SHORT).show()
+                                    if (!isRefreshing) {
+                                        coroutineScope.launch {
+                                            isRefreshing = true
+                                            YouTubeSyncEngine.fetchMusicHomeFeed(selectedMood.ifBlank { null })
+                                            RecommendationEngine.refreshHomeFeed(selectedMood.ifBlank { null }, forceRefresh = true)
+                                            isRefreshing = false
+                                            Toast.makeText(context, "Recommendations refreshed with new songs", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 }
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Refresh",
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
-                            )
+                            if (isRefreshing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Refresh",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
                         }
 
                         Box(
