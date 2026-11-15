@@ -225,26 +225,24 @@ fun MainScreen() {
             Surface(
                 onClick = { com.videoguard.app.data.AppUpdateManager.showDialogAgain() },
                 shape = RoundedCornerShape(20.dp),
-                color = Color(0xFF141624),
+                color = Color(0xFF191B1F),
                 border = androidx.compose.foundation.BorderStroke(
                     1.2.dp,
-                    androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFF3395FF), Color(0xFF40DCA5)))
+                    androidx.compose.ui.graphics.Brush.linearGradient(listOf(Color(0xFFFF5733), Color(0xFFFF8A65)))
                 ),
-                shadowElevation = 8.dp
+                shadowElevation = 10.dp
             ) {
                 Row(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.SystemUpdate,
-                        contentDescription = "Update Available",
-                        tint = Color(0xFF40DCA5),
-                        modifier = Modifier.size(18.dp)
+                    Text(
+                        text = "🚀",
+                        fontSize = 15.sp
                     )
                     Text(
-                        text = if (isDownloadingUpdate) "Downloading update..." else "⚡ Update Available (${updateInfo?.tagName}) • Tap to install",
+                        text = if (isDownloadingUpdate) "Downloading update..." else "Update Available (${updateInfo?.tagName}) • Tap to upgrade",
                         color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
