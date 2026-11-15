@@ -317,6 +317,15 @@ object MusicImportEngine {
                 if (obj.has("compactVideoRenderer")) {
                     parseVideoRendererItem(obj.optJSONObject("compactVideoRenderer"))?.let { outList.add(it) }
                 }
+                if (obj.has("playlistVideoRenderer")) {
+                    parseVideoRendererItem(obj.optJSONObject("playlistVideoRenderer"))?.let { outList.add(it) }
+                }
+                if (obj.has("playlistPanelVideoRenderer")) {
+                    parseVideoRendererItem(obj.optJSONObject("playlistPanelVideoRenderer"))?.let { outList.add(it) }
+                }
+                if (obj.has("gridVideoRenderer")) {
+                    parseVideoRendererItem(obj.optJSONObject("gridVideoRenderer"))?.let { outList.add(it) }
+                }
                 if (obj.has("lockupViewModel")) {
                     parseLockupViewModel(obj.optJSONObject("lockupViewModel"))?.let { outList.add(it) }
                 }
@@ -608,16 +617,20 @@ object MusicImportEngine {
             // 1. YouTube Music Official Songs Catalog (ByTune method - exact studio audio tracks)
             for (q in queries) {
                 val results = searchInnerTubeDirect(q, useMusicApi = true, params = YTM_SONGS_FILTER)
-                matched = bestMatch(meta, results)
-                if (matched != null) break
+                if (results.isNotEmpty()) {
+                    matched = bestMatch(meta, results) ?: results.firstOrNull { it.id.length == 11 }
+                    if (matched != null) break
+                }
             }
 
             // 2. YouTube Music Catalog without songs filter (in case songs filter hid a regional track)
             if (matched == null) {
                 for (q in queries) {
                     val fallbackYtm = searchInnerTubeDirect(q, useMusicApi = true, params = "")
-                    matched = bestMatch(meta, fallbackYtm)
-                    if (matched != null) break
+                    if (fallbackYtm.isNotEmpty()) {
+                        matched = bestMatch(meta, fallbackYtm) ?: fallbackYtm.firstOrNull { it.id.length == 11 }
+                        if (matched != null) break
+                    }
                 }
             }
 
@@ -625,33 +638,49 @@ object MusicImportEngine {
             if (matched == null) {
                 for (q in queries) {
                     val ytResults = searchInnerTubeDirect("$q official audio", useMusicApi = false, params = YT_VIDEO_FILTER)
-                    matched = bestMatch(meta, ytResults)
-                    if (matched != null) break
+                    if (ytResults.isNotEmpty()) {
+                        matched = bestMatch(meta, ytResults) ?: ytResults.firstOrNull { it.id.length == 11 }
+                        if (matched != null) break
+                    }
                 }
             }
 
-            // 4. Free YouTube web scraping
-            if (matched == null) {
-                val primaryQ = queries.firstOrNull() ?: "${meta.title} ${meta.artist}"
-                val webResults = searchYouTubeFreeWeb(primaryQ)
-                matched = bestMatch(meta, webResults)
-                if (matched == null && webResults.isNotEmpty()) {
-                    matched = webResults.firstOrNull { it.id.length == 11 }
-                }
-            }
-
-            // 5. Secondary fallback to general search for "${meta.title} ${meta.artist}"
+            // 4. Secondary fallback to general search for "${meta.title} ${meta.artist}"
             if (matched == null) {
                 val primaryQ = queries.firstOrNull() ?: "${meta.title} ${meta.artist}"
                 val fallbackResults = searchInnerTubeDirect(primaryQ, useMusicApi = false, params = "")
-                matched = bestMatch(meta, fallbackResults) ?: fallbackResults.firstOrNull { it.id.length == 11 }
+                if (fallbackResults.isNotEmpty()) {
+                    matched = bestMatch(meta, fallbackResults) ?: fallbackResults.firstOrNull { it.id.length == 11 }
+                }
+            }
+
+            // 5. YouTubeSyncEngine search fallback (reliable Web client used across app)
+            if (matched == null) {
+                try {
+                    val primaryQ = queries.firstOrNull() ?: "${meta.title} ${meta.artist}"
+                    val syncResults = YouTubeSyncEngine.searchVideosInnerTube(primaryQ, filterToVideos = true)
+                    if (syncResults.isNotEmpty()) {
+                        matched = bestMatch(meta, syncResults) ?: syncResults.firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
+                    }
+                } catch (e: Exception) {}
             }
 
             // 6. YouTubeSearchEngine fallback
             if (matched == null) {
                 val primaryQ = queries.firstOrNull() ?: "${meta.title} ${meta.artist}"
                 val engineResults = YouTubeSearchEngine.searchVideos(primaryQ, isMusicOnly = true)
-                matched = bestMatch(meta, engineResults) ?: engineResults.firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
+                if (engineResults.isNotEmpty()) {
+                    matched = bestMatch(meta, engineResults) ?: engineResults.firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
+                }
+            }
+
+            // 7. Free YouTube web scraping
+            if (matched == null) {
+                val primaryQ = queries.firstOrNull() ?: "${meta.title} ${meta.artist}"
+                val webResults = searchYouTubeFreeWeb(primaryQ)
+                if (webResults.isNotEmpty()) {
+                    matched = bestMatch(meta, webResults) ?: webResults.firstOrNull { it.id.length == 11 }
+                }
             }
 
             if (matched != null && matched.id.length == 11) {
@@ -683,7 +712,7 @@ object MusicImportEngine {
         onProgress(ImportProgress("Matching tracks with YouTube Music...", 0, total))
 
         val matchedVideos = mutableListOf<VideoItem>()
-        val batchSize = 3 // controlled parallel batch
+        val batchSize = 2 // controlled parallel batch
 
         for (i in trackMetas.indices step batchSize) {
             val batch = trackMetas.subList(i, minOf(i + batchSize, total))
@@ -1223,7 +1252,7 @@ object MusicImportEngine {
     private fun cleanTitleWords(title: String): String {
         return title.replace(Regex("""[([{【「『][^)\]}】」』]*[)\]}】」』]"""), " ")
             .replace(Regex("""(?i)\b(official\s+video|official\s+audio|music\s+video|lyric\s+video|lyrics|audio|video|hd|4k|ft\.?|feat\.?)\b"""), " ")
-            .replace(Regex("""[^a-zA-Z0-9\s]"""), " ")
+            .replace(Regex("""[^\p{L}\p{N}\s]"""), " ")
             .replace(Regex("""\s+"""), " ")
             .trim()
             .lowercase()
@@ -1315,15 +1344,15 @@ object MusicImportEngine {
 
         // 3. Title matching (Character Dice similarity + word overlap + substring)
         val sim = diceSimilarity(targetTitleClean, candTitleClean)
-        val containsSubstr = (targetTitleClean.length >= 3 && candTitleClean.contains(targetTitleClean)) ||
-                             (candTitleClean.length >= 3 && targetTitleClean.contains(candTitleClean))
+        val containsSubstr = (targetTitleClean.length >= 2 && candTitleClean.contains(targetTitleClean)) ||
+                             (candTitleClean.length >= 2 && targetTitleClean.contains(candTitleClean))
 
-        val targetWords = targetTitleClean.split(" ").filter { it.length >= 2 }
-        val candWords = candTitleClean.split(" ").filter { it.length >= 2 }
+        val targetWords = targetTitleClean.split(" ").filter { it.isNotBlank() }
+        val candWords = candTitleClean.split(" ").filter { it.isNotBlank() }
         val sharedWords = targetWords.filter { candWords.contains(it) }
         val wordOverlap = if (targetWords.isNotEmpty()) sharedWords.size.toFloat() / targetWords.size else 0f
 
-        val titleMatches = sim >= 0.40f || containsSubstr || wordOverlap >= 0.50f
+        val titleMatches = sim >= 0.35f || containsSubstr || wordOverlap >= 0.40f || targetTitleClean.isBlank()
         if (!titleMatches) return null
 
         // 4. Artist check
