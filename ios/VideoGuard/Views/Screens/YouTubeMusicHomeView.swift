@@ -172,15 +172,29 @@ struct YouTubeMusicHomeView: View {
                                     .foregroundColor(.white)
                             }
                             Spacer()
-                            Button(action: {
-                                if let first = quickPicks.first ?? allMusicTracks.first {
-                                    onTrackSelected(first, quickPicks.isEmpty ? allMusicTracks : quickPicks)
-                                }
-                            }) {
-                                Text("Play all")
-                                    .font(.system(size: 12, weight: .semibold))
+                            HStack(spacing: 8) {
+                                Button(action: {
+                                    guard !isRefreshing else { return }
+                                    Task {
+                                        isRefreshing = true
+                                        _ = await syncEngine.fetchMusicHomeFeed(mood: selectedMood.isEmpty ? nil : selectedMood, forceRefresh: true)
+                                        isRefreshing = false
+                                    }
+                                }) {
+                                    HStack(spacing: 5) {
+                                        if isRefreshing {
+                                            ProgressView()
+                                                .scaleEffect(0.7)
+                                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                        } else {
+                                            Image(systemName: "arrow.clockwise")
+                                                .font(.system(size: 11, weight: .semibold))
+                                        }
+                                        Text("Refresh")
+                                            .font(.system(size: 12, weight: .semibold))
+                                    }
                                     .foregroundColor(.white)
-                                    .padding(.horizontal, 14)
+                                    .padding(.horizontal, 12)
                                     .padding(.vertical, 6)
                                     .background(Color.white.opacity(0.10))
                                     .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -188,6 +202,25 @@ struct YouTubeMusicHomeView: View {
                                         RoundedRectangle(cornerRadius: 16)
                                             .strokeBorder(LiquidGlassDefaults.borderSpecular, lineWidth: 1)
                                     )
+                                }
+
+                                Button(action: {
+                                    if let first = quickPicks.first ?? allMusicTracks.first {
+                                        onTrackSelected(first, quickPicks.isEmpty ? allMusicTracks : quickPicks)
+                                    }
+                                }) {
+                                    Text("Play all")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 6)
+                                        .background(Color.white.opacity(0.10))
+                                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 16)
+                                                .strokeBorder(LiquidGlassDefaults.borderSpecular, lineWidth: 1)
+                                        )
+                                }
                             }
                         }
                         .padding(.horizontal, 14)

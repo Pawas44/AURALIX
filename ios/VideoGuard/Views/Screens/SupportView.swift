@@ -3,7 +3,7 @@ import SwiftUI
 // ========================================================
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
 // ========================================================
-private let pawasUpiId = "9315135782@ybl"
+private let pawasUpiId = "9315135782@naviaxis"
 private let pawasName = "PAWAS PANT"
 private let razorpayURL = URL(string: "https://razorpay.me/@pawas")!
 private let bmcProfileURL = URL(string: "https://buymeacoffee.com/findex")!
@@ -23,6 +23,7 @@ struct SupportView: View {
     @State private var customAmount: String = ""
     @State private var copiedToast: Bool = false
     @State private var toastMessage: String = ""
+    @State private var showQRCode: Bool = false
 
     private let presetAmounts = ["50", "100", "250", "500"]
 
@@ -149,6 +150,39 @@ struct SupportView: View {
                                 .strokeBorder(Color.white.opacity(0.2), lineWidth: 1)
                         )
                     }
+
+                    // Optional: Show Pawas Pant's Official UPI QR Code for direct scanning
+                    Button(action: {
+                        withAnimation { showQRCode.toggle() }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "qrcode")
+                            Text(showQRCode ? "Hide UPI QR Code" : "Show UPI QR Code")
+                        }
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color(hex: 0xA0AEC0))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+
+                    if showQRCode {
+                        VStack(spacing: 8) {
+                            Image("QRPawasUPI")
+                                .resizable()
+                                .interpolation(.none)
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 200, height: 200)
+                                .padding(12)
+                                .background(Color.white)
+                                .cornerRadius(16)
+
+                            Text("Scan with PhonePe, GPay, Paytm or Navi")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(Color(hex: 0xCBD5E1))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                    }
                 }
                 .padding(18)
                 .background(razorpayDark)
@@ -156,47 +190,6 @@ struct SupportView: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: 20)
                         .strokeBorder(razorpayAccent.opacity(0.4), lineWidth: 1.2)
-                )
-
-                // ========================================================
-                // 2. Buy Me a Coffee Card (Opens in Browser)
-                // ========================================================
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack {
-                        Button(action: {
-                            UIApplication.shared.open(bmcProfileURL)
-                        }) {
-                            HStack(spacing: 10) {
-                                OfficialBmcBadge()
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Buy Me a Coffee")
-                                        .font(.system(size: 16, weight: .bold))
-                                        .foregroundColor(.white)
-                                    Text("International cards, PayPal & Apple Pay")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(Color(hex: 0xA0AEC0))
-                                }
-                            }
-                        }
-                    }
-
-                    Text("Support AURALIX from anywhere in the world using your preferred international payment method.")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color(hex: 0xCBD5E1))
-                        .lineSpacing(3)
-
-                    // Official Buy Me a Coffee Widget Button matching user screenshot
-                    OfficialBmcWidgetButton {
-                        UIApplication.shared.open(bmcProfileURL)
-                    }
-                }
-                .padding(18)
-                .background(coffeeDark)
-                .cornerRadius(20)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20)
-                        .strokeBorder(coffeeGold.opacity(0.4), lineWidth: 1.2)
                 )
 
                 // ========================================================
@@ -260,8 +253,7 @@ struct SupportView: View {
         let fallbackUrlStr = !cleanAmt.isEmpty && cleanAmt != "0" ? "\(razorpayURL.absoluteString)?amount=\(cleanAmt)" : razorpayURL.absoluteString
         let fallbackURL = URL(string: fallbackUrlStr) ?? razorpayURL
 
-        if let encoded = upiString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-           let upiURL = URL(string: encoded) {
+        if let upiURL = URL(string: upiString) {
             UIApplication.shared.open(upiURL, options: [:]) { success in
                 if !success {
                     UIApplication.shared.open(fallbackURL)

@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
 import com.videoguard.app.BuildConfig
 import com.videoguard.app.R
 import com.videoguard.app.data.AppUpdateManager
@@ -40,8 +42,8 @@ import com.videoguard.app.data.AppUpdateManager
 // ========================================================
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
 // ========================================================
-// Put your exact UPI VPA here (e.g. pawas@oksbi, pawas@paytm, etc.)
-const val PAWAS_UPI_ID = "9315135782@ybl"
+// Navi Axis UPI ID linked to Bank of Baroda for Pawas Pant
+const val PAWAS_UPI_ID = "9315135782@naviaxis"
 const val PAWAS_NAME = "PAWAS PANT"
 private const val RAZORPAY_URL = "https://razorpay.me/@pawas"
 private const val BMC_PROFILE_URL = "https://buymeacoffee.com/findex"
@@ -66,6 +68,7 @@ fun SupportScreen(
 
     var selectedAmount by remember { mutableStateOf("100") }
     var customAmount by remember { mutableStateOf("") }
+    var showQrCode by remember { mutableStateOf(false) }
 
     val presetAmounts = listOf("50", "100", "250", "500")
     val effectiveAmount = customAmount.ifBlank { selectedAmount }.ifBlank { "100" }
@@ -279,73 +282,55 @@ fun SupportScreen(
                         fontWeight = FontWeight.Medium
                     )
                 }
-            }
-        }
 
-        // ========================================================
-        // 2. Buy Me a Coffee Card (Opens in Browser)
-        // ========================================================
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .shadow(12.dp, RoundedCornerShape(20.dp), ambientColor = Color.Black.copy(alpha = 0.4f)),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = CoffeeDark),
-            border = androidx.compose.foundation.BorderStroke(1.2.dp, CoffeeGold.copy(alpha = 0.4f))
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(18.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // Header with Official Buy Me a Coffee Brand
+                // Optional: Show Pawas Pant's Official UPI QR Code for direct scanning
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.Center
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                openBrowserUrl(context, BMC_PROFILE_URL)
-                            },
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OfficialBmcBadge()
+                    TextButton(onClick = { showQrCode = !showQrCode }) {
+                        Icon(
+                            imageVector = Icons.Filled.QrCode,
+                            contentDescription = null,
+                            tint = Color(0xFFA0AEC0),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (showQrCode) "Hide UPI QR Code" else "Show UPI QR Code",
+                            color = Color(0xFFA0AEC0),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
 
-                        Column {
-                            Text(
-                                text = "Buy Me a Coffee",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
+                if (showQrCode) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.White)
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.qr_pawas_upi),
+                                contentDescription = "Pawas Pant UPI QR",
+                                modifier = Modifier.size(200.dp)
                             )
                             Text(
-                                text = "International cards, PayPal & Apple Pay",
-                                color = Color(0xFFA0AEC0),
-                                fontSize = 11.sp
+                                text = "Scan with PhonePe, GPay, Paytm or Navi",
+                                color = Color(0xFF1E293B),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
                 }
-
-                Text(
-                    text = "Support AURALIX from anywhere in the world using your preferred international payment method.",
-                    color = Color(0xFFCBD5E1),
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
-                )
-
-                // Official Buy Me a Coffee Widget Button (matching screenshot)
-                OfficialBmcWidgetButton(
-                    onClick = {
-                        openBrowserUrl(context, BMC_PROFILE_URL)
-                    }
-                )
             }
         }
 

@@ -446,7 +446,7 @@ class YouTubeSyncEngine: ObservableObject {
     }
 
     // MARK: - Music Home Feed
-    func fetchMusicHomeFeed(mood: String? = nil) async -> MusicFeedData {
+    func fetchMusicHomeFeed(mood: String? = nil, forceRefresh: Bool = false) async -> MusicFeedData {
         var quickPicks: [VideoItem] = []
         var listenAgain: [VideoItem] = []
         var recommendedVideos: [VideoItem] = []
@@ -568,7 +568,7 @@ class YouTubeSyncEngine: ObservableObject {
                     return t
                 }
 
-            let finalTracks = combinedMoodTracks.isEmpty ? VideoRepository.shared.getMusicByMood(mood: mood) : combinedMoodTracks
+            let finalTracks = combinedMoodTracks.isEmpty ? VideoRepository.getMusicByMood(mood) : combinedMoodTracks
             let mQuickPicks = Array(finalTracks.prefix(15))
             let mListenAgain = Array(finalTracks.dropFirst(5).prefix(15)).isEmpty ? mQuickPicks : Array(finalTracks.dropFirst(5).prefix(15))
             let mRecommended = Array(finalTracks.dropFirst(10).prefix(15)).isEmpty ? mQuickPicks : Array(finalTracks.dropFirst(10).prefix(15))
@@ -617,9 +617,9 @@ class YouTubeSyncEngine: ObservableObject {
             ? Self.distinctVideos(trendingCharts)
             : Self.distinctVideos(Array(allParsedTracks.dropFirst(4)))
 
-        let resolvedQuick = finalQuickPicks.isEmpty ? (userHistory.isEmpty ? VideoRepository.sampleVideos : Array(userHistory.prefix(10))) : finalQuickPicks
-        let resolvedListen = finalListenAgain.isEmpty ? (userHistory.isEmpty ? VideoRepository.sampleVideos : Array(userHistory.prefix(10))) : finalListenAgain
-        let resolvedRec = finalRecommended.isEmpty ? resolvedQuick : finalRecommended
+        let resolvedQuick = finalQuickPicks.isEmpty ? (userHistory.isEmpty ? VideoRepository.sampleVideos : Array(userHistory.prefix(10))) : (forceRefresh ? finalQuickPicks.shuffled() : finalQuickPicks)
+        let resolvedListen = finalListenAgain.isEmpty ? (userHistory.isEmpty ? VideoRepository.sampleVideos : Array(userHistory.prefix(10))) : (forceRefresh ? finalListenAgain.shuffled() : finalListenAgain)
+        let resolvedRec = finalRecommended.isEmpty ? resolvedQuick : (forceRefresh ? finalRecommended.shuffled() : finalRecommended)
         let resolvedTrend = finalTrending.isEmpty ? resolvedQuick : finalTrending
 
         let result = MusicFeedData(
@@ -742,6 +742,15 @@ class YouTubeSyncEngine: ObservableObject {
         }
         let cleanId = (rawId == "LL" || rawId == "WL") ? "VL\(rawId)" : "VL\(rawId)"
 
+        func performBrowseCall(payload: [String: Any], isMusic: Bool) async -> [String: Any]? {
+            if isMusic {
+                if let m = await callInnerTubeMusic(endpoint: "browse", payload: payload) {
+                    return m
+                }
+            }
+            return await callInnerTube(endpoint: "browse", payload: payload)
+        }
+
         func queryBrowse(_ browseId: String) async -> [VideoItem] {
             var collected: [VideoItem] = []
             let isMusicBrowse = browseId.hasPrefix("MPREb_") || browseId.hasPrefix("OLAK5uy_") ||
@@ -750,7 +759,7 @@ class YouTubeSyncEngine: ObservableObject {
                 "context": isMusicBrowse ? buildMusicContext() : buildContext(),
                 "browseId": browseId
             ]
-            var resp = isMusicBrowse ? (await callInnerTubeMusic(endpoint: "browse", payload: initialPayload) ?? await callInnerTube(endpoint: "browse", payload: initialPayload)) : await callInnerTube(endpoint: "browse", payload: initialPayload)
+            var resp = await performBrowseCall(payload: initialPayload, isMusic: isMusicBrowse)
             var iterations = 0
             while let r = resp, iterations < 50 && collected.count < maxVideos {
                 var batch: [VideoItem] = []
@@ -762,7 +771,7 @@ class YouTubeSyncEngine: ObservableObject {
                     "context": isMusicBrowse ? buildMusicContext() : buildContext(),
                     "continuation": token
                 ]
-                resp = isMusicBrowse ? (await callInnerTubeMusic(endpoint: "browse", payload: contPayload) ?? await callInnerTube(endpoint: "browse", payload: contPayload)) : await callInnerTube(endpoint: "browse", payload: contPayload)
+                resp = await performBrowseCall(payload: contPayload, isMusic: isMusicBrowse)
             }
             return Self.distinctVideos(collected)
         }
