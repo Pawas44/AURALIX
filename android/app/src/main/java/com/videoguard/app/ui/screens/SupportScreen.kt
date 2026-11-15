@@ -41,7 +41,7 @@ import com.videoguard.app.data.AppUpdateManager
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
 // ========================================================
 // Put your exact UPI VPA here (e.g. pawas@oksbi, pawas@paytm, etc.)
-const val PAWAS_UPI_ID = "9315135782@naviaxis"
+const val PAWAS_UPI_ID = "9315135782@ybl"
 const val PAWAS_NAME = "PAWAS PANT"
 private const val RAZORPAY_URL = "https://razorpay.me/@pawas"
 private const val BMC_PROFILE_URL = "https://buymeacoffee.com/findex"

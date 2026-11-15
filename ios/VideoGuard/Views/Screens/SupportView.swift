@@ -3,7 +3,7 @@ import SwiftUI
 // ========================================================
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
 // ========================================================
-private let pawasUpiId = "9315135782@naviaxis"
+private let pawasUpiId = "9315135782@ybl"
 private let pawasName = "PAWAS PANT"
 private let razorpayURL = URL(string: "https://razorpay.me/@pawas")!
 private let bmcProfileURL = URL(string: "https://buymeacoffee.com/findex")!
