@@ -234,12 +234,12 @@ fun SupportScreen(
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                // Action 1: Open Installed UPI App Directly
+                // Action 1: Direct Dedicated PhonePe Launch
                 Button(
                     onClick = {
-                        openUpiPayment(context, effectiveAmount)
+                        openSpecificUpiApp(context, effectiveAmount, "com.phonepe.app")
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = RazorpayAccent),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5F259F)),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
@@ -248,10 +248,31 @@ fun SupportScreen(
                     OfficialUpiArrows(modifier = Modifier.size(width = 24.dp, height = 16.dp))
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Pay ₹$effectiveAmount via UPI App",
+                        text = "Pay ₹$effectiveAmount via PhonePe",
                         color = Color.White,
                         fontSize = 14.5.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Action 2: GPay, Paytm & Other UPI Apps Chooser
+                Button(
+                    onClick = {
+                        openUpiPayment(context, effectiveAmount)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = RazorpayAccent),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                ) {
+                    OfficialUpiArrows(modifier = Modifier.size(width = 24.dp, height = 16.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Pay via GPay / Paytm / Other UPI",
+                        color = Color.White,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
 
@@ -644,15 +665,40 @@ fun OfficialBmcBadge(modifier: Modifier = Modifier) {
 // PAYMENT & BROWSER HELPERS
 // ========================================================
 
+private fun buildUpiUri(amount: String): Uri {
+    val tr = "AUR" + System.currentTimeMillis()
+    val amt = amount.toDoubleOrNull() ?: 100.0
+    val formattedAmount = String.format(java.util.Locale.US, "%.2f", amt)
+    val encodedName = Uri.encode(PAWAS_NAME)
+    return Uri.parse(
+        "upi://pay?pa=$PAWAS_UPI_ID&pn=$encodedName&am=$formattedAmount&cu=INR&tr=$tr&tn=Support%20AURALIX"
+    )
+}
+
 /**
- * Launches installed UPI apps (Google Pay, PhonePe, Paytm, BHIM, Cred)
+ * Directly targets specific UPI app package (e.g. PhonePe 'com.phonepe.app')
+ * bypassing third-party app interceptors like CRED.
+ */
+private fun openSpecificUpiApp(context: Context, amount: String, packageName: String) {
+    val upiUri = buildUpiUri(amount)
+    val intent = Intent(Intent.ACTION_VIEW, upiUri).apply {
+        setPackage(packageName)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        // Fallback to general chooser if app not installed
+        openUpiPayment(context, amount)
+    }
+}
+
+/**
+ * Launches installed UPI apps chooser (Google Pay, PhonePe, Paytm, BHIM, Cred)
  * with pre-filled payee name and amount. Falls back to Razorpay if no UPI apps exist.
  */
 private fun openUpiPayment(context: Context, amount: String) {
-    val encodedName = Uri.encode(PAWAS_NAME)
-    val upiUri = Uri.parse(
-        "upi://pay?pa=$PAWAS_UPI_ID&pn=$encodedName&am=$amount&cu=INR&tn=Support%20AURALIX"
-    )
+    val upiUri = buildUpiUri(amount)
     val upiIntent = Intent(Intent.ACTION_VIEW, upiUri).apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }

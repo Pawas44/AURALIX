@@ -250,7 +250,10 @@ struct SupportView: View {
 
     private func openUpiPayment(amount: String) {
         let nameEncoded = pawasName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? pawasName
-        let upiString = "upi://pay?pa=\(pawasUpiId)&pn=\(nameEncoded)&am=\(amount)&cu=INR&tn=Support%20AURALIX"
+        let tr = "AUR\(Int(Date().timeIntervalSince1970 * 1000))"
+        let amt = Double(amount) ?? 100.0
+        let formattedAmount = String(format: "%.2f", amt)
+        let upiString = "upi://pay?pa=\(pawasUpiId)&pn=\(nameEncoded)&am=\(formattedAmount)&cu=INR&tr=\(tr)&tn=Support%20AURALIX"
         if let encoded = upiString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
            let upiURL = URL(string: encoded),
            UIApplication.shared.canOpenURL(upiURL) {
