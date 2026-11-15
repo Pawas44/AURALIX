@@ -41,9 +41,8 @@ import com.videoguard.app.data.AppUpdateManager
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
 // ========================================================
 // Put your exact UPI VPA here (e.g. pawas@oksbi, pawas@paytm, etc.)
-const val PAWAS_UPI_ID = "9315135782@naviaxis"
-const val PAWAS_NAME = "PAWAS PANT"
-const val PAWAS_PHONE_NUMBER = "9315135782"
+const val PAWAS_UPI_ID = "pawas@fam"
+const val PAWAS_NAME = "Pawas"
 private const val RAZORPAY_URL = "https://razorpay.me/@pawas"
 private const val BMC_PROFILE_URL = "https://buymeacoffee.com/findex"
 
@@ -234,10 +233,10 @@ fun SupportScreen(
                     shape = RoundedCornerShape(12.dp)
                 )
 
-                // Action 1: Instant 100% Success Checkout via Razorpay (PhonePe, GPay, Paytm, Cards)
+                // Action 1: Open Installed UPI App Directly
                 Button(
                     onClick = {
-                        openRazorpayWithAmount(context, effectiveAmount)
+                        openUpiPayment(context, effectiveAmount)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = RazorpayAccent),
                     shape = RoundedCornerShape(14.dp),
@@ -245,46 +244,20 @@ fun SupportScreen(
                         .fillMaxWidth()
                         .height(50.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Bolt,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    OfficialUpiArrows(modifier = Modifier.size(width = 24.dp, height = 16.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Pay ₹$effectiveAmount via PhonePe / UPI (Instant)",
+                        text = "Pay ₹$effectiveAmount via UPI App",
                         color = Color.White,
-                        fontSize = 14.sp,
+                        fontSize = 14.5.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
-                // Action 2: Direct PhonePe App Launch
-                Button(
-                    onClick = {
-                        openPhonePeAppDirectly(context)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5F259F)),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(46.dp)
-                ) {
-                    OfficialUpiArrows(modifier = Modifier.size(width = 24.dp, height = 16.dp))
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = "Open PhonePe App Directly",
-                        color = Color.White,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                // Action 3: General UPI Intent for GPay, Paytm & Other Apps
+                // Action 2: Web Payment Gateway Fallback
                 OutlinedButton(
                     onClick = {
-                        openUpiPayment(context, effectiveAmount)
+                        openRazorpayWithAmount(context, effectiveAmount)
                     },
                     shape = RoundedCornerShape(14.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
@@ -292,10 +265,15 @@ fun SupportScreen(
                         .fillMaxWidth()
                         .height(44.dp)
                 ) {
-                    OfficialUpiArrows(modifier = Modifier.size(width = 22.dp, height = 14.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Filled.OpenInBrowser,
+                        contentDescription = null,
+                        tint = Color(0xFFCBD5E1),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Other UPI Apps (GPay, Paytm, BHIM)",
+                        text = "Open Razorpay Web Portal ↗",
                         color = Color(0xFFCBD5E1),
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.Medium
@@ -673,31 +651,6 @@ private fun openRazorpayWithAmount(context: Context, amount: String) {
     val cleanAmt = amount.trim()
     val url = if (cleanAmt.isNotBlank() && cleanAmt != "0") "$RAZORPAY_URL?amount=$cleanAmt" else RAZORPAY_URL
     openBrowserUrl(context, url)
-}
-
-/**
- * Direct launch of PhonePe application.
- * Copies the registered UPI number to clipboard and opens PhonePe home,
- * allowing native 100% P2P transfer with zero NPCI risk blocks.
- */
-private fun openPhonePeAppDirectly(context: Context) {
-    val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-    val clip = android.content.ClipData.newPlainText("UPI Number", PAWAS_PHONE_NUMBER)
-    clipboardManager?.setPrimaryClip(clip)
-    Toast.makeText(context, "Number $PAWAS_PHONE_NUMBER copied! Opening PhonePe...", Toast.LENGTH_LONG).show()
-
-    val launchIntent = context.packageManager.getLaunchIntentForPackage("com.phonepe.app")
-    if (launchIntent != null) {
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        try {
-            context.startActivity(launchIntent)
-        } catch (_: Exception) {
-            openRazorpayWithAmount(context, "")
-        }
-    } else {
-        // Fallback to Razorpay if PhonePe not installed
-        openRazorpayWithAmount(context, "")
-    }
 }
 
 /**

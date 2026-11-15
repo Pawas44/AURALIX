@@ -3,9 +3,8 @@ import SwiftUI
 // ========================================================
 // SUPPORT CONFIGURATION (Pawas Payment Handles)
 // ========================================================
-private let pawasUpiId = "9315135782@naviaxis"
-private let pawasName = "PAWAS PANT"
-private let pawasPhoneNumber = "9315135782"
+private let pawasUpiId = "pawas@fam"
+private let pawasName = "Pawas"
 private let razorpayURL = URL(string: "https://razorpay.me/@pawas")!
 private let bmcProfileURL = URL(string: "https://buymeacoffee.com/findex")!
 
@@ -112,17 +111,14 @@ struct SupportView: View {
                         }
                     }
 
-                    // Action 1: Instant Razorpay Checkout (PhonePe, GPay, Paytm, Cards)
+                    // Action 1: Open Installed UPI App Directly
                     Button(action: {
-                        let cleanAmt = effectiveAmount.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let urlStr = !cleanAmt.isEmpty && cleanAmt != "0" ? "\(razorpayURL.absoluteString)?amount=\(cleanAmt)" : razorpayURL.absoluteString
-                        if let targetURL = URL(string: urlStr) {
-                            UIApplication.shared.open(targetURL)
-                        }
+                        openUpiPayment(amount: effectiveAmount)
                     }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "bolt.fill")
-                            Text("Pay ₹\(effectiveAmount) via PhonePe / UPI (Instant)")
+                        HStack(spacing: 10) {
+                            OfficialUpiArrowsView()
+                                .frame(width: 24, height: 16)
+                            Text("Pay ₹\(effectiveAmount) via UPI App")
                         }
                         .font(.system(size: 14.5, weight: .bold))
                         .foregroundColor(.white)
@@ -132,14 +128,17 @@ struct SupportView: View {
                         .cornerRadius(14)
                     }
 
-                    // Action 2: Direct UPI App Scheme
+                    // Action 2: Web Payment Gateway Fallback
                     Button(action: {
-                        openUpiPayment(amount: effectiveAmount)
+                        let cleanAmt = effectiveAmount.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let urlStr = !cleanAmt.isEmpty && cleanAmt != "0" ? "\(razorpayURL.absoluteString)?amount=\(cleanAmt)" : razorpayURL.absoluteString
+                        if let targetURL = URL(string: urlStr) {
+                            UIApplication.shared.open(targetURL)
+                        }
                     }) {
                         HStack(spacing: 6) {
-                            OfficialUpiArrowsView()
-                                .frame(width: 20, height: 14)
-                            Text("Other UPI Apps (Direct Intent)")
+                            Image(systemName: "arrow.up.right.square")
+                            Text("Open Razorpay Web Portal ↗")
                         }
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundColor(Color(hex: 0xCBD5E1))
@@ -258,13 +257,19 @@ struct SupportView: View {
         let amt = Double(amount) ?? 100.0
         let formattedAmount = String(format: "%.2f", amt)
         let upiString = "upi://pay?pa=\(pawasUpiId)&pn=\(nameEncoded)&am=\(formattedAmount)&cu=INR&tr=\(tr)&tn=Support%20AURALIX"
+        let cleanAmt = amount.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackUrlStr = !cleanAmt.isEmpty && cleanAmt != "0" ? "\(razorpayURL.absoluteString)?amount=\(cleanAmt)" : razorpayURL.absoluteString
+        let fallbackURL = URL(string: fallbackUrlStr) ?? razorpayURL
+
         if let encoded = upiString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-           let upiURL = URL(string: encoded),
-           UIApplication.shared.canOpenURL(upiURL) {
-            UIApplication.shared.open(upiURL)
+           let upiURL = URL(string: encoded) {
+            UIApplication.shared.open(upiURL, options: [:]) { success in
+                if !success {
+                    UIApplication.shared.open(fallbackURL)
+                }
+            }
         } else {
-            // Fallback to Razorpay web URL
-            UIApplication.shared.open(razorpayURL)
+            UIApplication.shared.open(fallbackURL)
         }
     }
 }
