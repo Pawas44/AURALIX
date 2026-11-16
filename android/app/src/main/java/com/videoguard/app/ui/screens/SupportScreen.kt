@@ -260,7 +260,7 @@ fun SupportScreen(
                 // Action 2: Web Payment Gateway Fallback
                 OutlinedButton(
                     onClick = {
-                        openRazorpayWithAmount(context, effectiveAmount)
+                        openRazorpayPortal(context)
                     },
                     shape = RoundedCornerShape(14.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
@@ -631,10 +631,9 @@ private fun buildUpiUri(amount: String): Uri {
     )
 }
 
-private fun openRazorpayWithAmount(context: Context, amount: String) {
-    val cleanAmt = amount.trim()
-    val url = if (cleanAmt.isNotBlank() && cleanAmt != "0") "$RAZORPAY_URL?amount=$cleanAmt" else RAZORPAY_URL
-    openBrowserUrl(context, url)
+private fun openRazorpayPortal(context: Context) {
+    // razorpay.me/@pawas is a handle page that must be opened cleanly without ?amount= query param
+    openBrowserUrl(context, RAZORPAY_URL)
 }
 
 /**
@@ -653,7 +652,7 @@ private fun openUpiPayment(context: Context, amount: String) {
         context.startActivity(chooser)
     } catch (_: Exception) {
         // Fallback to Razorpay web page
-        openRazorpayWithAmount(context, amount)
+        openRazorpayPortal(context)
     }
 }
 

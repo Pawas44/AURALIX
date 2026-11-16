@@ -131,11 +131,7 @@ struct SupportView: View {
 
                     // Action 2: Web Payment Gateway Fallback
                     Button(action: {
-                        let cleanAmt = effectiveAmount.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let urlStr = !cleanAmt.isEmpty && cleanAmt != "0" ? "\(razorpayURL.absoluteString)?amount=\(cleanAmt)" : razorpayURL.absoluteString
-                        if let targetURL = URL(string: urlStr) {
-                            UIApplication.shared.open(targetURL)
-                        }
+                        UIApplication.shared.open(razorpayURL)
                     }) {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.up.right.square")
@@ -250,8 +246,7 @@ struct SupportView: View {
         let formattedAmount = String(format: "%.2f", amt)
         let upiString = "upi://pay?pa=\(pawasUpiId)&pn=\(nameEncoded)&am=\(formattedAmount)&cu=INR"
         let cleanAmt = amount.trimmingCharacters(in: .whitespacesAndNewlines)
-        let fallbackUrlStr = !cleanAmt.isEmpty && cleanAmt != "0" ? "\(razorpayURL.absoluteString)?amount=\(cleanAmt)" : razorpayURL.absoluteString
-        let fallbackURL = URL(string: fallbackUrlStr) ?? razorpayURL
+        let fallbackURL = razorpayURL
 
         if let upiURL = URL(string: upiString) {
             UIApplication.shared.open(upiURL, options: [:]) { success in
