@@ -335,6 +335,73 @@ fun SupportScreen(
         }
 
         // ========================================================
+        // 2. Buy Me a Coffee Card (Opens in Browser)
+        // ========================================================
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(12.dp, RoundedCornerShape(20.dp), ambientColor = Color.Black.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = CoffeeDark),
+            border = androidx.compose.foundation.BorderStroke(1.2.dp, CoffeeGold.copy(alpha = 0.4f))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Header with Official Buy Me a Coffee Brand
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                openBrowserUrl(context, BMC_PROFILE_URL)
+                            },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        OfficialBmcBadge()
+
+                        Column {
+                            Text(
+                                text = "Buy Me a Coffee",
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "International cards, PayPal & Apple Pay",
+                                color = Color(0xFFA0AEC0),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Support AURALIX from anywhere in the world using your preferred international payment method.",
+                    color = Color(0xFFCBD5E1),
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+
+                // Official Buy Me a Coffee Widget Button (matching screenshot)
+                OfficialBmcWidgetButton(
+                    onClick = {
+                        openBrowserUrl(context, BMC_PROFILE_URL)
+                    }
+                )
+            }
+        }
+
+        // ========================================================
         // 3. App Version & Updates Card
         // ========================================================
         Box(

@@ -189,6 +189,47 @@ struct SupportView: View {
                 )
 
                 // ========================================================
+                // 2. Buy Me a Coffee Card (Opens in Browser)
+                // ========================================================
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Button(action: {
+                            UIApplication.shared.open(bmcProfileURL)
+                        }) {
+                            HStack(spacing: 10) {
+                                OfficialBmcBadge()
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Buy Me a Coffee")
+                                        .font(.system(size: 16, weight: .bold))
+                                        .foregroundColor(.white)
+                                    Text("International cards, PayPal & Apple Pay")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(Color(hex: 0xA0AEC0))
+                                }
+                            }
+                        }
+                    }
+
+                    Text("Support AURALIX from anywhere in the world using your preferred international payment method.")
+                        .font(.system(size: 12))
+                        .foregroundColor(Color(hex: 0xCBD5E1))
+                        .lineSpacing(3)
+
+                    // Official Buy Me a Coffee Widget Button matching user screenshot
+                    OfficialBmcWidgetButton {
+                        UIApplication.shared.open(bmcProfileURL)
+                    }
+                }
+                .padding(18)
+                .background(coffeeDark)
+                .cornerRadius(20)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .strokeBorder(coffeeGold.opacity(0.4), lineWidth: 1.2)
+                )
+
+                // ========================================================
                 // 3. Why Support AURALIX
                 // ========================================================
                 VStack(alignment: .leading, spacing: 8) {
