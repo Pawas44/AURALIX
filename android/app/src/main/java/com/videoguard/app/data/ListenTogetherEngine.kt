@@ -116,7 +116,7 @@ object ListenTogetherEngine {
         if (!savedName.isNullOrBlank()) {
             _myUsername.value = savedName
         } else {
-            val account = AccountRepository.getCurrentAccount(context)
+            val account = AccountRepository.currentAccount.value
             if (account != null && account.name.isNotBlank()) {
                 _myUsername.value = account.name
             }

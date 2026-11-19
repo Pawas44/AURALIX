@@ -323,10 +323,10 @@ fun ListenTogetherSheet(
                                 placeholder = { Text("e.g. 6Z9SY3LU", color = Color.Gray, fontSize = 14.sp) },
                                 keyboardOptions = KeyboardOptions(
                                     capitalization = KeyboardCapitalization.Characters,
-                                    imeAction = ImeAction.Join
+                                    imeAction = ImeAction.Done
                                 ),
                                 keyboardActions = KeyboardActions(
-                                    onJoin = {
+                                    onDone = {
                                         if (roomCodeInput.isNotBlank()) {
                                             ListenTogetherEngine.joinRoom(roomCodeInput, usernameInput)
                                         }
