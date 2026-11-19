@@ -10,6 +10,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -56,6 +58,29 @@ private val YTMusicRed = Color(0xFFFF0033)
 fun ListenTogetherSheet(
     onDismiss: () -> Unit
 ) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = JamDarkBg,
+        dragHandle = {
+            BottomSheetDefaults.DragHandle(
+                color = Color.White.copy(alpha = 0.25f)
+            )
+        },
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    ) {
+        ListenTogetherContent(
+            onDismiss = onDismiss,
+            isTabScreen = false
+        )
+    }
+}
+
+@Composable
+fun ListenTogetherContent(
+    onDismiss: (() -> Unit)? = null,
+    isTabScreen: Boolean = false,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
@@ -91,28 +116,22 @@ fun ListenTogetherSheet(
         }
     }
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = JamDarkBg,
-        dragHandle = {
-            BottomSheetDefaults.DragHandle(
-                color = Color.White.copy(alpha = 0.25f)
-            )
-        },
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .then(if (isTabScreen) Modifier.statusBarsPadding() else Modifier)
+            .padding(horizontal = 20.dp)
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = if (isTabScreen) 130.dp else 32.dp)
     ) {
-        Column(
+        // Header
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp)
+                .padding(top = if (isTabScreen) 14.dp else 0.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
@@ -164,12 +183,14 @@ fun ListenTogetherSheet(
                     }
                 }
 
-                IconButton(onClick = onDismiss) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = Color.White.copy(alpha = 0.7f)
-                    )
+                if (onDismiss != null && !isTabScreen) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
                 }
             }
 
@@ -736,4 +757,3 @@ fun ListenTogetherSheet(
             }
         }
     }
-}

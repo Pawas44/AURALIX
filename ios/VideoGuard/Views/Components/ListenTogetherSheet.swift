@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ListenTogetherSheet: View {
+    var showDismissButton: Bool = true
     @ObservedObject var jamEngine = ListenTogetherEngine.shared
     @ObservedObject var playbackService = MediaPlaybackService.shared
     @Environment(\.presentationMode) var presentationMode
@@ -59,10 +60,12 @@ struct ListenTogetherSheet: View {
 
                             Spacer()
 
-                            Button(action: { presentationMode.wrappedValue.dismiss() }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.white.opacity(0.5))
-                                    .font(.system(size: 24))
+                            if showDismissButton {
+                                Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.white.opacity(0.5))
+                                        .font(.system(size: 24))
+                                }
                             }
                         }
                         .padding(.top, 10)
@@ -425,7 +428,9 @@ struct ListenTogetherSheet: View {
                             }
                         }
                     }
-                    .padding(20)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+                    .padding(.bottom, showDismissButton ? 30 : 120)
                 }
             }
             .navigationBarHidden(true)

@@ -82,6 +82,7 @@ fun MainScreen() {
     var isFullscreen by rememberSaveable { mutableStateOf(false) }
     var isPlayerExpanded by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
+    var isJamActive by remember { mutableStateOf(false) }
     var isSupportActive by remember { mutableStateOf(false) }
     var isLibraryActive by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
@@ -170,7 +171,7 @@ fun MainScreen() {
 
     // Mode-aware back button handling
     BackHandler(
-        enabled = isFullscreen || isPlayerExpanded || isSearchActive || isSupportActive || isLibraryActive || showAccountSheet ||
+        enabled = isFullscreen || isPlayerExpanded || isSearchActive || isJamActive || isSupportActive || isLibraryActive || showAccountSheet ||
                 showGoogleAuthDialog || activeChannelVideo != null || activePlaylist != null ||
                 (appMode == AppMode.YOUTUBE && selectedYTTab != YouTubeTab.HOME) ||
                 (appMode == AppMode.YOUTUBE_MUSIC && selectedMusicTab != YouTubeMusicTab.HOME)
@@ -189,6 +190,8 @@ fun MainScreen() {
             activeChannelVideo = null
         } else if (isSearchActive) {
             isSearchActive = false
+        } else if (isJamActive) {
+            isJamActive = false
         } else if (isSupportActive) {
             isSupportActive = false
         } else if (isLibraryActive) {
@@ -433,6 +436,11 @@ fun MainScreen() {
                             }
                         )
                     }
+                    isJamActive -> {
+                        ListenTogetherScreen(
+                            onBack = { isJamActive = false }
+                        )
+                    }
                     isSupportActive -> {
                         SupportScreen()
                     }
@@ -551,17 +559,19 @@ fun MainScreen() {
                     selectedYTTab = selectedYTTab,
                     selectedMusicTab = selectedMusicTab,
                     isSearchActive = isSearchActive,
+                    isJamActive = isJamActive,
                     isSupportActive = isSupportActive,
                     isLibraryActive = isLibraryActive,
                     onHomeClick = {
                         val wasAlreadyOnHome = if (appMode == AppMode.YOUTUBE) {
-                            !isSearchActive && !isSupportActive && !isLibraryActive && activeChannelVideo == null && activePlaylist == null && selectedYTTab == YouTubeTab.HOME
+                            !isSearchActive && !isJamActive && !isSupportActive && !isLibraryActive && activeChannelVideo == null && activePlaylist == null && selectedYTTab == YouTubeTab.HOME
                         } else {
-                            !isSearchActive && !isSupportActive && !isLibraryActive && activeChannelVideo == null && activePlaylist == null && selectedMusicTab == YouTubeMusicTab.HOME
+                            !isSearchActive && !isJamActive && !isSupportActive && !isLibraryActive && activeChannelVideo == null && activePlaylist == null && selectedMusicTab == YouTubeMusicTab.HOME
                         }
                         activeChannelVideo = null
                         activePlaylist = null
                         isSearchActive = false
+                        isJamActive = false
                         isSupportActive = false
                         isLibraryActive = false
                         if (wasAlreadyOnHome) {
@@ -576,14 +586,24 @@ fun MainScreen() {
                     onSearchClick = {
                         activeChannelVideo = null
                         activePlaylist = null
+                        isJamActive = false
                         isSupportActive = false
                         isLibraryActive = false
                         isSearchActive = true
+                    },
+                    onJamClick = {
+                        activeChannelVideo = null
+                        activePlaylist = null
+                        isSearchActive = false
+                        isSupportActive = false
+                        isLibraryActive = false
+                        isJamActive = true
                     },
                     onLibraryClick = {
                         activeChannelVideo = null
                         activePlaylist = null
                         isSearchActive = false
+                        isJamActive = false
                         isSupportActive = false
                         isLibraryActive = true
                     },
@@ -591,6 +611,7 @@ fun MainScreen() {
                         activeChannelVideo = null
                         activePlaylist = null
                         isSearchActive = false
+                        isJamActive = false
                         isSupportActive = false
                         isLibraryActive = false
                         if (appMode == AppMode.YOUTUBE) {
@@ -607,6 +628,7 @@ fun MainScreen() {
                         activeChannelVideo = null
                         activePlaylist = null
                         isSearchActive = false
+                        isJamActive = false
                         isLibraryActive = false
                         isSupportActive = true
                     },
@@ -614,6 +636,7 @@ fun MainScreen() {
                         activeChannelVideo = null
                         activePlaylist = null
                         isSearchActive = false
+                        isJamActive = false
                         isSupportActive = false
                         isLibraryActive = false
                         selectedYTTab = tab
@@ -622,6 +645,7 @@ fun MainScreen() {
                         activeChannelVideo = null
                         activePlaylist = null
                         isSearchActive = false
+                        isJamActive = false
                         isSupportActive = false
                         if (tab == YouTubeMusicTab.LIBRARY) {
                             isLibraryActive = true

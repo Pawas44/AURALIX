@@ -9,6 +9,7 @@ struct MainView: View {
     @State private var isFullscreen: Bool = false
     @State private var isPlayerExpanded: Bool = false
     @State private var isSearchActive: Bool = false
+    @State private var isJamActive: Bool = false
     @State private var isSupportActive: Bool = false
     @State private var isLibraryActive: Bool = false
     @State private var showAccountSheet: Bool = false
@@ -31,7 +32,7 @@ struct MainView: View {
 
             // Main Persistent Shell
             VStack(spacing: 0) {
-                if !isSearchActive && !isSupportActive && !isLibraryActive && activeChannelVideo == nil && activePlaylist == nil {
+                if !isSearchActive && !isJamActive && !isSupportActive && !isLibraryActive && activeChannelVideo == nil && activePlaylist == nil {
                     if (appMode == .youtube && selectedYTTab != .you) ||
                        (appMode == .youtubeMusic && selectedMusicTab != .library) {
                         YouTubeTopBar(
@@ -78,6 +79,8 @@ struct MainView: View {
                                 isSearchActive = false
                             }
                         )
+                    } else if isJamActive {
+                        ListenTogetherSheet(showDismissButton: false)
                     } else if isSupportActive {
                         SupportView()
                     } else if let pl = activePlaylist {
@@ -185,13 +188,14 @@ struct MainView: View {
                             }
                         }
 
-                        let isHomeSelected = !isSearchActive && !isSupportActive && !isLibraryActive && activeChannelVideo == nil && activePlaylist == nil && (appMode == .youtube ? selectedYTTab == .home : selectedMusicTab == .home)
-                        let isLibrarySelected = !isSearchActive && !isSupportActive && activeChannelVideo == nil && activePlaylist == nil && (isLibraryActive || (appMode == .youtubeMusic && selectedMusicTab == .library))
-                        let isAccountSelected = !isSearchActive && !isSupportActive && !isLibraryActive && activeChannelVideo == nil && activePlaylist == nil && (appMode == .youtube && selectedYTTab == .you)
+                        let isHomeSelected = !isSearchActive && !isJamActive && !isSupportActive && !isLibraryActive && activeChannelVideo == nil && activePlaylist == nil && (appMode == .youtube ? selectedYTTab == .home : selectedMusicTab == .home)
+                        let isLibrarySelected = !isSearchActive && !isJamActive && !isSupportActive && activeChannelVideo == nil && activePlaylist == nil && (isLibraryActive || (appMode == .youtubeMusic && selectedMusicTab == .library))
+                        let isAccountSelected = !isSearchActive && !isJamActive && !isSupportActive && !isLibraryActive && activeChannelVideo == nil && activePlaylist == nil && (appMode == .youtube && selectedYTTab == .you)
 
                         LiquidBottomNavBar(
                             isHomeSelected: isHomeSelected,
                             isSearchSelected: isSearchActive,
+                            isJamSelected: isJamActive,
                             isLibrarySelected: isLibrarySelected,
                             isAccountSelected: isAccountSelected,
                             isSupportSelected: !isSearchActive && isSupportActive,
@@ -200,6 +204,7 @@ struct MainView: View {
                                 activeChannelVideo = nil
                                 activePlaylist = nil
                                 isSearchActive = false
+                                isJamActive = false
                                 isSupportActive = false
                                 isLibraryActive = false
                                 if alreadyOnHome {
@@ -211,14 +216,24 @@ struct MainView: View {
                             onSearchClick: {
                                 activeChannelVideo = nil
                                 activePlaylist = nil
+                                isJamActive = false
                                 isSupportActive = false
                                 isLibraryActive = false
                                 isSearchActive = true
+                            },
+                            onJamClick: {
+                                activeChannelVideo = nil
+                                activePlaylist = nil
+                                isSearchActive = false
+                                isSupportActive = false
+                                isLibraryActive = false
+                                isJamActive = true
                             },
                             onLibraryClick: {
                                 activeChannelVideo = nil
                                 activePlaylist = nil
                                 isSearchActive = false
+                                isJamActive = false
                                 isSupportActive = false
                                 isLibraryActive = true
                             },
@@ -226,6 +241,7 @@ struct MainView: View {
                                 activeChannelVideo = nil
                                 activePlaylist = nil
                                 isSearchActive = false
+                                isJamActive = false
                                 isSupportActive = false
                                 isLibraryActive = false
                                 if appMode == .youtube {
@@ -239,6 +255,7 @@ struct MainView: View {
                                 activeChannelVideo = nil
                                 activePlaylist = nil
                                 isSearchActive = false
+                                isJamActive = false
                                 isLibraryActive = false
                                 isSupportActive = true
                             }

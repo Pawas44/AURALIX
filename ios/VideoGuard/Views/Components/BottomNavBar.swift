@@ -16,16 +16,19 @@ struct VisualEffectBlurView: UIViewRepresentable {
 struct LiquidBottomNavBar: View {
     let isHomeSelected: Bool
     let isSearchSelected: Bool
+    let isJamSelected: Bool
     let isLibrarySelected: Bool
     let isAccountSelected: Bool
     let isSupportSelected: Bool
     let onHomeClick: () -> Void
     let onSearchClick: () -> Void
+    let onJamClick: () -> Void
     let onLibraryClick: () -> Void
     let onAccountClick: () -> Void
     let onSupportClick: () -> Void
 
     @ObservedObject var accountRepo = AccountRepository.shared
+    @ObservedObject var jamEngine = ListenTogetherEngine.shared
 
     var body: some View {
         HStack(spacing: 4) {
@@ -61,7 +64,44 @@ struct LiquidBottomNavBar: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
 
-            // 3. Library (Dedicated Tab)
+            // 3. Jam (Listen Together)
+            Button(action: onJamClick) {
+                VStack(spacing: 3) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .font(.system(size: 18, weight: isJamSelected ? .bold : .regular))
+
+                        if jamEngine.isInRoom {
+                            Circle()
+                                .fill(Color(hex: 0x06B6D4))
+                                .frame(width: 7, height: 7)
+                                .offset(x: 5, y: -2)
+                        }
+                    }
+                    HStack(spacing: 2) {
+                        Text("Jam")
+                            .font(.system(size: 10, weight: (isJamSelected || jamEngine.isInRoom) ? .bold : .medium))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+
+                        if jamEngine.isInRoom {
+                            Text("LIVE")
+                                .font(.system(size: 6, weight: .black))
+                                .foregroundColor(Color(hex: 0x06B6D4))
+                                .padding(.horizontal, 2)
+                                .padding(.vertical, 0.5)
+                                .background(Color(hex: 0x06B6D4).opacity(0.2))
+                                .cornerRadius(2)
+                        }
+                    }
+                }
+                .foregroundColor(isJamSelected ? Color(hex: 0x8B5CF6) : (jamEngine.isInRoom ? Color(hex: 0x06B6D4) : Color(hex: 0x9E9EAF)))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(isJamSelected ? Color(hex: 0x8B5CF6).opacity(0.14) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+
+            // 4. Library (Dedicated Tab)
             Button(action: onLibraryClick) {
                 VStack(spacing: 3) {
                     Image(systemName: isLibrarySelected ? "play.square.stack.fill" : "play.square.stack")
@@ -77,7 +117,7 @@ struct LiquidBottomNavBar: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
 
-            // 4. Account (Dedicated Tab)
+            // 5. Account (Dedicated Tab)
             Button(action: onAccountClick) {
                 VStack(spacing: 3) {
                     accountAvatarView
@@ -90,22 +130,6 @@ struct LiquidBottomNavBar: View {
                 .foregroundColor(isAccountSelected ? .white : Color(hex: 0x9E9EAF))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(isAccountSelected ? Color.white.opacity(0.12) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
-            }
-
-            // 5. Support
-            Button(action: onSupportClick) {
-                VStack(spacing: 3) {
-                    Image(systemName: isSupportSelected ? "cup.and.saucer.fill" : "cup.and.saucer")
-                        .font(.system(size: 18))
-                    Text("Support")
-                        .font(.system(size: 10, weight: isSupportSelected ? .bold : .medium))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                }
-                .foregroundColor(isSupportSelected ? Color(hex: 0x40DCA5) : Color(hex: 0x9E9EAF))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(isSupportSelected ? Color(hex: 0x40DCA5).opacity(0.14) : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
         }

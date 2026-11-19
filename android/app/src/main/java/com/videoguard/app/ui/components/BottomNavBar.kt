@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Podcasts
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -37,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.videoguard.app.data.AccountRepository
+import com.videoguard.app.data.ListenTogetherEngine
 import com.videoguard.app.model.AppMode
 import com.videoguard.app.model.YouTubeMusicTab
 import com.videoguard.app.model.YouTubeTab
@@ -48,10 +50,12 @@ fun BottomNavBar(
     selectedYTTab: YouTubeTab = YouTubeTab.HOME,
     selectedMusicTab: YouTubeMusicTab = YouTubeMusicTab.HOME,
     isSearchActive: Boolean = false,
+    isJamActive: Boolean = false,
     isSupportActive: Boolean = false,
     isLibraryActive: Boolean = false,
     onHomeClick: () -> Unit = {},
     onSearchClick: () -> Unit = {},
+    onJamClick: () -> Unit = {},
     onLibraryClick: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSupportClick: () -> Unit = {},
@@ -60,8 +64,9 @@ fun BottomNavBar(
     modifier: Modifier = Modifier
 ) {
     val isMusic = currentMode == AppMode.YOUTUBE_MUSIC
+    val isInRoom by ListenTogetherEngine.isInRoom.collectAsState()
 
-    val isHomeSelected = !isSearchActive && !isSupportActive && !isLibraryActive && if (!isMusic) {
+    val isHomeSelected = !isSearchActive && !isJamActive && !isSupportActive && !isLibraryActive && if (!isMusic) {
         selectedYTTab == YouTubeTab.HOME
     } else {
         selectedMusicTab == YouTubeMusicTab.HOME
@@ -69,9 +74,11 @@ fun BottomNavBar(
 
     val isSearchSelected = isSearchActive
 
-    val isLibrarySelected = !isSearchActive && !isSupportActive && (isLibraryActive || (isMusic && selectedMusicTab == YouTubeMusicTab.LIBRARY))
+    val isJamSelected = isJamActive
 
-    val isAccountSelected = !isSearchActive && !isSupportActive && !isLibraryActive && (selectedYTTab == YouTubeTab.YOU && !isMusic)
+    val isLibrarySelected = !isSearchActive && !isJamActive && !isSupportActive && (isLibraryActive || (isMusic && selectedMusicTab == YouTubeMusicTab.LIBRARY))
+
+    val isAccountSelected = !isSearchActive && !isJamActive && !isSupportActive && !isLibraryActive && (selectedYTTab == YouTubeTab.YOU && !isMusic)
 
     val isSupportSelected = !isSearchActive && isSupportActive
 
@@ -134,7 +141,15 @@ fun BottomNavBar(
                     onClick = onSearchClick
                 )
 
-                // 3. Library (Dedicated Tab)
+                // 3. Jam (Listen Together)
+                BottomJamNavItem(
+                    title = "Jam",
+                    isSelected = isJamSelected,
+                    isInRoom = isInRoom,
+                    onClick = onJamClick
+                )
+
+                // 4. Library (Dedicated Tab)
                 BottomNavItem(
                     title = "Library",
                     icon = if (isLibrarySelected) Icons.Filled.VideoLibrary else Icons.Outlined.VideoLibrary,
@@ -145,7 +160,7 @@ fun BottomNavBar(
                     }
                 )
 
-                // 4. Account (Dedicated Tab)
+                // 5. Account (Dedicated Tab)
                 BottomAccountNavItem(
                     title = "Account",
                     isSelected = isAccountSelected,
@@ -154,15 +169,90 @@ fun BottomNavBar(
                         onYTTabSelected(YouTubeTab.YOU)
                     }
                 )
+            }
+        }
+    }
+}
 
-                // 5. Support
-                BottomNavItem(
-                    title = "Support",
-                    icon = if (isSupportSelected) Icons.Filled.Coffee else Icons.Outlined.Coffee,
-                    isSelected = isSupportSelected,
-                    selectedTint = Color(0xFF40DCA5),
-                    onClick = onSupportClick
+@Composable
+private fun RowScope.BottomJamNavItem(
+    title: String,
+    isSelected: Boolean,
+    isInRoom: Boolean,
+    onClick: () -> Unit
+) {
+    val activeColor = Color(0xFF8B5CF6) // Jam Purple
+    val liveColor = Color(0xFF06B6D4) // Jam Cyan
+    val iconTint by animateColorAsState(
+        targetValue = when {
+            isSelected -> activeColor
+            isInRoom -> liveColor
+            else -> Color(0xFF9E9EAF)
+        },
+        label = "jamTint"
+    )
+    val pillBg = if (isSelected) activeColor.copy(alpha = 0.16f) else Color.Transparent
+
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(18.dp))
+            .background(pillBg)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier.size(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Podcasts,
+                    contentDescription = title,
+                    tint = iconTint,
+                    modifier = Modifier.size(22.dp)
                 )
+
+                if (isInRoom) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .align(Alignment.TopEnd)
+                            .clip(CircleShape)
+                            .background(liveColor)
+                            .border(1.dp, Color.Black, CircleShape)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = title,
+                    color = iconTint,
+                    fontSize = 10.sp,
+                    fontWeight = if (isSelected || isInRoom) FontWeight.Bold else FontWeight.Medium
+                )
+                if (isInRoom) {
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(liveColor.copy(alpha = 0.25f))
+                            .padding(horizontal = 3.dp, vertical = 0.5.dp)
+                    ) {
+                        Text(
+                            text = "LIVE",
+                            color = liveColor,
+                            fontSize = 7.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+                }
             }
         }
     }
