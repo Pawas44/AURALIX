@@ -10,10 +10,12 @@ import com.videoguard.app.model.UserPlaylist
 import com.videoguard.app.model.VideoItem
 import com.videoguard.app.recommendation.RecommendationEngine
 import com.videoguard.app.recommendation.UserTasteProfile
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -415,7 +417,7 @@ object GoogleDriveBackupEngine {
             }
 
             // 7. Non-blocking Async Refresh for Recommendations (Does NOT block the UI)
-            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+            CoroutineScope(Dispatchers.IO).launch {
                 try {
                     RecommendationEngine.refreshHomeFeed(forceRefresh = true)
                 } catch (e: Exception) {
