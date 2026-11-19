@@ -36,12 +36,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val WhatsAppGreen = Color(0xFF00A884)
-private val WhatsAppDarkGreen = Color(0xFF005D4B)
 private val DriveBlue = Color(0xFF4285F4)
 private val DriveYellow = Color(0xFFFBBC04)
 private val DriveGreen = Color(0xFF34A853)
-private val CardDark = Color(0xFF161B22)
+private val DriveRed = Color(0xFFEA4335)
+
+private val CardBackground = Color(0xFF141624)
+private val CardSurface = Color(0xFF1B1E30)
 
 @Composable
 fun GoogleDriveBackupCard(
@@ -93,10 +94,24 @@ fun GoogleDriveBackupCard(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .shadow(12.dp, RoundedCornerShape(20.dp), ambientColor = Color.Black.copy(alpha = 0.5f)),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = CardDark),
-        border = androidx.compose.foundation.BorderStroke(1.2.dp, WhatsAppGreen.copy(alpha = 0.35f))
+            .shadow(
+                elevation = 16.dp,
+                shape = RoundedCornerShape(22.dp),
+                ambientColor = Color.Black.copy(alpha = 0.55f),
+                spotColor = DriveBlue.copy(alpha = 0.25f)
+            ),
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = CardBackground),
+        border = androidx.compose.foundation.BorderStroke(
+            1.2.dp,
+            Brush.linearGradient(
+                colors = listOf(
+                    DriveBlue.copy(alpha = 0.55f),
+                    Color.White.copy(alpha = 0.12f),
+                    DriveGreen.copy(alpha = 0.40f)
+                )
+            )
+        )
     ) {
         Column(
             modifier = Modifier
@@ -104,34 +119,69 @@ fun GoogleDriveBackupCard(
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Header with Authentic Google Drive Badge & WhatsApp-style Headline
+            // Header: Official Google Drive Badge & Cloud Sync Headline
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OfficialGoogleDriveBadge(modifier = Modifier.size(42.dp))
+                OfficialGoogleDriveBadge(modifier = Modifier.size(44.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Google Drive Cloud Backup",
+                        text = "Google Drive Cloud Sync",
                         color = Color.White,
                         fontSize = 16.5.sp,
                         fontWeight = FontWeight.Bold
                     )
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Sync & protect your recommendations like WhatsApp",
+                        text = "Backup & restore recommendations & playlists",
                         color = Color(0xFF9E9EAF),
                         fontSize = 11.5.sp
                     )
                 }
+
+                // Cloud Ready Badge Pill
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DriveGreen.copy(alpha = 0.15f))
+                        .border(1.dp, DriveGreen.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(DriveGreen)
+                        )
+                        Text(
+                            text = "Cloud Ready",
+                            color = DriveGreen,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
 
-            Divider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+            HorizontalDivider(
+                color = Color.White.copy(alpha = 0.08f),
+                thickness = 1.dp
+            )
 
-            // Info Details (WhatsApp Chat Backup Layout)
+            // Info Details
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(CardSurface.copy(alpha = 0.6f))
+                    .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 BackupDetailRow(
@@ -142,21 +192,19 @@ fun GoogleDriveBackupCard(
 
                 BackupDetailRow(
                     icon = Icons.Default.Storage,
-                    label = "Size",
+                    label = "Library Size",
                     value = backupState.formattedSize
                 )
 
                 val accountEmail = currentAccount?.email?.takeIf { it.isNotBlank() } ?: "Google Account Ready"
                 BackupDetailRow(
                     icon = Icons.Default.AccountCircle,
-                    label = "Google Account",
+                    label = "Drive Account",
                     value = accountEmail
                 )
             }
 
-            Spacer(modifier = Modifier.height(2.dp))
-
-            // Action 1: Back Up to Google Drive (Primary WhatsApp Button)
+            // Action 1: Back Up to Google Drive (Primary Vibrant Blue Button)
             Button(
                 onClick = {
                     if (!backupState.isBackingUp) {
@@ -165,7 +213,7 @@ fun GoogleDriveBackupCard(
                     }
                 },
                 enabled = !backupState.isBackingUp && !backupState.isRestoring,
-                colors = ButtonDefaults.buttonColors(containerColor = WhatsAppGreen),
+                colors = ButtonDefaults.buttonColors(containerColor = DriveBlue),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -189,7 +237,7 @@ fun GoogleDriveBackupCard(
                         imageVector = Icons.Default.CloudUpload,
                         contentDescription = "Back Up",
                         tint = Color.White,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(19.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
@@ -201,7 +249,7 @@ fun GoogleDriveBackupCard(
                 }
             }
 
-            // Action 2: Restore from Google Drive (Secondary Outlined Button)
+            // Action 2: Restore from Google Drive (Secondary Sleek Glass Button)
             OutlinedButton(
                 onClick = {
                     if (!backupState.isRestoring) {
@@ -210,7 +258,10 @@ fun GoogleDriveBackupCard(
                 },
                 enabled = !backupState.isBackingUp && !backupState.isRestoring,
                 shape = RoundedCornerShape(14.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color.White.copy(alpha = 0.04f)
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(44.dp)
@@ -225,7 +276,7 @@ fun GoogleDriveBackupCard(
                     Text(
                         text = "Restoring taste & library...",
                         color = Color(0xFFCBD5E1),
-                        fontSize = 12.5.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )
                 } else {
@@ -233,13 +284,13 @@ fun GoogleDriveBackupCard(
                         imageVector = Icons.Default.CloudDownload,
                         contentDescription = "Restore",
                         tint = Color(0xFFCBD5E1),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(17.dp)
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(7.dp))
                     Text(
                         text = "Restore from Google Drive",
                         color = Color(0xFFCBD5E1),
-                        fontSize = 12.5.sp,
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
@@ -254,13 +305,13 @@ fun GoogleDriveBackupCard(
                 Icon(
                     imageVector = Icons.Default.Lock,
                     contentDescription = null,
-                    tint = Color(0xFF718096),
-                    modifier = Modifier.size(12.dp)
+                    tint = Color(0xFF818CF8),
+                    modifier = Modifier.size(13.dp)
                 )
                 Text(
                     text = "100% Free & Private. Stored directly on your personal Google Drive.",
-                    color = Color(0xFF718096),
-                    fontSize = 10.5.sp
+                    color = Color(0xFF818CF8),
+                    fontSize = 11.sp
                 )
             }
         }
@@ -311,12 +362,12 @@ private fun BackupDetailRow(
 fun OfficialGoogleDriveBadge(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(Color.White.copy(alpha = 0.08f))
-            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(10.dp)),
+            .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(24.dp)) {
+        Canvas(modifier = Modifier.size(26.dp)) {
             val w = size.width
             val h = size.height
 

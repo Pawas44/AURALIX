@@ -191,6 +191,17 @@ fun MusicLibraryScreen(
                 }
             }
 
+            // Google Drive Cloud Sync Card
+            if (selectedFilter == "All" || selectedFilter == "Playlists") {
+                item {
+                    com.videoguard.app.ui.components.GoogleDriveBackupCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
+            }
+
             // 1. Spotify Connect & Import Section
             if (selectedFilter == "All" || selectedFilter == "Playlists" || selectedFilter == "Spotify") {
                 item {

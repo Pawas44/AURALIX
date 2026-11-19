@@ -223,6 +223,12 @@ fun PlayerSettingsBottomSheet(
                     onClick = { showStatsDialog = true }
                 )
             }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            SettingsSectionHeader("Cloud Backup & Sync")
+            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                GoogleDriveBackupCard()
+            }
         }
     }
 

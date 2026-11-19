@@ -333,6 +333,14 @@ fun YouScreen(
                 }
             }
 
+            // Google Drive Cloud Sync Card
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    com.videoguard.app.ui.components.GoogleDriveBackupCard()
+                }
+            }
+
             // History Section Header
             item {
                 Spacer(modifier = Modifier.height(10.dp))
@@ -450,14 +458,6 @@ fun YouScreen(
                             onClick = { onPlaylistClick(playlist) }
                         )
                     }
-                }
-            }
-
-            // Google Drive Cloud Backup (WhatsApp Style)
-            item {
-                Spacer(modifier = Modifier.height(20.dp))
-                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    com.videoguard.app.ui.components.GoogleDriveBackupCard()
                 }
             }
 

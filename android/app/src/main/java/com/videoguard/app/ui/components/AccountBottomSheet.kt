@@ -370,6 +370,16 @@ fun AccountBottomSheet(
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
             }
 
+            // Google Drive Cloud Sync
+            item {
+                GoogleDriveBackupCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                )
+                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
+            }
+
             // Quick Actions: Incognito, Channels, Settings
             item {
                 AccountMenuItem(
