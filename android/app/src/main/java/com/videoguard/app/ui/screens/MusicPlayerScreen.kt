@@ -2,6 +2,8 @@
 
 package com.videoguard.app.ui.screens
 
+import androidx.compose.foundation.BorderStroke
+
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.geometry.Offset
