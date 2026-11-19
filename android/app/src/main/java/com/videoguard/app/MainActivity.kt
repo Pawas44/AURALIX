@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
 
         PlaybackController.init(this)
         com.videoguard.app.data.GoogleDriveBackupEngine.init(this)
+        com.videoguard.app.data.ListenTogetherEngine.init(this)
 
         CoroutineScope(Dispatchers.IO).launch {
             com.videoguard.app.data.GoogleDriveBackupEngine.checkAndAutoRestoreOnInstall(this@MainActivity)

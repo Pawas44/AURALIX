@@ -112,6 +112,10 @@ fun MusicPlayerScreen(
     var sliderPosition by remember { mutableFloatStateOf(0.35f) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var showAddToPlaylistSheet by remember { mutableStateOf(false) }
+    var showListenTogetherSheet by remember { mutableStateOf(false) }
+    val isJamActive by com.videoguard.app.data.ListenTogetherEngine.isInRoom.collectAsState()
+    val jamRoomCode by com.videoguard.app.data.ListenTogetherEngine.roomCode.collectAsState()
+    val jamParticipants by com.videoguard.app.data.ListenTogetherEngine.participants.collectAsState()
     val offlineTracks by com.videoguard.app.data.UserDataRepository.offlineTracks.collectAsState()
     val isTrackDownloaded = offlineTracks.any { it.id == track.id }
     val currentDownload by com.videoguard.app.data.UserDataRepository.currentDownload.collectAsState()
@@ -530,6 +534,52 @@ fun MusicPlayerScreen(
             }
         }
 
+        AnimatedVisibility(
+            visible = isJamActive,
+            enter = slideInVertically() + fadeIn(),
+            exit = slideOutVertically() + fadeOut()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 2.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    onClick = { showListenTogetherSheet = true },
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xF2161226),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.8f)),
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF06B6D4))
+                        )
+                        Text(
+                            text = "Jam: ${jamRoomCode ?: ""} • ${jamParticipants.size} Friends",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Icon(
+                            imageVector = Icons.Default.Podcasts,
+                            contentDescription = "Jam",
+                            tint = Color(0xFF8B5CF6),
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                }
+            }
+        }
+
         // Floating Real-Time Download Progress Banner
         AnimatedVisibility(
             visible = currentDownload != null,
@@ -819,6 +869,13 @@ fun MusicPlayerScreen(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { showListenTogetherSheet = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Podcasts,
+                        contentDescription = "Listen Together",
+                        tint = if (isJamActive) Color(0xFF8B5CF6) else Color.White
+                    )
+                }
                 IconButton(onClick = { showAddToPlaylistSheet = true }) {
                     Icon(
                         imageVector = Icons.Default.PlaylistAdd,
@@ -1420,6 +1477,10 @@ fun MusicPlayerScreen(
             video = track,
             onDismiss = { showAddToPlaylistSheet = false }
         )
+    }
+
+    if (showListenTogetherSheet) {
+        com.videoguard.app.ui.components.ListenTogetherSheet(onDismiss = { showListenTogetherSheet = false })
     }
 }
 

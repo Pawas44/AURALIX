@@ -44,6 +44,8 @@
 		VG000035 /* GoogleAuthSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00036 /* GoogleAuthSheet.swift */; };
 		VG000036 /* SupportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00037 /* SupportView.swift */; };
 		VG000037 /* LyricsEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00038 /* LyricsEngine.swift */; };
+		VG000038 /* ListenTogetherEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00039 /* ListenTogetherEngine.swift */; };
+		VG000039 /* ListenTogetherSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00040 /* ListenTogetherSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -86,6 +88,8 @@
 		VGF00036 /* GoogleAuthSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleAuthSheet.swift; sourceTree = "<group>"; };
 		VGF00037 /* SupportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportView.swift; sourceTree = "<group>"; };
 		VGF00038 /* LyricsEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsEngine.swift; sourceTree = "<group>"; };
+		VGF00039 /* ListenTogetherEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenTogetherEngine.swift; sourceTree = "<group>"; };
+		VGF00040 /* ListenTogetherSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenTogetherSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -150,6 +154,7 @@
 				VGF00009 /* YouTubeSearchEngine.swift */,
 				VGF00033 /* YouTubeSyncEngine.swift */,
 				VGF00038 /* LyricsEngine.swift */,
+				VGF00039 /* ListenTogetherEngine.swift */,
 			);
 			path = Data;
 			sourceTree = "<group>";
@@ -186,6 +191,7 @@
 				VGF00034 /* YouTubeVideoPlayer.swift */,
 				VGF00035 /* PlayerControlsOverlay.swift */,
 				VGF00036 /* GoogleAuthSheet.swift */,
+				VGF00040 /* ListenTogetherSheet.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -321,6 +327,8 @@
 				VG000035 /* GoogleAuthSheet.swift in Sources */,
 				VG000036 /* SupportView.swift in Sources */,
 				VG000037 /* LyricsEngine.swift in Sources */,
+				VG000038 /* ListenTogetherEngine.swift in Sources */,
+				VG000039 /* ListenTogetherSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

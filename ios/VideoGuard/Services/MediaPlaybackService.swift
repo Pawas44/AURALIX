@@ -307,6 +307,7 @@ class MediaPlaybackService: ObservableObject {
                 self.sendCommand("setPlaybackState(true)")
             }
             self.updateNowPlayingInfo(force: true)
+            ListenTogetherEngine.shared.onHostTrackChanged(track)
         }
     }
 
@@ -418,6 +419,7 @@ class MediaPlaybackService: ObservableObject {
                 self.sendCommand("setPlaybackState(true)")
             }
             self.updateNowPlayingInfo(force: true)
+            ListenTogetherEngine.shared.onHostPlayStateChanged(isPlaying: true, positionMs: Int64(self.currentTimeSeconds * 1000))
         }
     }
 
@@ -433,6 +435,7 @@ class MediaPlaybackService: ObservableObject {
                 self.sendCommand("setPlaybackState(false)")
             }
             self.updateNowPlayingInfo(force: true)
+            ListenTogetherEngine.shared.onHostPlayStateChanged(isPlaying: false, positionMs: Int64(self.currentTimeSeconds * 1000))
         }
     }
 
@@ -484,6 +487,7 @@ class MediaPlaybackService: ObservableObject {
                 self.sendCommand("seekTo(\(target))")
             }
             self.updateNowPlayingInfo(force: true)
+            ListenTogetherEngine.shared.onHostSeek(positionMs: Int64(target * 1000))
         }
     }
 

@@ -20,6 +20,7 @@ struct MusicPlayerView: View {
 
     @ObservedObject var playbackService = MediaPlaybackService.shared
     @ObservedObject var userData = UserDataRepository.shared
+    @ObservedObject var jamEngine = ListenTogetherEngine.shared
 
     @State private var activeTab: MusicSheetTab = .upNext
     @State private var isSheetExpanded = false
@@ -27,6 +28,7 @@ struct MusicPlayerView: View {
     @State private var scrubPosition: Double = 0
     @State private var showSettingsSheet = false
     @State private var showAddToPlaylistSheet = false
+    @State private var showJamSheet = false
     @State private var isDownloaded = false
     @State private var downloadToastText: String? = nil
     @State private var dynamicRelated: [VideoItem] = []
@@ -147,6 +149,13 @@ struct MusicPlayerView: View {
 
                         Spacer()
 
+                        Button(action: { showJamSheet = true }) {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(jamEngine.isInRoom ? Color(red: 139/255, green: 92/255, blue: 246/255) : .white)
+                                .frame(width: 34, height: 34)
+                        }
+
                         Button(action: { showAddToPlaylistSheet = true }) {
                             Image(systemName: "plus.circle")
                                 .font(.system(size: 20))
@@ -250,8 +259,37 @@ struct MusicPlayerView: View {
                 showAddToPlaylistSheet = false
             }
         }
+        .sheet(isPresented: $showJamSheet) {
+            ListenTogetherSheet()
+        }
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
+                if jamEngine.isInRoom {
+                    Button(action: { showJamSheet = true }) {
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(Color(red: 6/255, green: 182/255, blue: 212/255))
+                                .frame(width: 8, height: 8)
+                            Text("Jam: \(jamEngine.roomCode ?? "") • \(jamEngine.participants.count) Friends")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color(red: 139/255, green: 92/255, blue: 246/255))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(Color(red: 22/255, green: 18/255, blue: 38/255).opacity(0.95))
+                        .cornerRadius(20)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(Color(red: 139/255, green: 92/255, blue: 246/255).opacity(0.8), lineWidth: 1)
+                        )
+                        .shadow(color: Color.black.opacity(0.4), radius: 8, y: 4)
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 if let dl = userData.currentDownload {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {

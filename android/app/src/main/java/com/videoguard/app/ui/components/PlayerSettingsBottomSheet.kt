@@ -47,6 +47,7 @@ fun PlayerSettingsBottomSheet(
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var customSleepMinutes by remember { mutableIntStateOf(20) }
     var showStatsDialog by remember { mutableStateOf(false) }
+    var showJamSheet by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -85,6 +86,22 @@ fun PlayerSettingsBottomSheet(
             HorizontalDivider(color = Color(0xFF262838), thickness = 0.8.dp)
 
             Spacer(modifier = Modifier.height(10.dp))
+
+            // 0. Listen Together (Jam) Section
+            SettingsSectionHeader("Group Listening")
+            SettingsGroupCard {
+                val isInJam by com.videoguard.app.data.ListenTogetherEngine.isInRoom.collectAsState()
+                val jamCode by com.videoguard.app.data.ListenTogetherEngine.roomCode.collectAsState()
+                val jamMembers by com.videoguard.app.data.ListenTogetherEngine.participants.collectAsState()
+                SettingsRow(
+                    icon = Icons.Default.Podcasts,
+                    title = "Listen Together (Jam)",
+                    subtitle = if (isInJam) "Active Jam: $jamCode • ${jamMembers.size} Friends" else "Sync music playback with friends in real-time",
+                    onClick = { showJamSheet = true }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // 1. Suggestions Section (ByTune)
             SettingsSectionHeader("Suggestions")
@@ -545,6 +562,10 @@ fun PlayerSettingsBottomSheet(
             containerColor = Color(0xFF282828),
             shape = RoundedCornerShape(16.dp)
         )
+    }
+
+    if (showJamSheet) {
+        ListenTogetherSheet(onDismiss = { showJamSheet = false })
     }
 }
 

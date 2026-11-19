@@ -459,6 +459,8 @@ object PlaybackController {
                 sendCommand("setPlaybackState(true)")
             }
 
+            com.videoguard.app.data.ListenTogetherEngine.onHostTrackChanged(track)
+
             // Proactively check and replenish queue
             replenishQueueIfNeeded(track)
 
@@ -688,6 +690,7 @@ object PlaybackController {
             sendCommand("setPlaybackState(true)")
         }
         startOrUpdateService()
+        com.videoguard.app.data.ListenTogetherEngine.onHostPlayStateChanged(true, (_currentTimeSeconds.value * 1000).toLong())
     }
 
     fun pause() {
@@ -709,6 +712,7 @@ object PlaybackController {
         sendCommand("pauseVideo()")
         sendCommand("setPlaybackState(false)")
         startOrUpdateService()
+        com.videoguard.app.data.ListenTogetherEngine.onHostPlayStateChanged(false, (_currentTimeSeconds.value * 1000).toLong())
     }
 
     fun togglePlayPause() {
@@ -769,6 +773,7 @@ object PlaybackController {
             sendCommand("seekTo($target)")
         }
         syncServiceProgress(force = true)
+        com.videoguard.app.data.ListenTogetherEngine.onHostSeek((target * 1000).toLong())
     }
 
     fun seekBy(seconds: Int) {

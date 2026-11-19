@@ -5,11 +5,13 @@ struct PlayerBottomSheet: View {
     let onDismiss: () -> Void
 
     @ObservedObject var playbackService = MediaPlaybackService.shared
+    @ObservedObject var jamEngine = ListenTogetherEngine.shared
 
     @State private var showQualityPicker = false
     @State private var showSpeedPicker = false
     @State private var showSleepTimerPicker = false
     @State private var showStatsAlert = false
+    @State private var showJamSheet = false
 
     private let qualities = ["Auto (1080p)", "1080p HD", "720p HD", "480p", "360p"]
     private let speeds: [Float] = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
@@ -41,6 +43,14 @@ struct PlayerBottomSheet: View {
 
                 ScrollView {
                     VStack(spacing: 4) {
+                        SettingsActionRow(
+                            icon: "dot.radiowaves.left.and.right",
+                            title: "Listen Together (Jam)",
+                            subtitle: jamEngine.isInRoom ? "Active: \(jamEngine.roomCode ?? "") • \(jamEngine.participants.count) Friends" : "Sync music with friends in real-time"
+                        ) {
+                            showJamSheet = true
+                        }
+
                         SettingsActionRow(
                             icon: "sparkles.tv",
                             title: "Quality",
@@ -140,6 +150,9 @@ struct PlayerBottomSheet: View {
             } else {
                 Text("No active media loaded.")
             }
+        }
+        .sheet(isPresented: $showJamSheet) {
+            ListenTogetherSheet()
         }
     }
 }

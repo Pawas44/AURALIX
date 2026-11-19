@@ -76,6 +76,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.documentfile)
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
