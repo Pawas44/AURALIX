@@ -81,6 +81,7 @@ fun YouScreen(
     var newPlaylistName by remember { mutableStateOf("") }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var showJamSheet by remember { mutableStateOf(false) }
     var showCloudBackupSheet by remember { mutableStateOf(false) }
     val backupState by com.videoguard.app.data.GoogleDriveBackupEngine.backupState.collectAsState()
 
@@ -331,6 +332,12 @@ fun YouScreen(
                         )
 
                         AccountChip(
+                            icon = Icons.Outlined.Share,
+                            label = "Jam",
+                            onClick = { showJamSheet = true }
+                        )
+
+                        AccountChip(
                             icon = Icons.Outlined.Settings,
                             label = "Settings",
                             onClick = { showSettingsSheet = true }
@@ -474,6 +481,12 @@ fun YouScreen(
                 Spacer(modifier = Modifier.height(90.dp))
             }
         }
+    }
+
+    if (showJamSheet) {
+        com.videoguard.app.ui.components.ListenTogetherSheet(
+            onDismiss = { showJamSheet = false }
+        )
     }
 
     if (showSettingsSheet) {

@@ -25,7 +25,8 @@ import com.videoguard.app.service.PlaybackController
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerSettingsBottomSheet(
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onOpenJam: (() -> Unit)? = null
 ) {
     val isBackgroundPlay by PlaybackController.isBackgroundPlayEnabled.collectAsState()
     val isLoopEnabled by PlaybackController.isLoopEnabled.collectAsState()
@@ -94,10 +95,17 @@ fun PlayerSettingsBottomSheet(
                 val jamCode by com.videoguard.app.data.ListenTogetherEngine.roomCode.collectAsState()
                 val jamMembers by com.videoguard.app.data.ListenTogetherEngine.participants.collectAsState()
                 SettingsRow(
-                    icon = Icons.Default.Podcasts,
-                    title = "Listen Together (Jam)",
+                    icon = Icons.Default.Share,
+                    title = "Listen Together (Live Jam)",
                     subtitle = if (isInJam) "Active Jam: $jamCode • ${jamMembers.size} Friends" else "Sync music playback with friends in real-time",
-                    onClick = { showJamSheet = true }
+                    onClick = {
+                        if (onOpenJam != null) {
+                            onDismiss()
+                            onOpenJam()
+                        } else {
+                            showJamSheet = true
+                        }
+                    }
                 )
             }
 
@@ -243,8 +251,13 @@ fun PlayerSettingsBottomSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
             SettingsSectionHeader("Cloud Backup & Sync")
-            Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                GoogleDriveBackupCard()
+            SettingsGroupCard {
+                SettingsRow(
+                    icon = Icons.Default.Sync,
+                    title = "Google Drive Cloud Backup",
+                    subtitle = "Full backup & restore available in Library / You tab",
+                    onClick = { onDismiss() }
+                )
             }
         }
     }

@@ -868,13 +868,31 @@ fun MusicPlayerScreen(
                 )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { showListenTogetherSheet = true }) {
-                    Icon(
-                        imageVector = Icons.Default.Podcasts,
-                        contentDescription = "Listen Together",
-                        tint = if (isJamActive) Color(0xFF8B5CF6) else Color.White
-                    )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Surface(
+                    onClick = { showListenTogetherSheet = true },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isJamActive) Color(0xFF06B6D4).copy(alpha = 0.2f) else Color.White.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, if (isJamActive) Color(0xFF06B6D4) else Color.White.copy(alpha = 0.15f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Listen Together",
+                            tint = if (isJamActive) Color(0xFF06B6D4) else Color.White,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Text(
+                            text = if (isJamActive) "JAM LIVE" else "Jam",
+                            color = if (isJamActive) Color(0xFF06B6D4) else Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
                 IconButton(onClick = { showAddToPlaylistSheet = true }) {
                     Icon(
@@ -1469,7 +1487,13 @@ fun MusicPlayerScreen(
     }
 
     if (showSettingsSheet) {
-        com.videoguard.app.ui.components.PlayerSettingsBottomSheet(onDismiss = { showSettingsSheet = false })
+        com.videoguard.app.ui.components.PlayerSettingsBottomSheet(
+            onDismiss = { showSettingsSheet = false },
+            onOpenJam = {
+                showSettingsSheet = false
+                showListenTogetherSheet = true
+            }
+        )
     }
 
     if (showAddToPlaylistSheet) {

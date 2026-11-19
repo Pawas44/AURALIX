@@ -45,6 +45,7 @@ fun AccountBottomSheet(
     var showGoogleAuthDialog by remember { mutableStateOf(false) }
     var showSpotifyLoginDialogInSheet by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var showJamSheet by remember { mutableStateOf(false) }
     var showCloudBackupSheet by remember { mutableStateOf(false) }
     val backupState by com.videoguard.app.data.GoogleDriveBackupEngine.backupState.collectAsState()
     val context = LocalContext.current
@@ -409,6 +410,13 @@ fun AccountBottomSheet(
                 )
 
                 AccountMenuItem(
+                    icon = Icons.Outlined.Share,
+                    title = "Listen Together (Live Jam)",
+                    badge = "JAM",
+                    onClick = { showJamSheet = true }
+                )
+
+                AccountMenuItem(
                     icon = Icons.Outlined.Settings,
                     title = "Settings",
                     onClick = { showSettingsSheet = true }
@@ -443,6 +451,10 @@ fun AccountBottomSheet(
         )
     }
 
+    if (showJamSheet) {
+        ListenTogetherSheet(onDismiss = { showJamSheet = false })
+    }
+
     if (showSettingsSheet) {
         PlayerSettingsBottomSheet(
             onDismiss = { showSettingsSheet = false }
@@ -455,13 +467,23 @@ fun AccountBottomSheet(
             containerColor = Color(0xF2121320),
             dragHandle = { BottomSheetDefaults.DragHandle(color = Color.White.copy(alpha = 0.35f)) }
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .padding(bottom = 24.dp)
-            ) {
-                GoogleDriveBackupCard()
+            val activity = LocalContext.current as? androidx.activity.ComponentActivity
+            val content = @Composable {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .padding(bottom = 24.dp)
+                ) {
+                    GoogleDriveBackupCard()
+                }
+            }
+            if (activity != null) {
+                CompositionLocalProvider(androidx.activity.compose.LocalActivityResultRegistryOwner provides activity) {
+                    content()
+                }
+            } else {
+                content()
             }
         }
     }

@@ -13,6 +13,7 @@ struct MainView: View {
     @State private var isLibraryActive: Bool = false
     @State private var showAccountSheet: Bool = false
     @State private var showGoogleAuthSheet: Bool = false
+    @State private var showJamSheet: Bool = false
 
     @State private var activeChannelVideo: VideoItem? = nil
     @State private var activePlaylist: UserPlaylist? = nil
@@ -360,9 +361,18 @@ struct MainView: View {
                 },
                 onSignInClick: {
                     showGoogleAuthSheet = true
+                },
+                onOpenJam: {
+                    showAccountSheet = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        showJamSheet = true
+                    }
                 }
             )
             .presentationDetents([.fraction(0.60), .large])
+        }
+        .sheet(isPresented: $showJamSheet) {
+            ListenTogetherSheet()
         }
         .fullScreenCover(isPresented: $showGoogleAuthSheet) {
             GoogleAuthSheet(

@@ -26,9 +26,15 @@ struct MusicPlayerView: View {
     @State private var isSheetExpanded = false
     @State private var isUserScrubbing = false
     @State private var scrubPosition: Double = 0
-    @State private var showSettingsSheet = false
-    @State private var showAddToPlaylistSheet = false
-    @State private var showJamSheet = false
+    enum ActiveMusicPlayerSheet: String, Identifiable {
+        case settings
+        case addToPlaylist
+        case jam
+
+        var id: String { rawValue }
+    }
+
+    @State private var activeSheet: ActiveMusicPlayerSheet? = nil
     @State private var isDownloaded = false
     @State private var downloadToastText: String? = nil
     @State private var dynamicRelated: [VideoItem] = []
@@ -149,14 +155,21 @@ struct MusicPlayerView: View {
 
                         Spacer()
 
-                        Button(action: { showJamSheet = true }) {
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(jamEngine.isInRoom ? Color(red: 139/255, green: 92/255, blue: 246/255) : .white)
-                                .frame(width: 34, height: 34)
+                        Button(action: { activeSheet = .jam }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "person.2.fill")
+                                    .font(.system(size: 14, weight: .bold))
+                                Text(jamEngine.isInRoom ? "JAM" : "Jam")
+                                    .font(.system(size: 11, weight: .bold))
+                            }
+                            .foregroundColor(jamEngine.isInRoom ? Color(red: 6/255, green: 182/255, blue: 212/255) : .white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(jamEngine.isInRoom ? Color(red: 6/255, green: 182/255, blue: 212/255).opacity(0.2) : Color.white.opacity(0.12))
+                            .clipShape(Capsule())
                         }
 
-                        Button(action: { showAddToPlaylistSheet = true }) {
+                        Button(action: { activeSheet = .addToPlaylist }) {
                             Image(systemName: "plus.circle")
                                 .font(.system(size: 20))
                                 .foregroundColor(.white)
@@ -250,22 +263,27 @@ struct MusicPlayerView: View {
             )
             isLoadingLyrics = false
         }
-        .sheet(isPresented: $showSettingsSheet) {
-            PlayerBottomSheet(appMode: .youtubeMusic, onDismiss: { showSettingsSheet = false })
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .settings:
+                PlayerBottomSheet(
+                    appMode: .youtubeMusic,
+                    onDismiss: { activeSheet = nil },
+                    onOpenJam: { activeSheet = .jam }
+                )
                 .presentationDetents([.medium, .large])
-        }
-        .sheet(isPresented: $showAddToPlaylistSheet) {
-            AddToPlaylistSheet(video: track) {
-                showAddToPlaylistSheet = false
+            case .addToPlaylist:
+                AddToPlaylistSheet(video: track) {
+                    activeSheet = nil
+                }
+            case .jam:
+                ListenTogetherSheet()
             }
-        }
-        .sheet(isPresented: $showJamSheet) {
-            ListenTogetherSheet()
         }
         .overlay(alignment: .top) {
             VStack(spacing: 8) {
                 if jamEngine.isInRoom {
-                    Button(action: { showJamSheet = true }) {
+                    Button(action: { activeSheet = .jam }) {
                         HStack(spacing: 8) {
                             Circle()
                                 .fill(Color(red: 6/255, green: 182/255, blue: 212/255))
@@ -365,7 +383,7 @@ struct MusicPlayerView: View {
 
                 Spacer()
 
-                Button(action: { showSettingsSheet = true }) {
+                Button(action: { activeSheet = .settings }) {
                     Image(systemName: "ellipsis")
                         .rotationEffect(.degrees(90))
                         .font(.system(size: 16, weight: .bold))

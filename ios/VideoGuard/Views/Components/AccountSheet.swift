@@ -5,6 +5,7 @@ struct AccountSheet: View {
     let onDismiss: () -> Void
     let onModeSwitch: () -> Void
     var onSignInClick: () -> Void = {}
+    var onOpenJam: (() -> Void)? = nil
 
     @ObservedObject var accountRepo = AccountRepository.shared
 
@@ -86,6 +87,13 @@ struct AccountSheet: View {
                 Divider().background(AppTheme.youTubeBorder)
 
                 VStack(spacing: 12) {
+                    Button(action: {
+                        onDismiss()
+                        onOpenJam?()
+                    }) {
+                        AccountMenuRow(icon: "person.2.fill", title: "Listen Together (Live Jam)")
+                    }
+
                     Button(action: {
                         accountRepo.toggleIncognito()
                         onDismiss()

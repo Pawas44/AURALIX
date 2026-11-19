@@ -16,7 +16,14 @@ struct PlayerControlsOverlay: View {
     @State private var controlsVisible = true
     @State private var isUserScrubbing = false
     @State private var scrubPosition: Double = 0
-    @State private var showSettingsSheet = false
+    enum ActiveVideoSheet: String, Identifiable {
+        case settings
+        case jam
+
+        var id: String { rawValue }
+    }
+
+    @State private var activeSheet: ActiveVideoSheet? = nil
     @State private var doubleTapSide: String? = nil
     @State private var hideTask: DispatchWorkItem? = nil
 
@@ -104,7 +111,7 @@ struct PlayerControlsOverlay: View {
 
                                 Spacer()
 
-                                Button(action: { showSettingsSheet = true }) {
+                                Button(action: { activeSheet = .settings }) {
                                     Image(systemName: "gearshape.fill")
                                         .font(.system(size: 18))
                                         .foregroundColor(.white)
@@ -205,12 +212,18 @@ struct PlayerControlsOverlay: View {
         .onChange(of: isPlaying) { _ in
             scheduleAutoHide()
         }
-        .sheet(isPresented: $showSettingsSheet) {
-            PlayerBottomSheet(
-                appMode: .youtube,
-                onDismiss: { showSettingsSheet = false }
-            )
-            .presentationDetents([.medium, .large])
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .settings:
+                PlayerBottomSheet(
+                    appMode: .youtube,
+                    onDismiss: { activeSheet = nil },
+                    onOpenJam: { activeSheet = .jam }
+                )
+                .presentationDetents([.medium, .large])
+            case .jam:
+                ListenTogetherSheet()
+            }
         }
     }
 
@@ -225,7 +238,7 @@ struct PlayerControlsOverlay: View {
 
     private func scheduleAutoHide() {
         hideTask?.cancel()
-        guard isPlaying && !isUserScrubbing && !showSettingsSheet else { return }
+        guard isPlaying && !isUserScrubbing && activeSheet == nil else { return }
         let task = DispatchWorkItem {
             withAnimation(.easeOut(duration: 0.25)) {
                 controlsVisible = false
