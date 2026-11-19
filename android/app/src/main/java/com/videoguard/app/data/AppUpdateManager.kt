@@ -50,7 +50,7 @@ object AppUpdateManager {
     val showUpdateDialog = _showUpdateDialog.asStateFlow()
 
     fun dismissDialog() {
-        _showUpdateDialog.value = false
+        // Mandatory update: cannot be dismissed
     }
 
     fun showDialogAgain() {
@@ -297,31 +297,53 @@ object AppUpdateManager {
                 val targetFile = File(targetDir, "AURALIX_update.apk")
                 if (targetFile.exists()) targetFile.delete()
 
-                var currentUrl = release.apkUrl
-                var conn: HttpURLConnection
-                var redirectCount = 0
+                val urlsToTry = listOf(
+                    release.apkUrl,
+                    "https://auralix-bice.vercel.app/assets/apk/AURALIX.apk"
+                ).distinct()
 
-                while (true) {
-                    val urlObj = URL(currentUrl)
-                    conn = urlObj.openConnection() as HttpURLConnection
-                    conn.connectTimeout = 20000
-                    conn.readTimeout = 60000
-                    conn.instanceFollowRedirects = true
-                    conn.setRequestProperty("User-Agent", "AURALIX-Android")
+                var downloadSuccess = false
+                var lastException: Exception? = null
 
-                    val code = conn.responseCode
-                    if ((code in 300..399) && redirectCount < 5) {
-                        val newLocation = conn.getHeaderField("Location")
-                        if (!newLocation.isNullOrBlank()) {
-                            currentUrl = newLocation
-                            redirectCount++
-                            continue
+                for (urlCandidate in urlsToTry) {
+                    try {
+                        var currentUrl = urlCandidate
+                        var conn: HttpURLConnection
+                        var redirectCount = 0
+
+                        while (true) {
+                            val urlObj = URL(currentUrl)
+                            conn = urlObj.openConnection() as HttpURLConnection
+                            conn.connectTimeout = 20000
+                            conn.readTimeout = 60000
+                            conn.instanceFollowRedirects = true
+                            conn.setRequestProperty("User-Agent", "AURALIX-Android")
+
+                            val code = conn.responseCode
+                            if ((code in 300..399) && redirectCount < 5) {
+                                val newLocation = conn.getHeaderField("Location")
+                                if (!newLocation.isNullOrBlank()) {
+                                    currentUrl = newLocation
+                                    redirectCount++
+                                    continue
+                                }
+                            }
+                            break
                         }
+
+                        downloadStream(context, conn, targetFile)
+                        if (targetFile.exists() && targetFile.length() > 5_000_000L) {
+                            downloadSuccess = true
+                            break
+                        }
+                    } catch (e: Exception) {
+                        lastException = e
                     }
-                    break
                 }
 
-                downloadStream(context, conn, targetFile)
+                if (!downloadSuccess) {
+                    throw lastException ?: Exception("Download failed from all mirrors")
+                }
 
                 // Download completed, launch Android Package Installer
                 _isDownloading.value = false

@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.videoguard.app.data.AppUpdateManager
 
 @Composable
@@ -41,11 +42,15 @@ fun AppUpdateDialog() {
 
     if (showDialog && updateInfo != null) {
         val info = updateInfo!!
-        Dialog(onDismissRequest = {
-            if (!isDownloading) {
-                AppUpdateManager.dismissDialog()
-            }
-        }) {
+        Dialog(
+            onDismissRequest = {
+                // Mandatory update: cannot be dismissed by tapping outside or back press
+            },
+            properties = DialogProperties(
+                dismissOnBackPress = false,
+                dismissOnClickOutside = false
+            )
+        ) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -95,7 +100,7 @@ fun AppUpdateDialog() {
 
                     // Clean, Elegant Headline matching reference design
                     Text(
-                        text = "Upgrade to the new version of our app",
+                        text = "Update Required to Continue",
                         color = Color.White,
                         fontSize = 18.5.sp,
                         fontWeight = FontWeight.Bold,
@@ -107,7 +112,7 @@ fun AppUpdateDialog() {
 
                     // Friendly, Natural Microcopy
                     Text(
-                        text = "We've made some major improvements to give you a faster experience and new features you'll love. Download the latest version now to keep things rolling smoothly!",
+                        text = "A new version of AURALIX (v${info.tagName.removePrefix("v")}) is required to continue enjoying seamless music playback and new features. Please update now to proceed.",
                         color = Color(0xFF9EABB8),
                         fontSize = 12.5.sp,
                         lineHeight = 18.sp,
@@ -199,21 +204,6 @@ fun AppUpdateDialog() {
                             fontSize = 15.5.sp,
                             fontWeight = FontWeight.Bold
                         )
-                    }
-
-                    if (!isDownloading) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        TextButton(
-                            onClick = { AppUpdateManager.dismissDialog() },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "Maybe later",
-                                color = Color(0xFF71788A),
-                                fontSize = 12.5.sp,
-                                fontWeight = FontWeight.Normal
-                            )
-                        }
                     }
                 }
             }
