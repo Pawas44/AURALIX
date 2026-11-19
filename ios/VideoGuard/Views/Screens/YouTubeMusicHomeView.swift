@@ -345,7 +345,7 @@ struct YouTubeMusicHomeView: View {
                             }
                         }
                     }
-                    .padding(.bottom, 80)
+                    .padding(.bottom, 120)
                 }
                 .padding(.top, 8)
             }

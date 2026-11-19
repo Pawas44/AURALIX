@@ -76,7 +76,13 @@ class MediaPlaybackService: ObservableObject {
     // MARK: - Audio Session, Silent Background Anchor & Lock Screen Controls
     private func activateAudioSessionIfNeeded() {
         do {
-            try AVAudioSession.sharedInstance().setActive(true)
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(
+                .playback,
+                mode: .default,
+                options: [.defaultToSpeaker, .allowBluetooth, .allowBluetoothA2DP, .allowAirPlay]
+            )
+            try session.setActive(true)
         } catch {}
     }
 

@@ -53,7 +53,7 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
         webView.isOpaque = false
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
-        webView.isUserInteractionEnabled = false
+        webView.isUserInteractionEnabled = true
         webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
 
         context.coordinator.webView = webView
@@ -77,7 +77,7 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
         }
 
         let html = Self.playerHTML(videoId: videoId)
-        webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube-nocookie.com"))
+        webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
         return webView
     }
 
@@ -452,7 +452,7 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
             function onYouTubeIframeAPIReady() {
               ytPlayer = new YT.Player('player', {
                 videoId: '\(videoId)',
-                host: 'https://www.youtube-nocookie.com',
+                host: 'https://www.youtube.com',
                 playerVars: {
                   'autoplay': 1,
                   'playsinline': 1,
@@ -465,18 +465,27 @@ struct YouTubeVideoPlayer: UIViewRepresentable {
                   'iv_load_policy': 3,
                   'showinfo': 0,
                   'autohide': 1,
-                  'origin': 'https://www.youtube-nocookie.com'
+                  'origin': 'https://www.youtube.com'
                 },
                 events: {
                   'onReady': onPlayerReady,
-                  'onStateChange': onPlayerStateChange
+                  'onStateChange': onPlayerStateChange,
+                  'onError': onPlayerError
                 }
               });
               window.ytPlayer = ytPlayer;
             }
 
+            function onPlayerError(event) {
+              try {
+                postBridge({ event: 'onError', code: event.data });
+              } catch(e) {}
+            }
+
             function onPlayerReady(event) {
               window.ytPlayer = event.target;
+              try { event.target.unMute(); } catch(e) {}
+              try { event.target.setVolume(100); } catch(e) {}
               if (window.currentVideoId && window.currentVideoId !== '\(videoId)') {
                 try {
                   event.target.loadVideoById({ 'videoId': window.currentVideoId, 'startSeconds': 0 });

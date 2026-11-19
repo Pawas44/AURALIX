@@ -292,8 +292,9 @@ struct MainView: View {
 
             // Persistent YouTube Video Player (Stays alive across all screens & background!)
             if let track = playbackService.currentTrack {
-                let playerWidth: CGFloat? = (isFullscreen || showVideoInYT) ? nil : 240
-                let playerHeight: CGFloat? = (isFullscreen || showVideoInYT) ? nil : 135
+                let isVisualPlayer = (showVideoInYT || isFullscreen)
+                let playerWidth: CGFloat? = isVisualPlayer ? nil : 240
+                let playerHeight: CGFloat? = isVisualPlayer ? nil : 135
 
                 ZStack {
                     YouTubeVideoPlayer(
@@ -302,7 +303,7 @@ struct MainView: View {
                     )
                     .background(Color.black)
 
-                    if showVideoInYT || isFullscreen {
+                    if isVisualPlayer {
                         PlayerControlsOverlay(
                             isPlaying: playbackService.isPlaying,
                             currentTime: playbackService.currentTimeSeconds,
@@ -326,14 +327,15 @@ struct MainView: View {
                 }
                 .frame(width: playerWidth, height: playerHeight)
                 .frame(
-                    maxWidth: (isFullscreen || showVideoInYT) ? .infinity : nil,
+                    maxWidth: isVisualPlayer ? .infinity : nil,
                     maxHeight: isFullscreen ? .infinity : nil
                 )
                 .aspectRatio(showVideoInYT && !isFullscreen ? 16/9 : nil, contentMode: .fit)
-                .opacity((showVideoInYT || isFullscreen) ? 1.0 : 0.03)
-                .allowsHitTesting(showVideoInYT || isFullscreen)
+                .opacity(isVisualPlayer ? 1.0 : 0.99)
+                .offset(x: isVisualPlayer ? 0 : -5000, y: isVisualPlayer ? 0 : -5000)
+                .allowsHitTesting(isVisualPlayer)
                 .ignoresSafeArea(edges: isFullscreen ? .all : [])
-                .zIndex(isFullscreen ? 50 : (showVideoInYT ? 15 : -10))
+                .zIndex(isFullscreen ? 50 : (showVideoInYT ? 15 : 1))
             }
         }
         .statusBarHidden(isFullscreen)
