@@ -8,6 +8,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import com.videoguard.app.service.PlaybackController
 import com.videoguard.app.ui.screens.MainScreen
@@ -43,14 +45,17 @@ class MainActivity : ComponentActivity() {
         }
 
         PlaybackController.init(this)
+        com.videoguard.app.data.AuthManager.init(this)
         com.videoguard.app.data.GoogleDriveBackupEngine.init(this)
         com.videoguard.app.data.ListenTogetherEngine.init(this)
 
-        CoroutineScope(Dispatchers.IO).launch {
-            com.videoguard.app.data.GoogleDriveBackupEngine.checkAndAutoRestoreOnInstall(this@MainActivity)
-            com.videoguard.app.data.YouTubeSyncEngine.syncAllUserData()
-            com.videoguard.app.data.AppUpdateManager.checkForUpdates(this@MainActivity)
-            com.videoguard.app.data.AppUpdateManager.startPeriodicChecks(this@MainActivity)
+        if (com.videoguard.app.data.AuthManager.isLoggedIn.value) {
+            CoroutineScope(Dispatchers.IO).launch {
+                com.videoguard.app.data.GoogleDriveBackupEngine.checkAndAutoRestoreOnInstall(this@MainActivity)
+                com.videoguard.app.data.YouTubeSyncEngine.syncAllUserData()
+                com.videoguard.app.data.AppUpdateManager.checkForUpdates(this@MainActivity)
+                com.videoguard.app.data.AppUpdateManager.startPeriodicChecks(this@MainActivity)
+            }
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -66,19 +71,26 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             VideoGuardTheme {
-                MainScreen()
-                com.videoguard.app.ui.components.AppUpdateDialog()
+                val isLoggedIn by com.videoguard.app.data.AuthManager.isLoggedIn.collectAsState()
+                if (isLoggedIn) {
+                    MainScreen()
+                    com.videoguard.app.ui.components.AppUpdateDialog()
+                } else {
+                    com.videoguard.app.ui.screens.LoginScreen()
+                }
             }
         }
     }
 
     override fun onResume() {
         super.onResume()
-        if (com.videoguard.app.data.YouTubeSyncEngine.hasAuthCookies()) {
-            CoroutineScope(Dispatchers.IO).launch {
-                com.videoguard.app.data.YouTubeSyncEngine.syncAllUserData()
+        if (com.videoguard.app.data.AuthManager.isLoggedIn.value) {
+            if (com.videoguard.app.data.YouTubeSyncEngine.hasAuthCookies()) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    com.videoguard.app.data.YouTubeSyncEngine.syncAllUserData()
+                }
             }
+            com.videoguard.app.data.AppUpdateManager.checkForUpdates(this)
         }
-        com.videoguard.app.data.AppUpdateManager.checkForUpdates(this)
     }
 }

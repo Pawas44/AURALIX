@@ -428,6 +428,19 @@ fun AccountBottomSheet(
                     onClick = onDismiss
                 )
 
+                val currentAuthUser by com.videoguard.app.data.AuthManager.currentUser.collectAsState()
+                if (currentAuthUser != null) {
+                    AccountMenuItem(
+                        icon = Icons.AutoMirrored.Filled.Logout,
+                        title = "Log Out (${currentAuthUser!!.username})",
+                        badge = "Exit",
+                        onClick = {
+                            com.videoguard.app.data.AuthManager.logout(context)
+                            onDismiss()
+                        }
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(28.dp))
             }
         }
