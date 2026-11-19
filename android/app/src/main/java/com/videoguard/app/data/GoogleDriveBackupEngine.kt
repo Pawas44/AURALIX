@@ -26,6 +26,7 @@ import java.util.Locale
 
 data class BackupState(
     val hasLocalBackup: Boolean = false,
+    val isDriveConnected: Boolean = false,
     val lastBackupFormatted: String = "Never",
     val backupSizeBytes: Long = 0L,
     val isBackingUp: Boolean = false,
@@ -71,6 +72,7 @@ object GoogleDriveBackupEngine {
 
         _backupState.value = BackupState(
             hasLocalBackup = hasBackup,
+            isDriveConnected = hasBackup,
             lastBackupFormatted = formattedDate,
             backupSizeBytes = if (lastSize > 0) lastSize else (backupFile?.length() ?: 0L),
             isSpotifySaved = SpotifyConnectEngine.isConnected.value,
@@ -216,6 +218,7 @@ object GoogleDriveBackupEngine {
 
             _backupState.value = _backupState.value.copy(
                 hasLocalBackup = true,
+                isDriveConnected = true,
                 lastBackupFormatted = formatted,
                 backupSizeBytes = bytes.size.toLong(),
                 isBackingUp = false,
@@ -260,6 +263,7 @@ object GoogleDriveBackupEngine {
 
             _backupState.value = _backupState.value.copy(
                 hasLocalBackup = true,
+                isDriveConnected = true,
                 lastBackupFormatted = formatted,
                 backupSizeBytes = bytes.size.toLong(),
                 isBackingUp = false,
@@ -360,6 +364,8 @@ object GoogleDriveBackupEngine {
             RecommendationEngine.refreshHomeFeed(forceRefresh = true)
 
             _backupState.value = _backupState.value.copy(
+                hasLocalBackup = true,
+                isDriveConnected = true,
                 isRestoring = false,
                 isSpotifySaved = SpotifyConnectEngine.isConnected.value,
                 isYouTubeSaved = YouTubeSyncEngine.hasAuthCookies(),
