@@ -68,12 +68,17 @@ fun GoogleDriveBackupCard(
     ) { uri: Uri? ->
         if (uri != null) {
             coroutineScope.launch {
-                val outputStream = context.contentResolver.openOutputStream(uri)
-                val success = GoogleDriveBackupEngine.writeBackupToStream(context, outputStream)
-                if (success) {
-                    Toast.makeText(context, "Full app backup saved to Google Drive!", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(context, "Failed to save backup to Google Drive", Toast.LENGTH_SHORT).show()
+                try {
+                    val outputStream = context.contentResolver.openOutputStream(uri)
+                    val success = GoogleDriveBackupEngine.writeBackupToStream(context, outputStream)
+                    if (success) {
+                        Toast.makeText(context, "Full app backup saved to Google Drive!", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Failed to save backup to Google Drive", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(context, "Error saving backup: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -85,12 +90,17 @@ fun GoogleDriveBackupCard(
     ) { uri: Uri? ->
         if (uri != null) {
             coroutineScope.launch {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                val success = GoogleDriveBackupEngine.restoreFromStream(inputStream)
-                if (success) {
-                    Toast.makeText(context, "Spotify account, playlists & recommendations restored!", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(context, "Invalid backup file selected", Toast.LENGTH_SHORT).show()
+                try {
+                    val inputStream = context.contentResolver.openInputStream(uri)
+                    val success = GoogleDriveBackupEngine.restoreFromStream(inputStream)
+                    if (success) {
+                        Toast.makeText(context, "Spotify account, playlists & recommendations restored!", Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(context, "Invalid backup file selected", Toast.LENGTH_SHORT).show()
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                    Toast.makeText(context, "Error restoring backup: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }

@@ -136,77 +136,99 @@ object GoogleDriveBackupEngine {
         root.put("formattedDate", SimpleDateFormat("MMM dd, yyyy 'at' hh:mm a", Locale.getDefault()).format(Date()))
 
         // 1. Personalized Taste Profile
-        root.put("tasteProfile", UserTasteProfile.get().exportTasteProfileJson())
+        try {
+            root.put("tasteProfile", UserTasteProfile.get().exportTasteProfileJson())
+        } catch (e: Exception) {
+            e.printStackTrace()
+            root.put("tasteProfile", JSONObject())
+        }
 
-        // 2. Playlists
+        // 2. Playlists (defensive copy to prevent ConcurrentModificationException)
         val playlistsArr = JSONArray()
-        UserDataRepository.playlists.value.forEach {
-            playlistsArr.put(UserDataRepository.playlistToJson(it))
+        try {
+            val list = UserDataRepository.playlists.value.toList()
+            list.forEach {
+                playlistsArr.put(UserDataRepository.playlistToJson(it))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
         root.put("playlists", playlistsArr)
 
-        // 3. Listening / Watch History
+        // 3. Listening / Watch History (defensive copy)
         val historyArr = JSONArray()
-        UserDataRepository.history.value.forEach {
-            historyArr.put(UserDataRepository.videoToJson(it))
+        try {
+            val list = UserDataRepository.history.value.toList()
+            list.forEach {
+                historyArr.put(UserDataRepository.videoToJson(it))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
         root.put("history", historyArr)
 
         // 4. Spotify Session & Auth
-        val spotifyObj = JSONObject()
-        val spDc = SpotifyConnectEngine.getSpDcCookie()
-        val spName = SpotifyConnectEngine.userDisplayName.value
-        val isSpConnected = SpotifyConnectEngine.isConnected.value
-        spotifyObj.put("connected", isSpConnected)
-        if (!spDc.isNullOrBlank()) {
-            spotifyObj.put("sp_dc", spDc)
+        try {
+            val spotifyObj = JSONObject()
+            val spDc = SpotifyConnectEngine.getSpDcCookie()
+            val spName = SpotifyConnectEngine.userDisplayName.value
+            val isSpConnected = SpotifyConnectEngine.isConnected.value
+            spotifyObj.put("connected", isSpConnected)
+            if (!spDc.isNullOrBlank()) {
+                spotifyObj.put("sp_dc", spDc)
+            }
+            if (!spName.isNullOrBlank()) {
+                spotifyObj.put("displayName", spName)
+            }
+            root.put("spotify", spotifyObj)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
-        if (!spName.isNullOrBlank()) {
-            spotifyObj.put("displayName", spName)
-        }
-        root.put("spotify", spotifyObj)
 
         // 5. YouTube Auth & Session Cookies
-        val ytObj = JSONObject()
-        val ytCookies = YouTubeSyncEngine.getAuthCookies()
-        if (ytCookies.isNotBlank()) {
-            ytObj.put("cookies", ytCookies)
+        try {
+            val ytObj = JSONObject()
+            val ytCookies = YouTubeSyncEngine.getAuthCookies()
+            if (ytCookies.isNotBlank()) {
+                ytObj.put("cookies", ytCookies)
+            }
+            root.put("youtube", ytObj)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
-        root.put("youtube", ytObj)
 
         // 6. Connected Google Account
-        val account = AccountRepository.currentAccount.value
-        if (account != null) {
-            val accObj = JSONObject().apply {
-                put("name", account.name)
-                put("email", account.email)
-                put("handle", account.handle)
-                put("avatarUrl", account.avatarUrl ?: "")
+        try {
+            val account = AccountRepository.currentAccount.value
+            if (account != null) {
+                val accObj = JSONObject().apply {
+                    put("name", account.name)
+                    put("email", account.email)
+                    put("handle", account.handle)
+                    put("avatarUrl", account.avatarUrl ?: "")
+                }
+                root.put("account", accObj)
             }
-            root.put("account", accObj)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
 
         return root
     }
 
     /**
-     * Saves complete backup locally to Documents/AURALIX and app internal cache.
+     * Saves complete backup locally across app-internal and external scoped storage.
      * Persists across app uninstalls!
      */
     suspend fun backupLocally(context: Context): Boolean = withContext(Dispatchers.IO) {
         try {
+            if (prefs == null) init(context)
             _backupState.value = _backupState.value.copy(isBackingUp = true)
 
             val json = createFullBackupJson()
             val bytes = json.toString(2).toByteArray(Charsets.UTF_8)
 
-            // 1. Write to Documents/AURALIX/auralix_backup.json (survives uninstall!)
-            val publicFile = getPublicBackupFile()
-            publicFile?.writeBytes(bytes)
-
-            // 2. Write to app internal cache
-            val internalFile = File(context.filesDir, BACKUP_FILENAME)
-            internalFile.writeBytes(bytes)
+            saveBackupToAllLocations(context, bytes)
 
             val now = System.currentTimeMillis()
             val formatted = formatTimestamp(now)
@@ -240,6 +262,7 @@ object GoogleDriveBackupEngine {
     suspend fun writeBackupToStream(context: Context, outputStream: OutputStream?): Boolean = withContext(Dispatchers.IO) {
         if (outputStream == null) return@withContext false
         try {
+            if (prefs == null) init(context)
             _backupState.value = _backupState.value.copy(isBackingUp = true)
 
             val json = createFullBackupJson()
@@ -250,9 +273,8 @@ object GoogleDriveBackupEngine {
                 out.flush()
             }
 
-            // Also keep local and documents snapshots
-            getPublicBackupFile()?.writeBytes(bytes)
-            File(context.filesDir, BACKUP_FILENAME).writeBytes(bytes)
+            // Also keep local and documents snapshots safely
+            saveBackupToAllLocations(context, bytes)
 
             val now = System.currentTimeMillis()
             val formatted = formatTimestamp(now)
@@ -379,49 +401,144 @@ object GoogleDriveBackupEngine {
         }
     }
 
-    /**
-     * Finds any existing backup file across public Documents, Downloads, or app internal storage.
-     */
-    fun findAnyExistingBackup(context: Context): File? {
-        // 1. Documents/AURALIX/auralix_backup.json
+    private fun saveBackupToAllLocations(context: Context, bytes: ByteArray) {
+        if (prefs == null) {
+            init(context)
+        }
+
+        // 1. App internal filesDir (Always succeeds without any permission)
         try {
-            val pub = getPublicBackupFile()
-            if (pub != null && pub.exists() && pub.length() > 0) return pub
+            val internalFile = File(context.filesDir, BACKUP_FILENAME)
+            internalFile.writeBytes(bytes)
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        // 2. Download/auralix_backup.json
+        // 2. External app Documents: context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) (Always succeeds on Android 10-15)
         try {
-            val dlDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val dlFile = File(dlDir, BACKUP_FILENAME)
-            if (dlFile.exists() && dlFile.length() > 0) return dlFile
+            val extDocs = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
+            if (extDocs != null) {
+                if (!extDocs.exists()) extDocs.mkdirs()
+                val extFile = File(extDocs, BACKUP_FILENAME)
+                extFile.writeBytes(bytes)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        // 3. App internal filesDir
-        val internalFile = File(context.filesDir, BACKUP_FILENAME)
-        if (internalFile.exists() && internalFile.length() > 0) return internalFile
+        // 3. External app filesDir: context.getExternalFilesDir(null)
+        try {
+            val extFiles = context.getExternalFilesDir(null)
+            if (extFiles != null) {
+                if (!extFiles.exists()) extFiles.mkdirs()
+                val extFile = File(extFiles, BACKUP_FILENAME)
+                extFile.writeBytes(bytes)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
-        val legacyInternal = File(context.filesDir, "auralix_drive_backup.json")
-        if (legacyInternal.exists() && legacyInternal.length() > 0) return legacyInternal
+        // 4. Public Downloads via MediaStore (Android 10-15 official Scoped Storage API - survives uninstall without permission!)
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val contentValues = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, BACKUP_FILENAME)
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/json")
+                    put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/AURALIX")
+                }
+                val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { out ->
+                        out.write(bytes)
+                        out.flush()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Handled silently
+        }
 
-        return null
-    }
-
-    private fun getPublicBackupFile(): File? {
-        return try {
+        // 5. Best-effort: Public Documents/AURALIX (survives app uninstall on permitted devices)
+        try {
             val docs = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
             val auralixDir = File(docs, "AURALIX")
             if (!auralixDir.exists()) {
                 auralixDir.mkdirs()
             }
-            File(auralixDir, BACKUP_FILENAME)
+            val pubFile = File(auralixDir, BACKUP_FILENAME)
+            pubFile.writeBytes(bytes)
         } catch (e: Exception) {
-            e.printStackTrace()
-            null
+            // Silently handled: Scoped storage restrictions on modern Android
         }
+
+        // 6. Best-effort: Public Downloads/auralix_backup.json
+        try {
+            val dlDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val dlFile = File(dlDir, BACKUP_FILENAME)
+            dlFile.writeBytes(bytes)
+        } catch (e: Exception) {
+            // Silently handled
+        }
+    }
+
+    /**
+     * Finds any existing backup file across app internal storage, external app storage, Documents, or Downloads.
+     */
+    fun findAnyExistingBackup(context: Context): File? {
+        // 1. App internal filesDir (Most reliable)
+        try {
+            val internalFile = File(context.filesDir, BACKUP_FILENAME)
+            if (internalFile.exists() && internalFile.length() > 0) return internalFile
+        } catch (e: Exception) {}
+
+        // 2. External app Documents
+        try {
+            val extDocs = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
+            if (extDocs != null) {
+                val f = File(extDocs, BACKUP_FILENAME)
+                if (f.exists() && f.length() > 0) return f
+            }
+        } catch (e: Exception) {}
+
+        // 3. External app filesDir
+        try {
+            val extFiles = context.getExternalFilesDir(null)
+            if (extFiles != null) {
+                val f = File(extFiles, BACKUP_FILENAME)
+                if (f.exists() && f.length() > 0) return f
+            }
+        } catch (e: Exception) {}
+
+        // 4. Download/AURALIX/auralix_backup.json
+        try {
+            val dlDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val dlAuralix = File(File(dlDir, "AURALIX"), BACKUP_FILENAME)
+            if (dlAuralix.exists() && dlAuralix.length() > 0) return dlAuralix
+        } catch (e: Exception) {}
+
+        // 5. Documents/AURALIX/auralix_backup.json
+        try {
+            val docs = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            val auralixDir = File(docs, "AURALIX")
+            val pub = File(auralixDir, BACKUP_FILENAME)
+            if (pub.exists() && pub.length() > 0) return pub
+        } catch (e: Exception) {}
+
+        // 6. Download/auralix_backup.json
+        try {
+            val dlDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val dlFile = File(dlDir, BACKUP_FILENAME)
+            if (dlFile.exists() && dlFile.length() > 0) return dlFile
+        } catch (e: Exception) {}
+
+        // 7. Legacy backup filename
+        try {
+            val legacyInternal = File(context.filesDir, "auralix_drive_backup.json")
+            if (legacyInternal.exists() && legacyInternal.length() > 0) return legacyInternal
+        } catch (e: Exception) {}
+
+        return null
     }
 
     private fun formatTimestamp(timeMs: Long): String {
