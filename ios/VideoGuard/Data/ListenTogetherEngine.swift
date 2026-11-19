@@ -407,7 +407,7 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
                     let targetSec = Double(posMs) / 1000.0
                     let currentPos = MediaPlaybackService.shared.currentTimeSeconds
                     if abs(currentPos - targetSec) > 2.0 {
-                        MediaPlaybackService.shared.seek(to: targetSec)
+                        MediaPlaybackService.shared.seekTo(seconds: targetSec)
                     }
                 }
                 if isPlaying {
@@ -422,7 +422,7 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
             case "seek":
                 if let posMs = (payload["positionMs"] as? NSNumber)?.int64Value, posMs >= 0 {
                     self.isApplyingRemoteSync = true
-                    MediaPlaybackService.shared.seek(to: Double(posMs) / 1000.0)
+                    MediaPlaybackService.shared.seekTo(seconds: Double(posMs) / 1000.0)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                         self.isApplyingRemoteSync = false
                     }
@@ -535,7 +535,7 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
 
         if targetPositionSec > 0.5 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                MediaPlaybackService.shared.seek(to: targetPositionSec)
+                MediaPlaybackService.shared.seekTo(seconds: targetPositionSec)
                 if shouldPlay { MediaPlaybackService.shared.play() } else { MediaPlaybackService.shared.pause() }
             }
         } else {
