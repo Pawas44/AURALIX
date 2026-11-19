@@ -92,6 +92,8 @@ fun MusicLibraryScreen(
     val isSpotifySyncing by SpotifyConnectEngine.isSyncing.collectAsState()
     var showSpotifyLoginDialog by remember { mutableStateOf(false) }
     var showSpotifyLogoutDialog by remember { mutableStateOf(false) }
+    var showCloudBackupSheet by remember { mutableStateOf(false) }
+    val backupState by com.videoguard.app.data.GoogleDriveBackupEngine.backupState.collectAsState()
 
     val likedPlaylist = playlists.find { it.id == "liked_videos" }
     val likedCount = likedPlaylist?.videoCount ?: 0
@@ -146,6 +148,19 @@ fun MusicLibraryScreen(
                     modifier = Modifier.weight(1f)
                 )
 
+                // Google Drive Cloud Sync Icon Button
+                IconButton(
+                    onClick = { showCloudBackupSheet = true },
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Icon(
+                        imageVector = if (backupState.isDriveConnected) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                        contentDescription = "Google Drive Cloud Sync",
+                        tint = if (backupState.isDriveConnected) Color(0xFF4285F4) else Color(0xFFD4D4E2),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+
                 IconButton(onClick = onOpenSearch) {
                     Icon(
                         imageVector = Icons.Default.Search,
@@ -188,17 +203,6 @@ fun MusicLibraryScreen(
                             shape = RoundedCornerShape(16.dp)
                         )
                     }
-                }
-            }
-
-            // Google Drive Cloud Sync Card
-            if (selectedFilter == "All" || selectedFilter == "Playlists") {
-                item {
-                    com.videoguard.app.ui.components.GoogleDriveBackupCard(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 6.dp)
-                    )
                 }
             }
 
@@ -1686,6 +1690,23 @@ fun MusicLibraryScreen(
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+            }
+        }
+    }
+
+    if (showCloudBackupSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showCloudBackupSheet = false },
+            containerColor = Color(0xF2121320),
+            dragHandle = { BottomSheetDefaults.DragHandle(color = Color.White.copy(alpha = 0.35f)) }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(bottom = 24.dp)
+            ) {
+                com.videoguard.app.ui.components.GoogleDriveBackupCard()
             }
         }
     }

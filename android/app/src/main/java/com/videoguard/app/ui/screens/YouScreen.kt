@@ -79,6 +79,8 @@ fun YouScreen(
     var newPlaylistName by remember { mutableStateOf("") }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var showCloudBackupSheet by remember { mutableStateOf(false) }
+    val backupState by com.videoguard.app.data.GoogleDriveBackupEngine.backupState.collectAsState()
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -162,7 +164,8 @@ fun YouScreen(
                     .height(52.dp)
                     .background(Color.Transparent)
                     .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
                     text = "Account",
@@ -170,6 +173,18 @@ fun YouScreen(
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold
                 )
+
+                IconButton(
+                    onClick = { showCloudBackupSheet = true },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = if (backupState.isDriveConnected) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                        contentDescription = "Cloud Sync",
+                        tint = if (backupState.isDriveConnected) Color(0xFF4285F4) else Color(0xFFD4D4E2),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
         },
         containerColor = Color.Transparent,
@@ -333,14 +348,6 @@ fun YouScreen(
                 }
             }
 
-            // Google Drive Cloud Sync Card
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    com.videoguard.app.ui.components.GoogleDriveBackupCard()
-                }
-            }
-
             // History Section Header
             item {
                 Spacer(modifier = Modifier.height(10.dp))
@@ -471,6 +478,23 @@ fun YouScreen(
         com.videoguard.app.ui.components.PlayerSettingsBottomSheet(
             onDismiss = { showSettingsSheet = false }
         )
+    }
+
+    if (showCloudBackupSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showCloudBackupSheet = false },
+            containerColor = Color(0xF2121320),
+            dragHandle = { BottomSheetDefaults.DragHandle(color = Color.White.copy(alpha = 0.35f)) }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(bottom = 24.dp)
+            ) {
+                com.videoguard.app.ui.components.GoogleDriveBackupCard()
+            }
+        }
     }
 }
 

@@ -45,6 +45,8 @@ fun AccountBottomSheet(
     var showGoogleAuthDialog by remember { mutableStateOf(false) }
     var showSpotifyLoginDialogInSheet by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var showCloudBackupSheet by remember { mutableStateOf(false) }
+    val backupState by com.videoguard.app.data.GoogleDriveBackupEngine.backupState.collectAsState()
     val context = LocalContext.current
 
     val scope = rememberCoroutineScope()
@@ -370,18 +372,15 @@ fun AccountBottomSheet(
                 HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
             }
 
-            // Google Drive Cloud Sync
-            item {
-                GoogleDriveBackupCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp)
-                )
-                HorizontalDivider(color = Color(0xFF333333), modifier = Modifier.padding(vertical = 8.dp))
-            }
-
             // Quick Actions: Incognito, Channels, Settings
             item {
+                AccountMenuItem(
+                    icon = if (backupState.isDriveConnected) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                    title = "Google Drive Cloud Sync",
+                    badge = if (backupState.isDriveConnected) "Connected" else null,
+                    onClick = { showCloudBackupSheet = true }
+                )
+
                 AccountMenuItem(
                     icon = if (isIncognito) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                     title = if (isIncognito) "Turn off Incognito" else "Turn on Incognito",
@@ -448,6 +447,23 @@ fun AccountBottomSheet(
         PlayerSettingsBottomSheet(
             onDismiss = { showSettingsSheet = false }
         )
+    }
+
+    if (showCloudBackupSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showCloudBackupSheet = false },
+            containerColor = Color(0xF2121320),
+            dragHandle = { BottomSheetDefaults.DragHandle(color = Color.White.copy(alpha = 0.35f)) }
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(bottom = 24.dp)
+            ) {
+                GoogleDriveBackupCard()
+            }
+        }
     }
 }
 
