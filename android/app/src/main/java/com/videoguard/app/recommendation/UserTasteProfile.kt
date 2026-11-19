@@ -394,57 +394,71 @@ class UserTasteProfile private constructor() {
         return root
     }
 
+    @Synchronized
     fun importTasteProfileJson(root: JSONObject) {
-        val artistsArr = root.optJSONArray("artists")
-        if (artistsArr != null) {
-            for (i in 0 until artistsArr.length()) {
-                val obj = artistsArr.getJSONObject(i)
-                val name = obj.getString("name")
-                artistAffinities[name] = ArtistAffinity(
-                    artistName = name,
-                    score = obj.optDouble("score", 0.0),
-                    playCount = obj.optInt("playCount", 0),
-                    completeCount = obj.optInt("completeCount", 0),
-                    skipCount = obj.optInt("skipCount", 0),
-                    likeCount = obj.optInt("likeCount", 0),
-                    dislikeCount = obj.optInt("dislikeCount", 0),
-                    lastInteractedMs = obj.optLong("lastMs", System.currentTimeMillis())
-                )
+        try {
+            val artistsArr = root.optJSONArray("artists")
+            if (artistsArr != null) {
+                for (i in 0 until artistsArr.length()) {
+                    val obj = artistsArr.optJSONObject(i) ?: continue
+                    val name = obj.optString("name", "")
+                    if (name.isNotBlank()) {
+                        artistAffinities[name] = ArtistAffinity(
+                            artistName = name,
+                            score = obj.optDouble("score", 0.0),
+                            playCount = obj.optInt("playCount", 0),
+                            completeCount = obj.optInt("completeCount", 0),
+                            skipCount = obj.optInt("skipCount", 0),
+                            likeCount = obj.optInt("likeCount", 0),
+                            dislikeCount = obj.optInt("dislikeCount", 0),
+                            lastInteractedMs = obj.optLong("lastMs", System.currentTimeMillis())
+                        )
+                    }
+                }
             }
-        }
 
-        val genresArr = root.optJSONArray("genres")
-        if (genresArr != null) {
-            for (i in 0 until genresArr.length()) {
-                val obj = genresArr.getJSONObject(i)
-                val g = obj.getString("genre")
-                genreAffinities[g] = GenreAffinity(
-                    genre = g,
-                    score = obj.optDouble("score", 0.0),
-                    interactionCount = obj.optInt("count", 0)
-                )
+            val genresArr = root.optJSONArray("genres")
+            if (genresArr != null) {
+                for (i in 0 until genresArr.length()) {
+                    val obj = genresArr.optJSONObject(i) ?: continue
+                    val g = obj.optString("genre", "")
+                    if (g.isNotBlank()) {
+                        genreAffinities[g] = GenreAffinity(
+                            genre = g,
+                            score = obj.optDouble("score", 0.0),
+                            interactionCount = obj.optInt("count", 0)
+                        )
+                    }
+                }
             }
-        }
 
-        val ht = root.optJSONArray("hiddenTracks")
-        if (ht != null) {
-            for (i in 0 until ht.length()) {
-                hiddenTrackIds.add(ht.getString(i))
+            val ht = root.optJSONArray("hiddenTracks")
+            if (ht != null) {
+                for (i in 0 until ht.length()) {
+                    val track = ht.optString(i, "")
+                    if (track.isNotBlank()) hiddenTrackIds.add(track)
+                }
             }
-        }
 
-        val ha = root.optJSONArray("hiddenArtists")
-        if (ha != null) {
-            for (i in 0 until ha.length()) {
-                hiddenArtistNames.add(ha.getString(i))
+            val ha = root.optJSONArray("hiddenArtists")
+            if (ha != null) {
+                for (i in 0 until ha.length()) {
+                    val artist = ha.optString(i, "")
+                    if (artist.isNotBlank()) hiddenArtistNames.add(artist)
+                }
             }
-        }
 
-        val da = root.optJSONArray("discovered")
-        if (da != null) {
-            for (i in 0 until da.length()) {
-                discoveredArtists.add(da.getString(i))
+            val da = root.optJSONArray("discovered")
+            if (da != null) {
+                for (i in 0 until da.length()) {
+                    val artist = da.optString(i, "")
+                    if (artist.isNotBlank()) discoveredArtists.add(artist)
+                }
             }
+
+            saveToPrefs()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

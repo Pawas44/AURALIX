@@ -35,7 +35,9 @@ import androidx.compose.ui.unit.sp
 import com.videoguard.app.data.AccountRepository
 import com.videoguard.app.data.GoogleDriveBackupEngine
 import com.videoguard.app.data.SpotifyConnectEngine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -337,17 +339,24 @@ fun GoogleDriveBackupCard(
                     onClick = {
                         if (!backupState.isRestoring) {
                             coroutineScope.launch {
-                                val backupFile = GoogleDriveBackupEngine.findAnyExistingBackup(context)
-                                if (backupFile != null && backupFile.exists()) {
-                                    val success = GoogleDriveBackupEngine.restoreFromStream(backupFile.inputStream())
-                                    if (success) {
-                                        Toast.makeText(context, "Spotify & library restored from device!", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        Toast.makeText(context, "Failed to restore backup", Toast.LENGTH_SHORT).show()
+                                try {
+                                    val backupFile = withContext(Dispatchers.IO) {
+                                        GoogleDriveBackupEngine.findAnyExistingBackup(context)
                                     }
-                                } else {
-                                    Toast.makeText(context, "No local backup found. Please select from Google Drive.", Toast.LENGTH_SHORT).show()
-                                    importFromDriveLauncher.launch(arrayOf("application/json", "text/*"))
+                                    if (backupFile != null && backupFile.exists()) {
+                                        val success = GoogleDriveBackupEngine.restoreFromStream(backupFile.inputStream())
+                                        if (success) {
+                                            Toast.makeText(context, "Spotify & library restored from device!", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            Toast.makeText(context, "Failed to restore backup", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        Toast.makeText(context, "No local backup found. Please select from Google Drive.", Toast.LENGTH_SHORT).show()
+                                        importFromDriveLauncher.launch(arrayOf("application/json", "text/*"))
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    Toast.makeText(context, "Restore error: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
@@ -361,20 +370,36 @@ fun GoogleDriveBackupCard(
                         .heightIn(min = 42.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Restore,
-                        contentDescription = "Quick Restore",
-                        tint = Color(0xFFCBD5E1),
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Quick Restore",
-                        color = Color(0xFFCBD5E1),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1
-                    )
+                    if (backupState.isRestoring) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color(0xFF38BDF8),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Restoring...",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Restore,
+                            contentDescription = "Quick Restore",
+                            tint = Color(0xFFCBD5E1),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Quick Restore",
+                            color = Color(0xFFCBD5E1),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                    }
                 }
 
                 // Restore from Google Drive File

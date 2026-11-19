@@ -315,75 +315,113 @@ object GoogleDriveBackupEngine {
             _backupState.value = _backupState.value.copy(isRestoring = true)
 
             val content = inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            if (content.isBlank()) return@withContext false
             val root = JSONObject(content)
 
             // 1. Restore Taste Profile
-            root.optJSONObject("tasteProfile")?.let {
-                UserTasteProfile.get().importTasteProfileJson(it)
+            try {
+                root.optJSONObject("tasteProfile")?.let {
+                    UserTasteProfile.get().importTasteProfileJson(it)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
 
             // 2. Restore Playlists
-            val playlistsArr = root.optJSONArray("playlists")
             val restoredPlaylists = mutableListOf<UserPlaylist>()
-            if (playlistsArr != null) {
-                for (i in 0 until playlistsArr.length()) {
-                    playlistsArr.optJSONObject(i)?.let {
-                        restoredPlaylists.add(UserDataRepository.jsonToPlaylist(it))
+            try {
+                val playlistsArr = root.optJSONArray("playlists")
+                if (playlistsArr != null) {
+                    for (i in 0 until playlistsArr.length()) {
+                        playlistsArr.optJSONObject(i)?.let {
+                            restoredPlaylists.add(UserDataRepository.jsonToPlaylist(it))
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
 
             // 3. Restore History
-            val historyArr = root.optJSONArray("history")
             val restoredHistory = mutableListOf<VideoItem>()
-            if (historyArr != null) {
-                for (i in 0 until historyArr.length()) {
-                    historyArr.optJSONObject(i)?.let {
-                        restoredHistory.add(UserDataRepository.jsonToVideo(it))
+            try {
+                val historyArr = root.optJSONArray("history")
+                if (historyArr != null) {
+                    for (i in 0 until historyArr.length()) {
+                        historyArr.optJSONObject(i)?.let {
+                            restoredHistory.add(UserDataRepository.jsonToVideo(it))
+                        }
                     }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
 
-            UserDataRepository.restoreFullData(restoredHistory, restoredPlaylists)
+            // Apply data safely
+            try {
+                UserDataRepository.restoreFullData(restoredHistory, restoredPlaylists)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
 
             // 4. Restore Spotify Session
-            root.optJSONObject("spotify")?.let { spObj ->
-                val spDc = spObj.optString("sp_dc", "")
-                val displayName = spObj.optString("displayName", "Spotify User")
-                if (spDc.isNotBlank()) {
-                    SpotifyConnectEngine.restoreSession(spDc, displayName)
-                }
-            }
-
-            // 5. Restore YouTube Cookies
-            root.optJSONObject("youtube")?.let { ytObj ->
-                val cookies = ytObj.optString("cookies", "")
-                if (cookies.isNotBlank()) {
-                    try {
-                        val cm = CookieManager.getInstance()
-                        cm.setAcceptCookie(true)
-                        cm.setCookie("https://www.youtube.com", cookies)
-                        cm.setCookie("https://m.youtube.com", cookies)
-                        cm.flush()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+            try {
+                root.optJSONObject("spotify")?.let { spObj ->
+                    val spDc = spObj.optString("sp_dc", "")
+                    val displayName = spObj.optString("displayName", "Spotify User")
+                    if (spDc.isNotBlank()) {
+                        SpotifyConnectEngine.restoreSession(spDc, displayName)
                     }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            // 5. Restore YouTube Cookies (Safely on Main thread to prevent Chromium UI deadlocks)
+            try {
+                root.optJSONObject("youtube")?.let { ytObj ->
+                    val cookies = ytObj.optString("cookies", "")
+                    if (cookies.isNotBlank()) {
+                        withContext(Dispatchers.Main) {
+                            try {
+                                val cm = CookieManager.getInstance()
+                                cm.setAcceptCookie(true)
+                                cm.setCookie("https://www.youtube.com", cookies)
+                                cm.setCookie("https://m.youtube.com", cookies)
+                                cm.flush()
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
 
             // 6. Restore Google Account
-            root.optJSONObject("account")?.let { accObj ->
-                val name = accObj.optString("name", "")
-                val email = accObj.optString("email", "")
-                val handle = accObj.optString("handle", "@user")
-                val avatarUrl = accObj.optString("avatarUrl", null).takeIf { it?.isNotBlank() == true }
-                if (name.isNotBlank()) {
-                    AccountRepository.setGoogleAccount(name, email, avatarUrl, handle)
+            try {
+                root.optJSONObject("account")?.let { accObj ->
+                    val name = accObj.optString("name", "")
+                    val email = accObj.optString("email", "")
+                    val handle = accObj.optString("handle", "@user")
+                    val avatarUrl = accObj.optString("avatarUrl", null).takeIf { it?.isNotBlank() == true }
+                    if (name.isNotBlank()) {
+                        AccountRepository.setGoogleAccount(name, email, avatarUrl, handle)
+                    }
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
 
-            // 7. Force refresh home feeds with restored taste profile
-            RecommendationEngine.refreshHomeFeed(forceRefresh = true)
+            // 7. Non-blocking Async Refresh for Recommendations (Does NOT block the UI)
+            kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    RecommendationEngine.refreshHomeFeed(forceRefresh = true)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
 
             _backupState.value = _backupState.value.copy(
                 hasLocalBackup = true,
@@ -398,6 +436,8 @@ object GoogleDriveBackupEngine {
             e.printStackTrace()
             _backupState.value = _backupState.value.copy(isRestoring = false)
             false
+        } finally {
+            _backupState.value = _backupState.value.copy(isRestoring = false)
         }
     }
 
