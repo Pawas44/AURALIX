@@ -441,6 +441,16 @@ fun AccountBottomSheet(
                     )
                 }
 
+                val isCheckingUpdates by com.videoguard.app.data.AppUpdateManager.isChecking.collectAsState()
+                AccountMenuItem(
+                    icon = Icons.Default.CloudDownload,
+                    title = "Check for Updates",
+                    badge = if (isCheckingUpdates) "Checking..." else "v${com.videoguard.app.BuildConfig.APP_VERSION_NAME.removePrefix("v")}",
+                    onClick = {
+                        com.videoguard.app.data.AppUpdateManager.checkForUpdates(context, isManualCheck = true)
+                    }
+                )
+
                 Spacer(modifier = Modifier.height(28.dp))
             }
         }
