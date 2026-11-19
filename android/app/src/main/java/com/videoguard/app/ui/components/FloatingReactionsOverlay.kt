@@ -70,10 +70,10 @@ private fun SingleFloatingReaction(
 
     val p = progress.value
     // Floating upwards: from 0 up to -65% of screen height
-    val yOffsetPx = -p * (maxHeightPx * 0.65f).coerceAtLeast(600f)
+    val yOffsetPx: Float = -p * (maxHeightPx * 0.65f).coerceAtLeast(600f)
 
     // Sinusoidal wobble: drifts left/right as it floats up
-    val xOffsetPx = (maxWidthPx * reaction.startXFraction) + (sin(p * Math.PI.toFloat() * 3f) * 45f)
+    val xOffsetPx: Float = (maxWidthPx * reaction.startXFraction) + (kotlin.math.sin(p * Math.PI.toFloat() * 3f) * 45f)
 
     // Scale pop-in and stabilize
     val scale = when {

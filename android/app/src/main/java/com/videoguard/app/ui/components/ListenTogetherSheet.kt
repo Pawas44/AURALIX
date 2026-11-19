@@ -761,3 +761,4 @@ fun ListenTogetherContent(
         // Floating Reactions Overlay: flies up across the Jam screen!
         FloatingReactionsOverlay(modifier = Modifier.fillMaxSize())
     }
+}
