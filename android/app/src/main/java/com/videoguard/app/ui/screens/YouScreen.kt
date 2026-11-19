@@ -453,6 +453,14 @@ fun YouScreen(
                 }
             }
 
+            // Google Drive Cloud Backup (WhatsApp Style)
+            item {
+                Spacer(modifier = Modifier.height(20.dp))
+                Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    com.videoguard.app.ui.components.GoogleDriveBackupCard()
+                }
+            }
+
             item {
                 Spacer(modifier = Modifier.height(90.dp))
             }

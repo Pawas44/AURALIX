@@ -1474,7 +1474,18 @@ object UserDataRepository {
         mood = obj.optString("mood", "Energize")
     )
 
-    private fun playlistToJson(p: UserPlaylist): JSONObject = JSONObject().apply {
+    fun restoreFullData(restoredHistory: List<VideoItem>, restoredPlaylists: List<UserPlaylist>) {
+        if (restoredHistory.isNotEmpty()) {
+            _history.value = restoredHistory
+            saveHistory()
+        }
+        if (restoredPlaylists.isNotEmpty()) {
+            _playlists.value = restoredPlaylists
+            savePlaylists()
+        }
+    }
+
+    fun playlistToJson(p: UserPlaylist): JSONObject = JSONObject().apply {
         put("id", p.id)
         put("title", p.title)
         put("description", p.description)
@@ -1485,7 +1496,7 @@ object UserDataRepository {
         put("videos", arr)
     }
 
-    private fun jsonToPlaylist(obj: JSONObject): UserPlaylist {
+    fun jsonToPlaylist(obj: JSONObject): UserPlaylist {
         val videosList = mutableListOf<VideoItem>()
         val arr = obj.optJSONArray("videos")
         if (arr != null) {

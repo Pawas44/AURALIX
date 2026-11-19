@@ -359,46 +359,100 @@ class UserTasteProfile private constructor() {
         }
     }
 
+    fun exportTasteProfileJson(): JSONObject {
+        val root = JSONObject()
+        val artistsArr = JSONArray()
+        for (aa in artistAffinities.values) {
+            val obj = JSONObject().apply {
+                put("name", aa.artistName)
+                put("score", aa.score)
+                put("playCount", aa.playCount)
+                put("completeCount", aa.completeCount)
+                put("skipCount", aa.skipCount)
+                put("likeCount", aa.likeCount)
+                put("dislikeCount", aa.dislikeCount)
+                put("lastMs", aa.lastInteractedMs)
+            }
+            artistsArr.put(obj)
+        }
+        root.put("artists", artistsArr)
+
+        val genresArr = JSONArray()
+        for (ga in genreAffinities.values) {
+            val obj = JSONObject().apply {
+                put("genre", ga.genre)
+                put("score", ga.score)
+                put("count", ga.interactionCount)
+            }
+            genresArr.put(obj)
+        }
+        root.put("genres", genresArr)
+
+        root.put("hiddenTracks", JSONArray(hiddenTrackIds.toList()))
+        root.put("hiddenArtists", JSONArray(hiddenArtistNames.toList()))
+        root.put("discovered", JSONArray(discoveredArtists.toList()))
+        return root
+    }
+
+    fun importTasteProfileJson(root: JSONObject) {
+        val artistsArr = root.optJSONArray("artists")
+        if (artistsArr != null) {
+            for (i in 0 until artistsArr.length()) {
+                val obj = artistsArr.getJSONObject(i)
+                val name = obj.getString("name")
+                artistAffinities[name] = ArtistAffinity(
+                    artistName = name,
+                    score = obj.optDouble("score", 0.0),
+                    playCount = obj.optInt("playCount", 0),
+                    completeCount = obj.optInt("completeCount", 0),
+                    skipCount = obj.optInt("skipCount", 0),
+                    likeCount = obj.optInt("likeCount", 0),
+                    dislikeCount = obj.optInt("dislikeCount", 0),
+                    lastInteractedMs = obj.optLong("lastMs", System.currentTimeMillis())
+                )
+            }
+        }
+
+        val genresArr = root.optJSONArray("genres")
+        if (genresArr != null) {
+            for (i in 0 until genresArr.length()) {
+                val obj = genresArr.getJSONObject(i)
+                val g = obj.getString("genre")
+                genreAffinities[g] = GenreAffinity(
+                    genre = g,
+                    score = obj.optDouble("score", 0.0),
+                    interactionCount = obj.optInt("count", 0)
+                )
+            }
+        }
+
+        val ht = root.optJSONArray("hiddenTracks")
+        if (ht != null) {
+            for (i in 0 until ht.length()) {
+                hiddenTrackIds.add(ht.getString(i))
+            }
+        }
+
+        val ha = root.optJSONArray("hiddenArtists")
+        if (ha != null) {
+            for (i in 0 until ha.length()) {
+                hiddenArtistNames.add(ha.getString(i))
+            }
+        }
+
+        val da = root.optJSONArray("discovered")
+        if (da != null) {
+            for (i in 0 until da.length()) {
+                discoveredArtists.add(da.getString(i))
+            }
+        }
+    }
+
     @Synchronized
     private fun saveToPrefs() {
         val sp = prefs ?: return
         try {
-            val root = JSONObject()
-
-            // Artists
-            val artistsArr = JSONArray()
-            for (aa in artistAffinities.values) {
-                val obj = JSONObject().apply {
-                    put("name", aa.artistName)
-                    put("score", aa.score)
-                    put("playCount", aa.playCount)
-                    put("completeCount", aa.completeCount)
-                    put("skipCount", aa.skipCount)
-                    put("likeCount", aa.likeCount)
-                    put("dislikeCount", aa.dislikeCount)
-                    put("lastMs", aa.lastInteractedMs)
-                }
-                artistsArr.put(obj)
-            }
-            root.put("artists", artistsArr)
-
-            // Genres
-            val genresArr = JSONArray()
-            for (ga in genreAffinities.values) {
-                val obj = JSONObject().apply {
-                    put("genre", ga.genre)
-                    put("score", ga.score)
-                    put("count", ga.interactionCount)
-                }
-                genresArr.put(obj)
-            }
-            root.put("genres", genresArr)
-
-            // Hidden items
-            root.put("hiddenTracks", JSONArray(hiddenTrackIds.toList()))
-            root.put("hiddenArtists", JSONArray(hiddenArtistNames.toList()))
-            root.put("discovered", JSONArray(discoveredArtists.toList()))
-
+            val root = exportTasteProfileJson()
             sp.edit().putString(KEY_PROFILE, root.toString()).apply()
         } catch (e: Exception) {
             e.printStackTrace()
@@ -411,61 +465,7 @@ class UserTasteProfile private constructor() {
         val raw = sp.getString(KEY_PROFILE, null) ?: return
         try {
             val root = JSONObject(raw)
-
-            // Artists
-            val artistsArr = root.optJSONArray("artists")
-            if (artistsArr != null) {
-                for (i in 0 until artistsArr.length()) {
-                    val obj = artistsArr.getJSONObject(i)
-                    val name = obj.getString("name")
-                    artistAffinities[name] = ArtistAffinity(
-                        artistName = name,
-                        score = obj.optDouble("score", 0.0),
-                        playCount = obj.optInt("playCount", 0),
-                        completeCount = obj.optInt("completeCount", 0),
-                        skipCount = obj.optInt("skipCount", 0),
-                        likeCount = obj.optInt("likeCount", 0),
-                        dislikeCount = obj.optInt("dislikeCount", 0),
-                        lastInteractedMs = obj.optLong("lastMs", System.currentTimeMillis())
-                    )
-                }
-            }
-
-            // Genres
-            val genresArr = root.optJSONArray("genres")
-            if (genresArr != null) {
-                for (i in 0 until genresArr.length()) {
-                    val obj = genresArr.getJSONObject(i)
-                    val g = obj.getString("genre")
-                    genreAffinities[g] = GenreAffinity(
-                        genre = g,
-                        score = obj.optDouble("score", 0.0),
-                        interactionCount = obj.optInt("count", 0)
-                    )
-                }
-            }
-
-            // Hidden
-            val ht = root.optJSONArray("hiddenTracks")
-            if (ht != null) {
-                for (i in 0 until ht.length()) {
-                    hiddenTrackIds.add(ht.getString(i))
-                }
-            }
-
-            val ha = root.optJSONArray("hiddenArtists")
-            if (ha != null) {
-                for (i in 0 until ha.length()) {
-                    hiddenArtistNames.add(ha.getString(i))
-                }
-            }
-
-            val da = root.optJSONArray("discovered")
-            if (da != null) {
-                for (i in 0 until da.length()) {
-                    discoveredArtists.add(da.getString(i))
-                }
-            }
+            importTasteProfileJson(root)
         } catch (e: Exception) {
             e.printStackTrace()
         }
