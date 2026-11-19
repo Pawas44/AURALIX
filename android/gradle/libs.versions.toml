@@ -11,8 +11,10 @@ composeBom = "2024.11.00"
 materialIconsExtended = "1.7.5"
 coil = "2.7.0"
 navigationCompose = "2.8.4"
+documentfile = "1.0.1"
 
 [libraries]
+androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
 androidx-media = { group = "androidx.media", name = "media", version = "1.7.0" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
