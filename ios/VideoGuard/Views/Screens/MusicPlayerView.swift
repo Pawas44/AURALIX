@@ -155,20 +155,6 @@ struct MusicPlayerView: View {
 
                         Spacer()
 
-                        Button(action: { activeSheet = .jam }) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "person.2.fill")
-                                    .font(.system(size: 14, weight: .bold))
-                                Text(jamEngine.isInRoom ? "JAM" : "Jam")
-                                    .font(.system(size: 11, weight: .bold))
-                            }
-                            .foregroundColor(jamEngine.isInRoom ? Color(red: 6/255, green: 182/255, blue: 212/255) : .white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(jamEngine.isInRoom ? Color(red: 6/255, green: 182/255, blue: 212/255).opacity(0.2) : Color.white.opacity(0.12))
-                            .clipShape(Capsule())
-                        }
-
                         Button(action: { activeSheet = .addToPlaylist }) {
                             Image(systemName: "plus.circle")
                                 .font(.system(size: 20))
