@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   # ------------------------------------------------------------
-  # JOB 1: Build Android APK
+  # JOB 1: Build & Release Android APK Immediately
   # ------------------------------------------------------------
   build-android:
     name: Build Android APK
@@ -41,8 +41,51 @@ jobs:
           name: VideoGuard-Android-APK
           path: android/app/build/outputs/apk/debug/*.apk
 
+      - name: Publish Android APK Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v1.0.${{ github.run_number }}"
+          APK_FILE=$(find android/app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          cp "$APK_FILE" AURALIX.apk
+          ls -lh AURALIX.apk
+
+          {
+            echo "### 🚀 What's New in AURALIX $TAG"
+            echo "- **👥 Listen Together (Live Jam)**: Real-time collaborative listening with friends! Join or host a jam session directly from the player or account sheet."
+            echo "- **⚡ Seamless In-Place APK Upgrades**: Built with permanent cryptographic keystore signing and monotonically increasing version codes. No more 'App not installed' errors when upgrading!"
+            echo "- **🔄 Auto In-App Update Engine**: Automatic update prompt with one-click background download, real-time progress indicator, and in-place package installation."
+            echo "- **☕ Authentic Buy Me a Coffee & UPI Support**: Official coral orange BMC widget button and native UPI app chooser with direct deep links."
+            echo "- **📱 Smooth Swipe-Down Player Gesture**: High-priority vertical drag gesture to seamlessly minimize the full-screen music player."
+            echo "- **🧠 Spotify-Level Intelligent Music Recommendation Engine**: Integrated local-first adaptive recommendation system including **Made For You**, **Discover Weekly** (~30 songs, 40% familiar + 60% discovery, weekly auto-refresh), **Daily Mixes (Mix 1-5)**, **Because You Listened To**, **Your Most Played**, **Continue Listening**, and **Hidden Gems** with cross-section deduplication."
+            echo "- **📊 Dynamic Music Taste Profile**: Real-time behavioral tracking (completed songs, replays, skips, likes, playlist additions) with weighted scoring formulas and local persistence."
+            echo "- **🔍 Music Discovery Interactions**: Interactive 'Why am I seeing this song?' transparent explanation sheet, 'Start radio (More like this)', and 'Not interested / Hide this song' dynamic filtering."
+            echo "- **🟢 Spotify Link-Only Music Importer**: Clean, instant Spotify playlist link importer that enriches user taste profile."
+            echo "- **🏷️ Clean Song Metadata for Downloads**: YouTube oEmbed auto-healing resolves real song titles and artist names, eliminating 'YouTube Video (videoId)' placeholders."
+            echo "- **⬇️ Resilient Download Engine**: Multi-client InnerTube pipeline (ANDROID format 18 + IOS AAC m4a) with full CDN streaming headers."
+            echo "- **⚡ Smooth Performance & Playback**: Asynchronous background computation on Dispatchers.IO, recommendation caching with TTL, and non-blocking playback."
+            echo ""
+            echo "### 📥 Direct Downloads"
+            echo "- [AURALIX.apk (Android)](https://github.com/${{ github.repository }}/releases/download/$TAG/AURALIX.apk)"
+            echo "- [AURALIX.ipa (iOS)](https://github.com/${{ github.repository }}/releases/download/$TAG/AURALIX.ipa)"
+          } > release_notes.md
+
+          if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $TAG exists. Uploading AURALIX.apk..."
+            gh release upload "$TAG" AURALIX.apk --clobber --repo "${{ github.repository }}"
+          else
+            echo "Creating release $TAG with AURALIX.apk..."
+            gh release create "$TAG" AURALIX.apk \
+              --repo "${{ github.repository }}" \
+              --target "${{ github.sha }}" \
+              --title "AURALIX $TAG" \
+              --notes-file release_notes.md \
+              --latest
+          fi
+          echo "Android APK released successfully!"
+
   # ------------------------------------------------------------
-  # JOB 2: Build iOS IPA
+  # JOB 2: Build iOS IPA & Upload to Release
   # ------------------------------------------------------------
   build-ios:
     name: Build iOS IPA
@@ -87,65 +130,27 @@ jobs:
           name: VideoGuard-iOS-IPA
           path: ios/VideoGuard.ipa
 
-  # ------------------------------------------------------------
-  # JOB 3: Create GitHub Release with Direct Downloads
-  # ------------------------------------------------------------
-  create-release:
-    name: Create GitHub Release
-    needs: [build-android, build-ios]
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download Android APK Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: VideoGuard-Android-APK
-          path: release-assets
-
-      - name: Download iOS IPA Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: VideoGuard-iOS-IPA
-          path: release-assets
-
-      - name: Prepare Release Assets
-        run: |
-          ls -la release-assets
-          APK_FILE=$(find release-assets -name "*.apk" | head -n 1)
-          IPA_FILE=$(find release-assets -name "*.ipa" | head -n 1)
-          mv "$APK_FILE" release-assets/AURALIX.apk
-          mv "$IPA_FILE" release-assets/AURALIX.ipa
-          ls -lh release-assets
-
-      - name: Create GitHub Release
+      - name: Publish iOS IPA to Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="v1.0.${{ github.run_number }}"
-          {
-            echo "### 🚀 What's New in AURALIX $TAG"
-            echo "- **⚡ Seamless In-Place APK Upgrades**: Built with permanent cryptographic keystore signing and monotonically increasing version codes. No more 'App not installed' errors when upgrading!"
-            echo "- **🔄 Auto In-App Update Engine**: Automatic update prompt with one-click background download, real-time progress indicator, and in-place package installation."
-            echo "- **☕ Authentic Buy Me a Coffee & UPI Support**: Official coral orange BMC widget button and native UPI app chooser with direct deep links."
-            echo "- **📱 Smooth Swipe-Down Player Gesture**: High-priority vertical drag gesture to seamlessly minimize the full-screen music player."
-            echo "- **🧠 Spotify-Level Intelligent Music Recommendation Engine**: Integrated local-first adaptive recommendation system including **Made For You**, **Discover Weekly** (~30 songs, 40% familiar + 60% discovery, weekly auto-refresh), **Daily Mixes (Mix 1-5)**, **Because You Listened To**, **Your Most Played**, **Continue Listening**, and **Hidden Gems** with cross-section deduplication."
-            echo "- **📊 Dynamic Music Taste Profile**: Real-time behavioral tracking (completed songs, replays, skips, likes, playlist additions) with weighted scoring formulas and local persistence."
-            echo "- **🔍 Music Discovery Interactions**: Interactive 'Why am I seeing this song?' transparent explanation sheet, 'Start radio (More like this)', and 'Not interested / Hide this song' dynamic filtering."
-            echo "- **🟢 Spotify Link-Only Music Importer**: Clean, instant Spotify playlist link importer that enriches user taste profile."
-            echo "- **🏷️ Clean Song Metadata for Downloads**: YouTube oEmbed auto-healing resolves real song titles and artist names, eliminating 'YouTube Video (videoId)' placeholders."
-            echo "- **⬇️ Resilient Download Engine**: Multi-client InnerTube pipeline (ANDROID format 18 + IOS AAC m4a) with full CDN streaming headers."
-            echo "- **⚡ Smooth Performance & Playback**: Asynchronous background computation on Dispatchers.IO, recommendation caching with TTL, and non-blocking playback."
-            echo ""
-            echo "### 📥 Direct Downloads"
-            echo "- [AURALIX.apk (Android)](https://github.com/${{ github.repository }}/releases/download/$TAG/AURALIX.apk)"
-            echo "- [AURALIX.ipa (iOS)](https://github.com/${{ github.repository }}/releases/download/$TAG/AURALIX.ipa)"
-          } > release_notes.md
+          cp ios/VideoGuard.ipa AURALIX.ipa
 
-          gh release create "$TAG" \
-            release-assets/AURALIX.apk \
-            release-assets/AURALIX.ipa \
+          for i in {1..12}; do
+            if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+              echo "Release $TAG found! Uploading AURALIX.ipa..."
+              gh release upload "$TAG" AURALIX.ipa --clobber --repo "${{ github.repository }}"
+              echo "Uploaded AURALIX.ipa successfully!"
+              exit 0
+            fi
+            echo "Release $TAG not found yet. Retrying in 10s... ($i/12)"
+            sleep 10
+          done
+
+          echo "Creating release $TAG with AURALIX.ipa..."
+          gh release create "$TAG" AURALIX.ipa \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
             --title "AURALIX $TAG" \
-            --notes-file release_notes.md \
             --latest
