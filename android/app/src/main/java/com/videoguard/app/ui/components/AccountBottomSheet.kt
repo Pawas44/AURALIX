@@ -375,7 +375,7 @@ fun AccountBottomSheet(
             // Quick Actions: Incognito, Channels, Settings
             item {
                 AccountMenuItem(
-                    icon = if (backupState.isDriveConnected) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                    icon = Icons.Default.CloudSync,
                     title = "Google Drive Cloud Sync",
                     badge = if (backupState.isDriveConnected) "Connected" else null,
                     onClick = { showCloudBackupSheet = true }

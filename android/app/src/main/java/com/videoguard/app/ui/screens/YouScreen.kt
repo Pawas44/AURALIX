@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package com.videoguard.app.ui.screens
 
 import androidx.compose.foundation.background
@@ -179,7 +181,7 @@ fun YouScreen(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        imageVector = if (backupState.isDriveConnected) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                        imageVector = Icons.Default.CloudSync,
                         contentDescription = "Cloud Sync",
                         tint = if (backupState.isDriveConnected) Color(0xFF4285F4) else Color(0xFFD4D4E2),
                         modifier = Modifier.size(22.dp)

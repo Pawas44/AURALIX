@@ -154,7 +154,7 @@ fun MusicLibraryScreen(
                     modifier = Modifier.size(38.dp)
                 ) {
                     Icon(
-                        imageVector = if (backupState.isDriveConnected) Icons.Default.CloudDone else Icons.Default.CloudSync,
+                        imageVector = Icons.Default.CloudSync,
                         contentDescription = "Google Drive Cloud Sync",
                         tint = if (backupState.isDriveConnected) Color(0xFF4285F4) else Color(0xFFD4D4E2),
                         modifier = Modifier.size(22.dp)
