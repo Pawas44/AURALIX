@@ -10,8 +10,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -26,6 +28,8 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.videoguard.app.data.AccountRepository
@@ -117,6 +121,7 @@ fun GoogleDriveBackupCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -126,20 +131,24 @@ fun GoogleDriveBackupCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                OfficialGoogleDriveBadge(modifier = Modifier.size(44.dp))
+                OfficialGoogleDriveBadge(modifier = Modifier.size(42.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "Cloud & App Backup",
                         color = Color.White,
-                        fontSize = 16.5.sp,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = "Spotify login, playlists & recommendations",
+                        text = "Spotify, taste profile & playlists",
                         color = Color(0xFF9E9EAF),
-                        fontSize = 11.5.sp
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -151,11 +160,11 @@ fun GoogleDriveBackupCard(
                         .clip(RoundedCornerShape(12.dp))
                         .background(statusColor.copy(alpha = 0.15f))
                         .border(1.dp, statusColor.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .padding(horizontal = 9.dp, vertical = 5.dp)
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         Box(
                             modifier = Modifier
@@ -166,7 +175,7 @@ fun GoogleDriveBackupCard(
                         Text(
                             text = statusText,
                             color = statusColor,
-                            fontSize = 10.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
@@ -184,15 +193,15 @@ fun GoogleDriveBackupCard(
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
                     .background(CardSurface.copy(alpha = 0.6f))
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(11.dp)
             ) {
                 // Spotify Status
-                val spText = if (isSpotifyConnected) "Connected as ${spotifyUser ?: "User"} (Backed up)" else "Not connected"
+                val spText = if (isSpotifyConnected) (spotifyUser?.takeIf { it.isNotBlank() } ?: "Connected") else "Not Connected"
                 val spColor = if (isSpotifyConnected) SpotifyGreen else Color(0xFFA0AEC0)
                 BackupDetailRow(
                     icon = Icons.Default.MusicNote,
-                    label = "Spotify Account",
+                    label = "Spotify",
                     value = spText,
                     valueColor = spColor
                 )
@@ -200,15 +209,15 @@ fun GoogleDriveBackupCard(
                 // Recommendations & Playlists
                 BackupDetailRow(
                     icon = Icons.Default.LibraryMusic,
-                    label = "Library & Taste",
-                    value = "${backupState.playlistsCount} Playlists • Recommendations"
+                    label = "Library Data",
+                    value = "${backupState.playlistsCount} Playlists • Taste"
                 )
 
                 // Auto Restore Status
                 BackupDetailRow(
                     icon = Icons.Default.AutoMode,
-                    label = "Auto-Restore on Install",
-                    value = "Enabled (Documents/AURALIX)",
+                    label = "Auto-Restore",
+                    value = "Active on Install",
                     valueColor = DriveBlue
                 )
 
@@ -216,11 +225,11 @@ fun GoogleDriveBackupCard(
                 BackupDetailRow(
                     icon = Icons.Default.Schedule,
                     label = "Last Backup",
-                    value = "${backupState.lastBackupFormatted} (${backupState.formattedSize})"
+                    value = if (backupState.hasLocalBackup) "${backupState.lastBackupFormatted} (${backupState.formattedSize})" else "Never"
                 )
             }
 
-            // ACTION 1: Silent Instant Full App Backup (ZERO Files App!)
+            // ACTION 1: Instant Full App Backup
             Button(
                 onClick = {
                     if (!backupState.isBackingUp) {
@@ -243,7 +252,7 @@ fun GoogleDriveBackupCard(
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .heightIn(min = 48.dp)
             ) {
                 if (backupState.isBackingUp) {
                     CircularProgressIndicator(
@@ -253,7 +262,7 @@ fun GoogleDriveBackupCard(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Backing up full app...",
+                        text = "Backing up app...",
                         color = Color.White,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
@@ -263,13 +272,13 @@ fun GoogleDriveBackupCard(
                         imageVector = Icons.Default.CloudSync,
                         contentDescription = "Back Up",
                         tint = Color.White,
-                        modifier = Modifier.size(19.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Back Up Full App (Instant Auto-Save)",
+                        text = "Instant Full Backup",
                         color = Color.White,
-                        fontSize = 14.sp,
+                        fontSize = 14.5.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -291,7 +300,7 @@ fun GoogleDriveBackupCard(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp)
+                    .heightIn(min = 44.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.CloudUpload,
@@ -301,7 +310,7 @@ fun GoogleDriveBackupCard(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Upload / Save to Google Drive",
+                    text = "Upload to Google Drive",
                     color = Color.White,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold
@@ -339,7 +348,8 @@ fun GoogleDriveBackupCard(
                     colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White.copy(alpha = 0.04f)),
                     modifier = Modifier
                         .weight(1f)
-                        .height(42.dp)
+                        .heightIn(min = 42.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Restore,
@@ -352,7 +362,8 @@ fun GoogleDriveBackupCard(
                         text = "Quick Restore",
                         color = Color(0xFFCBD5E1),
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
                     )
                 }
 
@@ -369,7 +380,8 @@ fun GoogleDriveBackupCard(
                     colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White.copy(alpha = 0.04f)),
                     modifier = Modifier
                         .weight(1f)
-                        .height(42.dp)
+                        .heightIn(min = 42.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.CloudDownload,
@@ -379,30 +391,37 @@ fun GoogleDriveBackupCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "From Google Drive",
+                        text = "From Drive",
                         color = Color(0xFFCBD5E1),
                         fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1
                     )
                 }
             }
 
             // Info Note
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.White.copy(alpha = 0.04f))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.CheckCircle,
                     contentDescription = null,
                     tint = DriveGreen,
-                    modifier = Modifier.size(12.dp)
+                    modifier = Modifier.size(14.dp)
                 )
                 Text(
-                    text = "Auto-restores Spotify login, recommendations & playlists on app install.",
+                    text = "Spotify login, taste profile & playlists restore automatically on reinstall.",
                     color = Color(0xFFA0AEC0),
-                    fontSize = 11.sp
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
@@ -419,30 +438,36 @@ private fun BackupDetailRow(
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(
+            modifier = Modifier.weight(1f),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = Color(0xFFA0AEC0),
+                tint = Color(0xFF8E8EA8),
                 modifier = Modifier.size(16.dp)
             )
             Text(
                 text = label,
                 color = Color(0xFFCBD5E1),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
         Text(
             text = value,
             color = valueColor,
             fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.End
         )
     }
 }
