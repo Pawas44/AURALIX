@@ -1,22 +1,22 @@
 import Foundation
 import Combine
 
-public struct RoomParticipant: Identifiable, Hashable, Codable {
-    public var id: String { userId }
-    public let userId: String
-    public let username: String
-    public let isHost: Bool
-    public var isConnected: Bool = true
+struct RoomParticipant: Identifiable, Hashable, Codable {
+    var id: String { userId }
+    let userId: String
+    let username: String
+    let isHost: Bool
+    var isConnected: Bool = true
 }
 
-public struct JamChatMessage: Identifiable, Hashable, Codable {
-    public let id: String
-    public let userId: String
-    public let username: String
-    public let message: String
-    public let timestamp: Int64
+struct JamChatMessage: Identifiable, Hashable, Codable {
+    let id: String
+    let userId: String
+    let username: String
+    let message: String
+    let timestamp: Int64
 
-    public init(id: String = UUID().uuidString, userId: String, username: String, message: String, timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) {
+    init(id: String = UUID().uuidString, userId: String, username: String, message: String, timestamp: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) {
         self.id = id
         self.userId = userId
         self.username = username
@@ -25,30 +25,30 @@ public struct JamChatMessage: Identifiable, Hashable, Codable {
     }
 }
 
-public enum JamConnectionState: String {
+enum JamConnectionState: String {
     case disconnected
     case connecting
     case connected
     case error
 }
 
-public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDelegate {
-    public static let shared = ListenTogetherEngine()
+class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDelegate {
+    static let shared = ListenTogetherEngine()
 
     private let defaultServerUrl = "wss://api.auramusic.site/ws"
     private let prefsUsernameKey = "auralix_jam_saved_username"
 
-    @Published public var connectionState: JamConnectionState = .disconnected
-    @Published public var isInRoom: Bool = false
-    @Published public var isHost: Bool = false
-    @Published public var roomCode: String? = nil
-    @Published public var hostUsername: String? = nil
-    @Published public var participants: [RoomParticipant] = []
-    @Published public var chatMessages: [JamChatMessage] = []
-    @Published public var myUsername: String = "Auralix Fan"
-    @Published public var myUserId: String? = nil
-    @Published public var autoApprove: Bool = true
-    @Published public var errorMessage: String? = nil
+    @Published var connectionState: JamConnectionState = .disconnected
+    @Published var isInRoom: Bool = false
+    @Published var isHost: Bool = false
+    @Published var roomCode: String? = nil
+    @Published var hostUsername: String? = nil
+    @Published var participants: [RoomParticipant] = []
+    @Published var chatMessages: [JamChatMessage] = []
+    @Published var myUsername: String = "Auralix Fan"
+    @Published var myUserId: String? = nil
+    @Published var autoApprove: Bool = true
+    @Published var errorMessage: String? = nil
 
     private var urlSession: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
@@ -71,7 +71,7 @@ public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSock
         }
     }
 
-    public func setUsername(_ name: String) {
+    func setUsername(_ name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
             self.myUsername = trimmed
@@ -81,7 +81,7 @@ public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSock
 
     // MARK: - Room Management API
 
-    public func createRoom(username: String) {
+    func createRoom(username: String) {
         errorMessage = nil
         let cleanName = username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? myUsername : username.trimmingCharacters(in: .whitespacesAndNewlines)
         myUsername = cleanName
@@ -89,7 +89,7 @@ public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSock
         connectAndExecute()
     }
 
-    public func joinRoom(code: String, username: String) {
+    func joinRoom(code: String, username: String) {
         errorMessage = nil
         let cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         let cleanName = username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? myUsername : username.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -98,7 +98,7 @@ public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSock
         connectAndExecute()
     }
 
-    public func leaveRoom() {
+    func leaveRoom() {
         if isInRoom && webSocketTask != nil {
             let leaveDict: [String: Any] = [
                 "type": "leave_room",
@@ -110,7 +110,7 @@ public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSock
         disconnectSocket()
     }
 
-    public func sendChatMessage(_ message: String) {
+    func sendChatMessage(_ message: String) {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isInRoom, webSocketTask != nil, !trimmed.isEmpty else { return }
 
@@ -123,7 +123,7 @@ public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSock
         sendJson(chatDict)
     }
 
-    public func approveJoin(userId: String) {
+    func approveJoin(userId: String) {
         guard isHost, webSocketTask != nil else { return }
         let approveDict: [String: Any] = [
             "type": "approve_join",
@@ -134,7 +134,7 @@ public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSock
         sendJson(approveDict)
     }
 
-    public func kickUser(userId: String) {
+    func kickUser(userId: String) {
         guard isHost, webSocketTask != nil else { return }
         let kickDict: [String: Any] = [
             "type": "kick_user",
@@ -147,7 +147,7 @@ public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSock
 
     // MARK: - Host Playback Notifications -> WebSocket Broadcast
 
-    public func onHostTrackChanged(_ track: VideoItem) {
+    func onHostTrackChanged(_ track: VideoItem) {
         guard isInRoom, isHost, !isApplyingRemoteSync, webSocketTask != nil else { return }
 
         let durMs = parseDurationMs(track.duration)
@@ -169,7 +169,7 @@ public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSock
         sendJson(msgDict)
     }
 
-    public func onHostPlayStateChanged(isPlaying: Bool, positionMs: Int64) {
+    func onHostPlayStateChanged(isPlaying: Bool, positionMs: Int64) {
         guard isInRoom, isHost, !isApplyingRemoteSync, webSocketTask != nil else { return }
 
         var payload: [String: Any] = [
@@ -187,7 +187,7 @@ public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSock
         sendJson(msgDict)
     }
 
-    public func onHostSeek(positionMs: Int64) {
+    func onHostSeek(positionMs: Int64) {
         guard isInRoom, isHost, !isApplyingRemoteSync, webSocketTask != nil else { return }
 
         var payload: [String: Any] = [
@@ -222,14 +222,14 @@ public class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSock
         startPingTimer()
     }
 
-    public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         DispatchQueue.main.async {
             self.connectionState = .connected
             self.executePendingAction()
         }
     }
 
-    public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         DispatchQueue.main.async {
             self.connectionState = .disconnected
             if self.isInRoom {
