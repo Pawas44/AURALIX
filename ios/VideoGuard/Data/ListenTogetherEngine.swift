@@ -25,6 +25,12 @@ struct JamChatMessage: Identifiable, Hashable, Codable {
     }
 }
 
+struct FloatingReactionItem: Identifiable, Hashable {
+    let id: String = UUID().uuidString
+    let emoji: String
+    let startXFraction: CGFloat = CGFloat.random(in: 0.15...0.85)
+}
+
 enum JamConnectionState: String {
     case disconnected
     case connecting
@@ -35,7 +41,6 @@ enum JamConnectionState: String {
 class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDelegate {
     static let shared = ListenTogetherEngine()
 
-    private let defaultServerUrl = "wss://api.auramusic.site/ws"
     private let prefsUsernameKey = "auralix_jam_saved_username"
 
     @Published var connectionState: JamConnectionState = .disconnected
@@ -45,6 +50,7 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
     @Published var hostUsername: String? = nil
     @Published var participants: [RoomParticipant] = []
     @Published var chatMessages: [JamChatMessage] = []
+    @Published var floatingReactions: [FloatingReactionItem] = []
     @Published var myUsername: String = "Auralix Fan"
     @Published var myUserId: String? = nil
     @Published var autoApprove: Bool = true
@@ -55,12 +61,6 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
     private var pingTimer: Timer?
 
     private var isApplyingRemoteSync: Bool = false
-    private var pendingAction: PendingJamAction?
-
-    private enum PendingJamAction {
-        case createRoom(username: String)
-        case joinRoom(code: String, username: String)
-    }
 
     private override init() {
         super.init()
@@ -79,32 +79,79 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
         }
     }
 
+    private func generateRoomCode() -> String {
+        let chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+        return String((0..<6).compactMap { _ in chars.randomElement() })
+    }
+
+    private func getTopic(for code: String) -> String {
+        return "auralix_jam_\(code.lowercased().trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
+
     // MARK: - Room Management API
 
     func createRoom(username: String) {
         errorMessage = nil
         let cleanName = username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? myUsername : username.trimmingCharacters(in: .whitespacesAndNewlines)
         myUsername = cleanName
-        pendingAction = .createRoom(username: cleanName)
-        connectAndExecute()
+
+        let code = generateRoomCode()
+        let uid = "usr_" + String(UUID().uuidString.prefix(8))
+
+        self.roomCode = code
+        self.myUserId = uid
+        self.isInRoom = true
+        self.isHost = true
+        self.hostUsername = cleanName
+        self.participants = [
+            RoomParticipant(userId: uid, username: cleanName, isHost: true, isConnected: true)
+        ]
+        self.chatMessages = [
+            JamChatMessage(
+                userId: "system",
+                username: "Auralix Jam",
+                message: "🚀 Room created! Code: \(code). Share this code with friends to listen together!"
+            )
+        ]
+
+        connectToRoom(code: code, isHostJoin: true)
     }
 
     func joinRoom(code: String, username: String) {
         errorMessage = nil
         let cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard cleanCode.count >= 3 else {
+            errorMessage = "Please enter a valid room code"
+            return
+        }
         let cleanName = username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? myUsername : username.trimmingCharacters(in: .whitespacesAndNewlines)
         myUsername = cleanName
-        pendingAction = .joinRoom(code: cleanCode, username: cleanName)
-        connectAndExecute()
+
+        let uid = "usr_" + String(UUID().uuidString.prefix(8))
+        self.roomCode = cleanCode
+        self.myUserId = uid
+        self.isInRoom = true
+        self.isHost = false
+        self.participants = [
+            RoomParticipant(userId: uid, username: cleanName, isHost: false, isConnected: true)
+        ]
+        self.chatMessages = [
+            JamChatMessage(
+                userId: "system",
+                username: "Auralix Jam",
+                message: "Connecting to Jam \(cleanCode)..."
+            )
+        ]
+
+        connectToRoom(code: cleanCode, isHostJoin: false)
     }
 
     func leaveRoom() {
-        if isInRoom && webSocketTask != nil {
-            let leaveDict: [String: Any] = [
-                "type": "leave_room",
-                "payload": [:]
-            ]
-            sendJson(leaveDict)
+        if isInRoom {
+            publishEvent(type: "user_left", payload: [
+                "userId": myUserId ?? "",
+                "username": myUsername
+            ])
         }
         resetRoomState()
         disconnectSocket()
@@ -112,155 +159,163 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
 
     func sendChatMessage(_ message: String) {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isInRoom, webSocketTask != nil, !trimmed.isEmpty else { return }
+        guard isInRoom, !trimmed.isEmpty else { return }
 
-        let chatDict: [String: Any] = [
-            "type": "chat",
-            "payload": [
-                "message": trimmed
-            ]
-        ]
-        sendJson(chatDict)
+        let myId = myUserId ?? "me"
+        let chatObj = JamChatMessage(userId: myId, username: myUsername, message: trimmed)
+        DispatchQueue.main.async {
+            self.chatMessages.append(chatObj)
+        }
+
+        publishEvent(type: "chat", payload: [
+            "message": trimmed,
+            "timestamp": chatObj.timestamp
+        ])
     }
 
-    func approveJoin(userId: String) {
-        guard isHost, webSocketTask != nil else { return }
-        let approveDict: [String: Any] = [
-            "type": "approve_join",
-            "payload": [
-                "user_id": userId
-            ]
-        ]
-        sendJson(approveDict)
+    func sendReaction(_ emoji: String) {
+        guard isInRoom, !emoji.isEmpty else { return }
+
+        triggerFloatingReaction(emoji)
+
+        publishEvent(type: "reaction", payload: [
+            "emoji": emoji,
+            "timestamp": Int64(Date().timeIntervalSince1970 * 1000)
+        ])
     }
+
+    func triggerFloatingReaction(_ emoji: String) {
+        let item = FloatingReactionItem(emoji: emoji)
+        DispatchQueue.main.async {
+            self.floatingReactions.append(item)
+        }
+    }
+
+    func removeFloatingReaction(id: String) {
+        DispatchQueue.main.async {
+            self.floatingReactions.removeAll { $0.id == id }
+        }
+    }
+
+    func approveJoin(userId: String) {}
 
     func kickUser(userId: String) {
-        guard isHost, webSocketTask != nil else { return }
-        let kickDict: [String: Any] = [
-            "type": "kick_user",
-            "payload": [
-                "user_id": userId
-            ]
-        ]
-        sendJson(kickDict)
+        guard isHost else { return }
+        participants.removeAll { $0.userId == userId }
     }
 
-    // MARK: - Host Playback Notifications -> WebSocket Broadcast
+    // MARK: - Collaborative Playback: Any Joined User Can Control Playback!
 
     func onHostTrackChanged(_ track: VideoItem) {
-        guard isInRoom, isHost, !isApplyingRemoteSync, webSocketTask != nil else { return }
+        guard isInRoom, !isApplyingRemoteSync else { return }
 
         let durMs = parseDurationMs(track.duration)
-        let msgDict: [String: Any] = [
-            "type": "playback_action",
-            "payload": [
-                "action": "change_track",
-                "track_id": track.id,
-                "track_info": [
-                    "id": track.id,
-                    "title": track.title,
-                    "artist": track.channelName.isEmpty ? track.artist : track.channelName,
-                    "album": track.album,
-                    "duration": durMs,
-                    "thumbnail": track.thumbnailUrl
-                ]
+        let payload: [String: Any] = [
+            "track": [
+                "id": track.id,
+                "title": track.title,
+                "artist": track.channelName.isEmpty ? track.artist : track.channelName,
+                "album": track.album,
+                "duration": durMs,
+                "thumbnail": track.thumbnailUrl
             ]
         ]
-        sendJson(msgDict)
+        publishEvent(type: "change_track", payload: payload)
     }
 
     func onHostPlayStateChanged(isPlaying: Bool, positionMs: Int64) {
-        guard isInRoom, isHost, !isApplyingRemoteSync, webSocketTask != nil else { return }
+        guard isInRoom, !isApplyingRemoteSync else { return }
 
         var payload: [String: Any] = [
-            "action": isPlaying ? "play" : "pause",
-            "position": positionMs
+            "isPlaying": isPlaying,
+            "positionMs": positionMs
         ]
         if let current = MediaPlaybackService.shared.currentTrack {
             payload["track_id"] = current.id
         }
-
-        let msgDict: [String: Any] = [
-            "type": "playback_action",
-            "payload": payload
-        ]
-        sendJson(msgDict)
+        publishEvent(type: "play_state", payload: payload)
     }
 
     func onHostSeek(positionMs: Int64) {
-        guard isInRoom, isHost, !isApplyingRemoteSync, webSocketTask != nil else { return }
+        guard isInRoom, !isApplyingRemoteSync else { return }
 
         var payload: [String: Any] = [
-            "action": "seek",
-            "position": positionMs
+            "positionMs": positionMs
         ]
         if let current = MediaPlaybackService.shared.currentTrack {
             payload["track_id"] = current.id
         }
-
-        let msgDict: [String: Any] = [
-            "type": "playback_action",
-            "payload": payload
-        ]
-        sendJson(msgDict)
+        publishEvent(type: "seek", payload: payload)
     }
 
-    // MARK: - Connection & Message Handling
+    // MARK: - Pub/Sub Transport
 
-    private func connectAndExecute() {
+    private func publishEvent(type: String, payload: [String: Any]) {
+        guard let code = roomCode else { return }
+        let topic = getTopic(for: code)
+        guard let url = URL(string: "https://ntfy.sh/\(topic)") else { return }
+
+        let msgDict: [String: Any] = [
+            "type": type,
+            "userId": myUserId ?? "usr",
+            "username": myUsername,
+            "payload": payload,
+            "timestamp": Int64(Date().timeIntervalSince1970 * 1000)
+        ]
+
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: msgDict) else { return }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        req.httpBody = jsonData
+
+        URLSession.shared.dataTask(with: req).resume()
+    }
+
+    private func connectToRoom(code: String, isHostJoin: Bool) {
         disconnectSocket()
         connectionState = .connecting
 
-        guard let url = URL(string: defaultServerUrl) else { return }
+        let topic = getTopic(for: code)
+        guard let wsUrl = URL(string: "wss://ntfy.sh/\(topic)/ws") else { return }
+
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: OperationQueue.main)
         self.urlSession = session
-        let task = session.webSocketTask(with: url)
+        let task = session.webSocketTask(with: wsUrl)
         self.webSocketTask = task
         task.resume()
 
         listenForMessages()
         startPingTimer()
+
+        if !isHostJoin {
+            publishEvent(type: "user_joined", payload: [
+                "userId": myUserId ?? "usr",
+                "username": myUsername
+            ])
+        } else {
+            if let current = MediaPlaybackService.shared.currentTrack {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    self.onHostTrackChanged(current)
+                    if MediaPlaybackService.shared.isPlaying {
+                        let posMs = Int64(MediaPlaybackService.shared.currentTimeSeconds * 1000)
+                        self.onHostPlayStateChanged(isPlaying: true, positionMs: posMs)
+                    }
+                }
+            }
+        }
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         DispatchQueue.main.async {
             self.connectionState = .connected
-            self.executePendingAction()
         }
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         DispatchQueue.main.async {
             self.connectionState = .disconnected
-            if self.isInRoom {
-                self.resetRoomState()
-            }
-        }
-    }
-
-    private func executePendingAction() {
-        guard let action = pendingAction else { return }
-        pendingAction = nil
-
-        switch action {
-        case .createRoom(let username):
-            let dict: [String: Any] = [
-                "type": "create_room",
-                "payload": [
-                    "username": username
-                ]
-            ]
-            sendJson(dict)
-
-        case .joinRoom(let code, let username):
-            let dict: [String: Any] = [
-                "type": "join_room",
-                "payload": [
-                    "room_code": code,
-                    "username": username
-                ]
-            ]
-            sendJson(dict)
         }
     }
 
@@ -271,7 +326,7 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
             case .failure(let error):
                 DispatchQueue.main.async {
                     self.connectionState = .error
-                    self.errorMessage = "Connection error: \(error.localizedDescription)"
+                    self.errorMessage = "Jam connection error: \(error.localizedDescription)"
                 }
             case .success(let message):
                 switch message {
@@ -291,101 +346,161 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
 
     private func handleIncomingText(_ text: String) {
         guard let data = text.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = json["type"] as? String else {
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return
         }
 
-        let payload = json["payload"] as? [String: Any] ?? [:]
+        let event = root["event"] as? String ?? ""
+        var innerJson: [String: Any] = [:]
+
+        if event == "message", let innerStr = root["message"] as? String,
+           let innerData = innerStr.data(using: .utf8),
+           let parsed = try? JSONSerialization.jsonObject(with: innerData) as? [String: Any] {
+            innerJson = parsed
+        } else if root["type"] != nil {
+            innerJson = root
+        } else {
+            return
+        }
+
+        let type = innerJson["type"] as? String ?? ""
+        let senderId = innerJson["userId"] as? String ?? ""
+        let senderName = innerJson["username"] as? String ?? "Friend"
+        let payload = innerJson["payload"] as? [String: Any] ?? [:]
+
+        // Echo filter
+        if senderId == myUserId {
+            return
+        }
 
         DispatchQueue.main.async {
             switch type {
-            case "room_created":
-                let code = payload["room_code"] as? String ?? ""
-                let uid = payload["user_id"] as? String ?? ""
-                self.roomCode = code
-                self.myUserId = uid
-                self.isInRoom = true
-                self.isHost = true
-                self.hostUsername = self.myUsername
-                self.participants = [
-                    RoomParticipant(userId: uid, username: self.myUsername, isHost: true, isConnected: true)
-                ]
+            case "change_track":
+                if let trackObj = payload["track"] as? [String: Any] {
+                    let trackId = trackObj["id"] as? String ?? ""
+                    let title = trackObj["title"] as? String ?? "Jam Track"
+                    let artist = trackObj["artist"] as? String ?? ""
+                    let thumb = trackObj["thumbnail"] as? String ?? ""
+                    let dur = (trackObj["duration"] as? NSNumber)?.int64Value ?? 180000
 
-                // Broadcast currently playing track if any
-                if let current = MediaPlaybackService.shared.currentTrack {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        self.onHostTrackChanged(current)
-                        if MediaPlaybackService.shared.isPlaying {
-                            let posMs = Int64(MediaPlaybackService.shared.currentTimeSeconds * 1000)
-                            self.onHostPlayStateChanged(isPlaying: true, positionMs: posMs)
-                        }
+                    self.chatMessages.append(
+                        JamChatMessage(userId: "system", username: "Auralix Jam", message: "🎵 \(senderName) changed track to: \(title)")
+                    )
+
+                    self.applyGuestTrackSync(
+                        trackId: trackId,
+                        title: title,
+                        artist: artist,
+                        thumbnail: thumb,
+                        durationMs: dur,
+                        targetPositionSec: 0,
+                        shouldPlay: true
+                    )
+                }
+
+            case "play_state":
+                let isPlaying = payload["isPlaying"] as? Bool ?? false
+                let posMs = (payload["positionMs"] as? NSNumber)?.int64Value ?? -1
+
+                self.isApplyingRemoteSync = true
+                if posMs >= 0 {
+                    let targetSec = Double(posMs) / 1000.0
+                    let currentPos = MediaPlaybackService.shared.currentTimeSeconds
+                    if abs(currentPos - targetSec) > 2.0 {
+                        MediaPlaybackService.shared.seek(to: targetSec)
                     }
                 }
-
-            case "join_request":
-                let guestId = payload["user_id"] as? String ?? ""
-                if self.autoApprove && self.isHost {
-                    self.approveJoin(userId: guestId)
+                if isPlaying {
+                    MediaPlaybackService.shared.play()
+                } else {
+                    MediaPlaybackService.shared.pause()
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    self.isApplyingRemoteSync = false
                 }
 
-            case "join_approved":
-                let code = payload["room_code"] as? String ?? ""
-                let uid = payload["user_id"] as? String ?? ""
-                self.roomCode = code
-                self.myUserId = uid
-                self.isInRoom = true
-                self.isHost = false
-
-                if let stateObj = payload["state"] as? [String: Any] {
-                    self.parseAndApplyRoomState(stateObj)
-                }
-
-            case "join_rejected":
-                let reason = payload["reason"] as? String ?? "Join request was declined"
-                self.errorMessage = reason
-                self.leaveRoom()
-
-            case "user_joined":
-                let uid = payload["user_id"] as? String ?? ""
-                let name = payload["username"] as? String ?? "Friend"
-                if !self.participants.contains(where: { $0.userId == uid }) {
-                    self.participants.append(RoomParticipant(userId: uid, username: name, isHost: false))
-                }
-                self.chatMessages.append(JamChatMessage(userId: "system", username: "Jam", message: "🎉 \(name) joined the room"))
-
-                if self.isHost, let current = MediaPlaybackService.shared.currentTrack {
-                    self.onHostTrackChanged(current)
-                    if MediaPlaybackService.shared.isPlaying {
-                        let posMs = Int64(MediaPlaybackService.shared.currentTimeSeconds * 1000)
-                        self.onHostPlayStateChanged(isPlaying: true, positionMs: posMs)
+            case "seek":
+                if let posMs = (payload["positionMs"] as? NSNumber)?.int64Value, posMs >= 0 {
+                    self.isApplyingRemoteSync = true
+                    MediaPlaybackService.shared.seek(to: Double(posMs) / 1000.0)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        self.isApplyingRemoteSync = false
                     }
                 }
-
-            case "user_left", "user_disconnected":
-                let uid = payload["user_id"] as? String ?? ""
-                let name = payload["username"] as? String ?? "Friend"
-                self.participants.removeAll { $0.userId == uid }
-                self.chatMessages.append(JamChatMessage(userId: "system", username: "Jam", message: "\(name) left the room"))
-
-            case "sync_playback":
-                self.handleSyncPlayback(payload)
 
             case "chat":
-                let uid = payload["user_id"] as? String ?? ""
-                let name = payload["username"] as? String ?? ""
                 let msg = payload["message"] as? String ?? ""
                 let ts = payload["timestamp"] as? Int64 ?? Int64(Date().timeIntervalSince1970 * 1000)
-                self.chatMessages.append(JamChatMessage(userId: uid, username: name, message: msg, timestamp: ts))
+                if !msg.isEmpty {
+                    self.chatMessages.append(
+                        JamChatMessage(userId: senderId, username: senderName, message: msg, timestamp: ts)
+                    )
+                }
 
-            case "kicked":
-                let reason = payload["reason"] as? String ?? "Removed from room"
-                self.errorMessage = reason
-                self.leaveRoom()
+            case "reaction":
+                if let emoji = payload["emoji"] as? String, !emoji.isEmpty {
+                    self.triggerFloatingReaction(emoji)
+                }
 
-            case "error":
-                let msg = payload["message"] as? String ?? "Error occurred"
-                self.errorMessage = msg
+            case "user_joined":
+                if !self.participants.contains(where: { $0.userId == senderId }) {
+                    self.participants.append(RoomParticipant(userId: senderId, username: senderName, isHost: false))
+                }
+                self.chatMessages.append(
+                    JamChatMessage(userId: "system", username: "Auralix Jam", message: "🎉 \(senderName) joined the Jam")
+                )
+
+                // Sync current track to new joiner
+                if let current = MediaPlaybackService.shared.currentTrack {
+                    let durMs = self.parseDurationMs(current.duration)
+                    let posMs = Int64(MediaPlaybackService.shared.currentTimeSeconds * 1000)
+                    let syncPayload: [String: Any] = [
+                        "hostUsername": self.hostUsername ?? self.myUsername,
+                        "isPlaying": MediaPlaybackService.shared.isPlaying,
+                        "positionMs": posMs,
+                        "track": [
+                            "id": current.id,
+                            "title": current.title,
+                            "artist": current.channelName.isEmpty ? current.artist : current.channelName,
+                            "album": current.album,
+                            "duration": durMs,
+                            "thumbnail": current.thumbnailUrl
+                        ]
+                    ]
+                    self.publishEvent(type: "sync_state", payload: syncPayload)
+                }
+
+            case "sync_state":
+                if let hostName = payload["hostUsername"] as? String, !hostName.isEmpty {
+                    self.hostUsername = hostName
+                }
+
+                if let trackObj = payload["track"] as? [String: Any] {
+                    let trackId = trackObj["id"] as? String ?? ""
+                    let title = trackObj["title"] as? String ?? "Jam Track"
+                    let artist = trackObj["artist"] as? String ?? ""
+                    let thumb = trackObj["thumbnail"] as? String ?? ""
+                    let dur = (trackObj["duration"] as? NSNumber)?.int64Value ?? 180000
+                    let isPlaying = payload["isPlaying"] as? Bool ?? false
+                    let posMs = (payload["positionMs"] as? NSNumber)?.int64Value ?? 0
+                    let targetSec = Double(posMs) / 1000.0
+
+                    self.applyGuestTrackSync(
+                        trackId: trackId,
+                        title: title,
+                        artist: artist,
+                        thumbnail: thumb,
+                        durationMs: dur,
+                        targetPositionSec: targetSec,
+                        shouldPlay: isPlaying
+                    )
+                }
+
+            case "user_left":
+                self.participants.removeAll { $0.userId == senderId }
+                self.chatMessages.append(
+                    JamChatMessage(userId: "system", username: "Auralix Jam", message: "\(senderName) left the Jam")
+                )
 
             default:
                 break
@@ -393,122 +508,21 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
         }
     }
 
-    private func parseAndApplyRoomState(_ state: [String: Any]) {
-        if let usersRaw = state["users"] as? [[String: Any]] {
-            var list: [RoomParticipant] = []
-            for u in usersRaw {
-                let uid = u["user_id"] as? String ?? ""
-                let uname = u["username"] as? String ?? ""
-                let host = u["is_host"] as? Bool ?? false
-                let conn = u["is_connected"] as? Bool ?? true
-                list.append(RoomParticipant(userId: uid, username: uname, isHost: host, isConnected: conn))
-                if host { self.hostUsername = uname }
-            }
-            self.participants = list
-        }
-
-        let isPlaying = state["is_playing"] as? Bool ?? false
-        let posMs = (state["position"] as? NSNumber)?.int64Value ?? 0
-        let lastUpdate = (state["last_update"] as? NSNumber)?.int64Value ?? 0
-
-        if let trackObj = state["current_track"] as? [String: Any] {
-            let trackId = trackObj["id"] as? String ?? ""
-            let title = trackObj["title"] as? String ?? "Jam Track"
-            let artist = trackObj["artist"] as? String ?? ""
-            let thumb = trackObj["thumbnail"] as? String ?? ""
-            let dur = (trackObj["duration"] as? NSNumber)?.int64Value ?? 180000
-
-            let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-            let elapsed = (lastUpdate > 0 && isPlaying) ? max(0, min(10000, nowMs - lastUpdate)) : 0
-            let targetSec = Double(posMs + elapsed) / 1000.0
-
-            applyGuestTrackSync(trackId: trackId, title: title, artist: artist, thumbnail: thumb, durationMs: dur, targetPositionSec: targetSec, shouldPlay: isPlaying)
-        }
-    }
-
-    private func handleSyncPlayback(_ payload: [String: Any]) {
-        guard !isHost else { return }
-
-        let action = payload["action"] as? String ?? ""
-        let trackId = payload["track_id"] as? String ?? ""
-        let posMs = (payload["position"] as? NSNumber)?.int64Value ?? -1
-        let serverTime = (payload["server_time"] as? NSNumber)?.int64Value ?? 0
-        let trackInfo = payload["track_info"] as? [String: Any]
-
-        switch action {
-        case "change_track":
-            let realId = !trackId.isEmpty ? trackId : (trackInfo?["id"] as? String ?? "")
-            let title = trackInfo?["title"] as? String ?? "Jam Track"
-            let artist = trackInfo?["artist"] as? String ?? ""
-            let thumb = trackInfo?["thumbnail"] as? String ?? ""
-            let dur = (trackInfo?["duration"] as? NSNumber)?.int64Value ?? 180000
-            applyGuestTrackSync(trackId: realId, title: title, artist: artist, thumbnail: thumb, durationMs: dur, targetPositionSec: 0, shouldPlay: true)
-
-        case "play":
-            let current = MediaPlaybackService.shared.currentTrack
-            if !trackId.isEmpty && (current == nil || current?.id != trackId) {
-                let title = trackInfo?["title"] as? String ?? "Jam Track"
-                let artist = trackInfo?["artist"] as? String ?? ""
-                let thumb = trackInfo?["thumbnail"] as? String ?? ""
-                let dur = (trackInfo?["duration"] as? NSNumber)?.int64Value ?? 180000
-                let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-                let latency = serverTime > 0 ? max(0, min(5000, nowMs - serverTime)) : 0
-                let targetSec = posMs >= 0 ? Double(posMs + latency) / 1000.0 : 0.0
-                applyGuestTrackSync(trackId: trackId, title: title, artist: artist, thumbnail: thumb, durationMs: dur, targetPositionSec: targetSec, shouldPlay: true)
-            } else {
-                let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-                let latency = serverTime > 0 ? max(0, min(5000, nowMs - serverTime)) : 0
-                let targetSec = posMs >= 0 ? Double(posMs + latency) / 1000.0 : nil
-
-                isApplyingRemoteSync = true
-                if let target = targetSec {
-                    let currentPos = MediaPlaybackService.shared.currentTimeSeconds
-                    if abs(currentPos - target) > 1.8 {
-                        MediaPlaybackService.shared.seekTo(seconds: target)
-                    }
-                }
-                MediaPlaybackService.shared.play()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.isApplyingRemoteSync = false
-                }
-            }
-
-        case "pause":
-            isApplyingRemoteSync = true
-            if posMs >= 0 {
-                MediaPlaybackService.shared.seekTo(seconds: Double(posMs) / 1000.0)
-            }
-            MediaPlaybackService.shared.pause()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.isApplyingRemoteSync = false
-            }
-
-        case "seek":
-            if posMs >= 0 {
-                isApplyingRemoteSync = true
-                MediaPlaybackService.shared.seekTo(seconds: Double(posMs) / 1000.0)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    self.isApplyingRemoteSync = false
-                }
-            }
-
-        default:
-            break
-        }
-    }
-
     private func applyGuestTrackSync(trackId: String, title: String, artist: String, thumbnail: String, durationMs: Int64, targetPositionSec: Double, shouldPlay: Bool) {
         guard !trackId.isEmpty else { return }
 
         isApplyingRemoteSync = true
-        let thumbUrl = !thumbnail.isEmpty ? thumbnail : "https://i.ytimg.com/vi/\(trackId)/hqdefault.jpg"
-        let durStr = formatDuration(durationMs)
-        let video = VideoItem(
+        let durStr = formatDurationMs(durationMs)
+        let thumbUrl = thumbnail.isEmpty ? "https://i.ytimg.com/vi/\(trackId)/hqdefault.jpg" : thumbnail
+
+        let item = VideoItem(
             id: trackId,
             title: title,
             channelName: artist,
+            channelAvatarUrl: "",
             thumbnailUrl: thumbUrl,
             views: "",
+            uploadTime: "",
             duration: durStr,
             isMusicTrack: true,
             artist: artist
@@ -516,43 +530,28 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
 
         let current = MediaPlaybackService.shared.currentTrack
         if current == nil || current?.id != trackId {
-            MediaPlaybackService.shared.play(track: video)
+            MediaPlaybackService.shared.playTrack(item)
         }
 
         if targetPositionSec > 0.5 {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                MediaPlaybackService.shared.seekTo(seconds: targetPositionSec)
+                MediaPlaybackService.shared.seek(to: targetPositionSec)
                 if shouldPlay { MediaPlaybackService.shared.play() } else { MediaPlaybackService.shared.pause() }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    self.isApplyingRemoteSync = false
-                }
             }
         } else {
             if shouldPlay { MediaPlaybackService.shared.play() } else { MediaPlaybackService.shared.pause() }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                self.isApplyingRemoteSync = false
-            }
         }
-    }
 
-    private func sendJson(_ dict: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: dict),
-              let str = String(data: data, encoding: .utf8) else {
-            return
-        }
-        webSocketTask?.send(.string(str)) { error in
-            if let error = error {
-                print("ListenTogether WebSocket send error: \(error.localizedDescription)")
-            }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.isApplyingRemoteSync = false
         }
     }
 
     private func startPingTimer() {
         pingTimer?.invalidate()
-        pingTimer = Timer.scheduledTimer(withTimeInterval: 25.0, repeats: true) { [weak self] _ in
-            guard let self = self, self.webSocketTask != nil else { return }
-            let pingDict: [String: Any] = ["type": "ping"]
-            self.sendJson(pingDict)
+        pingTimer = Timer.scheduledTimer(withTimeInterval: 20.0, repeats: true) { [weak self] _ in
+            guard let self = self, self.connectionState == .connected else { return }
+            self.webSocketTask?.sendPing { _ in }
         }
     }
 
@@ -561,6 +560,7 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
         pingTimer = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
+        urlSession?.invalidateAndCancel()
         urlSession = nil
     }
 
@@ -571,21 +571,27 @@ class ListenTogetherEngine: NSObject, ObservableObject, URLSessionWebSocketDeleg
         hostUsername = nil
         participants = []
         chatMessages = []
+        floatingReactions = []
     }
 
-    private func parseDurationMs(_ str: String) -> Int64 {
-        let parts = str.split(separator: ":").compactMap { Int64($0) }
+    private func parseDurationMs(_ dur: String) -> Int64 {
+        if dur.isEmpty { return 180000 }
+        let parts = dur.split(separator: ":").compactMap { Int64($0.trimmingCharacters(in: .whitespaces)) }
         switch parts.count {
-        case 2: return (parts[0] * 60 + parts[1]) * 1000
-        case 3: return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000
-        default: return 180000
+        case 2:
+            return (parts[0] * 60 + parts[1]) * 1000
+        case 3:
+            return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000
+        default:
+            return 180000
         }
     }
 
-    private func formatDuration(_ ms: Int64) -> String {
-        let total = ms / 1000
-        let m = total / 60
-        let s = total % 60
-        return String(format: "%d:%02d", m, s)
+    private func formatDurationMs(_ ms: Int64) -> String {
+        guard ms > 0 else { return "3:00" }
+        let totalSec = ms / 1000
+        let mins = totalSec / 60
+        let secs = totalSec % 60
+        return String(format: "%d:%02d", mins, secs)
     }
 }

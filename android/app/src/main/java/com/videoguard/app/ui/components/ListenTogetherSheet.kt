@@ -116,14 +116,15 @@ fun ListenTogetherContent(
         }
     }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .then(if (isTabScreen) Modifier.statusBarsPadding() else Modifier)
-            .padding(horizontal = 20.dp)
-            .verticalScroll(rememberScrollState())
-            .padding(bottom = if (isTabScreen) 130.dp else 32.dp)
-    ) {
+    Box(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (isTabScreen) Modifier.statusBarsPadding() else Modifier)
+                .padding(horizontal = 20.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(bottom = if (isTabScreen) 130.dp else 32.dp)
+        ) {
         // Header
         Row(
             modifier = Modifier
@@ -716,7 +717,7 @@ fun ListenTogetherContent(
                                 .clip(CircleShape)
                                 .background(Color.White.copy(alpha = 0.08f))
                                 .clickable {
-                                    ListenTogetherEngine.sendChatMessage(emoji)
+                                    ListenTogetherEngine.sendReaction(emoji)
                                 }
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                             contentAlignment = Alignment.Center
@@ -756,4 +757,7 @@ fun ListenTogetherContent(
                 }
             }
         }
+
+        // Floating Reactions Overlay: flies up across the Jam screen!
+        FloatingReactionsOverlay(modifier = Modifier.fillMaxSize())
     }

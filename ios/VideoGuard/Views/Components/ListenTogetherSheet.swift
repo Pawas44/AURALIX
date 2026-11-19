@@ -395,7 +395,7 @@ struct ListenTogetherSheet: View {
                             HStack {
                                 ForEach(["🔥", "❤️", "🎵", "🚀", "👏", "⚡"], id: \.self) { emoji in
                                     Button(action: {
-                                        jamEngine.sendChatMessage(emoji)
+                                        jamEngine.sendReaction(emoji)
                                     }) {
                                         Text(emoji)
                                             .font(.system(size: 18))
@@ -432,6 +432,8 @@ struct ListenTogetherSheet: View {
                     .padding(.top, 20)
                     .padding(.bottom, showDismissButton ? 30 : 120)
                 }
+
+                FloatingReactionsOverlay()
             }
             .navigationBarHidden(true)
         }

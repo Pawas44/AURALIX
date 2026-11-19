@@ -15,13 +15,18 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -40,6 +45,12 @@ data class JamChatMessage(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+data class FloatingReaction(
+    val id: String = UUID.randomUUID().toString(),
+    val emoji: String,
+    val startXFraction: Float = (15..85).random() / 100f
+)
+
 enum class JamConnectionState {
     DISCONNECTED,
     CONNECTING,
@@ -49,9 +60,9 @@ enum class JamConnectionState {
 
 object ListenTogetherEngine {
     private const val TAG = "ListenTogetherEngine"
-    private const val DEFAULT_SERVER_URL = "wss://api.auramusic.site/ws"
     private const val PREFS_NAME = "auralix_jam_prefs"
     private const val KEY_SAVED_USERNAME = "jam_saved_username"
+    private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaTypeOrNull()
 
     private val scope = CoroutineScope(Dispatchers.Main + Job())
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -77,23 +88,20 @@ object ListenTogetherEngine {
     private val _chatMessages = MutableStateFlow<List<JamChatMessage>>(emptyList())
     val chatMessages: StateFlow<List<JamChatMessage>> = _chatMessages.asStateFlow()
 
+    private val _floatingReactions = MutableStateFlow<List<FloatingReaction>>(emptyList())
+    val floatingReactions: StateFlow<List<FloatingReaction>> = _floatingReactions.asStateFlow()
+
     private val _myUsername = MutableStateFlow("Auralix Fan")
     val myUsername: StateFlow<String> = _myUsername.asStateFlow()
 
     private val _myUserId = MutableStateFlow<String?>(null)
     val myUserId: StateFlow<String?> = _myUserId.asStateFlow()
 
-    private val _sessionToken = MutableStateFlow<String?>(null)
-    val sessionToken: StateFlow<String?> = _sessionToken.asStateFlow()
-
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     private val _autoApprove = MutableStateFlow(true)
     val autoApprove: StateFlow<Boolean> = _autoApprove.asStateFlow()
-
-    private val _serverUrl = MutableStateFlow(DEFAULT_SERVER_URL)
-    val serverUrl: StateFlow<String> = _serverUrl.asStateFlow()
 
     // Internal lock flag to avoid playback update echo loops
     @Volatile
@@ -102,13 +110,6 @@ object ListenTogetherEngine {
     private var okHttpClient: OkHttpClient? = null
     private var activeWebSocket: WebSocket? = null
     private var pingJob: Job? = null
-
-    private var pendingAction: PendingAction? = null
-
-    private sealed class PendingAction {
-        data class CreateRoom(val username: String) : PendingAction()
-        data class JoinRoom(val roomCode: String, val username: String) : PendingAction()
-    }
 
     fun init(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -124,7 +125,7 @@ object ListenTogetherEngine {
 
         okHttpClient = OkHttpClient.Builder()
             .readTimeout(0, TimeUnit.MILLISECONDS) // infinite for websocket
-            .pingInterval(25, TimeUnit.SECONDS)
+            .pingInterval(20, TimeUnit.SECONDS)
             .build()
     }
 
@@ -144,26 +145,83 @@ object ListenTogetherEngine {
     }
 
     /**
+     * Generate 6-char alphanumeric room code
+     */
+    private fun generateRoomCode(): String {
+        val chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+        return (1..6).map { chars.random() }.joinToString("")
+    }
+
+    /**
      * Create a new Listen Together room as Host
      */
     fun createRoom(username: String) {
         _errorMessage.value = null
         val cleanName = username.trim().ifBlank { _myUsername.value }
         _myUsername.value = cleanName
-        pendingAction = PendingAction.CreateRoom(cleanName)
-        connectAndExecute()
+
+        val newCode = generateRoomCode()
+        val newUserId = "usr_" + UUID.randomUUID().toString().take(8)
+
+        _roomCode.value = newCode
+        _myUserId.value = newUserId
+        _isHost.value = true
+        _isInRoom.value = true
+        _hostUsername.value = cleanName
+        _participants.value = listOf(
+            RoomParticipant(
+                userId = newUserId,
+                username = cleanName,
+                isHost = true,
+                isConnected = true
+            )
+        )
+        _chatMessages.value = listOf(
+            JamChatMessage(
+                userId = "system",
+                username = "Auralix Jam",
+                message = "🚀 Room created! Code: $newCode. Share this code with friends to listen together!"
+            )
+        )
+
+        connectToRoom(newCode, isHostJoin = true)
     }
 
     /**
-     * Join an existing Listen Together room with 8-character code
+     * Join an existing Listen Together room with 6-character code
      */
     fun joinRoom(code: String, username: String) {
         _errorMessage.value = null
         val cleanCode = code.trim().uppercase()
+        if (cleanCode.length < 3) {
+            _errorMessage.value = "Please enter a valid room code"
+            return
+        }
         val cleanName = username.trim().ifBlank { _myUsername.value }
         _myUsername.value = cleanName
-        pendingAction = PendingAction.JoinRoom(cleanCode, cleanName)
-        connectAndExecute()
+
+        val newUserId = "usr_" + UUID.randomUUID().toString().take(8)
+        _roomCode.value = cleanCode
+        _myUserId.value = newUserId
+        _isHost.value = false
+        _isInRoom.value = true
+        _participants.value = listOf(
+            RoomParticipant(
+                userId = newUserId,
+                username = cleanName,
+                isHost = false,
+                isConnected = true
+            )
+        )
+        _chatMessages.value = listOf(
+            JamChatMessage(
+                userId = "system",
+                username = "Auralix Jam",
+                message = "Connecting to Jam $cleanCode..."
+            )
+        )
+
+        connectToRoom(cleanCode, isHostJoin = false)
     }
 
     /**
@@ -171,12 +229,11 @@ object ListenTogetherEngine {
      */
     fun leaveRoom() {
         try {
-            if (_isInRoom.value && activeWebSocket != null) {
-                val leaveMsg = JSONObject().apply {
-                    put("type", "leave_room")
-                    put("payload", JSONObject())
-                }
-                activeWebSocket?.send(leaveMsg.toString())
+            if (_isInRoom.value) {
+                publishEvent("user_left", JSONObject().apply {
+                    put("userId", _myUserId.value)
+                    put("username", _myUsername.value)
+                })
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error leaving room", e)
@@ -186,154 +243,224 @@ object ListenTogetherEngine {
     }
 
     /**
-     * Send chat message or emoji reaction
+     * Send real-time chat message to the room
      */
     fun sendChatMessage(message: String) {
-        if (!_isInRoom.value || activeWebSocket == null || message.isBlank()) return
+        val trimmed = message.trim()
+        if (!_isInRoom.value || trimmed.isBlank()) return
+
+        val myId = _myUserId.value ?: "me"
+        val myName = _myUsername.value
+        val chatMsg = JamChatMessage(
+            userId = myId,
+            username = myName,
+            message = trimmed,
+            timestamp = System.currentTimeMillis()
+        )
+        // Add to local chat immediately
+        _chatMessages.value = _chatMessages.value + chatMsg
+
+        // Publish to room
         try {
-            val chatMsg = JSONObject().apply {
-                put("type", "chat")
-                put("payload", JSONObject().apply {
-                    put("message", message.trim())
-                })
+            val payload = JSONObject().apply {
+                put("message", trimmed)
+                put("timestamp", chatMsg.timestamp)
             }
-            activeWebSocket?.send(chatMsg.toString())
+            publishEvent("chat", payload)
         } catch (e: Exception) {
-            Log.e(TAG, "Error sending chat message", e)
+            Log.e(TAG, "Error publishing chat message", e)
         }
     }
 
     /**
-     * Approve a pending user join request (Host only)
+     * Send emoji reaction that triggers floating animation across all devices
      */
+    fun sendReaction(emoji: String) {
+        if (!_isInRoom.value || emoji.isBlank()) return
+
+        // 1. Trigger local floating animation
+        triggerFloatingReaction(emoji)
+
+        // 2. Publish reaction to all peers in room
+        try {
+            val payload = JSONObject().apply {
+                put("emoji", emoji)
+                put("timestamp", System.currentTimeMillis())
+            }
+            publishEvent("reaction", payload)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error publishing reaction", e)
+        }
+    }
+
+    /**
+     * Trigger floating reaction animation locally
+     */
+    fun triggerFloatingReaction(emoji: String) {
+        val reaction = FloatingReaction(emoji = emoji)
+        _floatingReactions.value = _floatingReactions.value + reaction
+    }
+
+    /**
+     * Remove floating reaction once animation completes
+     */
+    fun removeFloatingReaction(id: String) {
+        _floatingReactions.value = _floatingReactions.value.filter { it.id != id }
+    }
+
     fun approveJoin(userId: String) {
-        if (!_isHost.value || activeWebSocket == null) return
-        try {
-            val approveMsg = JSONObject().apply {
-                put("type", "approve_join")
-                put("payload", JSONObject().apply {
-                    put("user_id", userId)
-                })
-            }
-            activeWebSocket?.send(approveMsg.toString())
-        } catch (e: Exception) {
-            Log.e(TAG, "Error approving join", e)
-        }
+        // Auto-approved in open collaborative Jam
     }
 
-    /**
-     * Kick user from room (Host only)
-     */
     fun kickUser(userId: String) {
-        if (!_isHost.value || activeWebSocket == null) return
-        try {
-            val kickMsg = JSONObject().apply {
-                put("type", "kick_user")
-                put("payload", JSONObject().apply {
-                    put("user_id", userId)
-                })
-            }
-            activeWebSocket?.send(kickMsg.toString())
-        } catch (e: Exception) {
-            Log.e(TAG, "Error kicking user", e)
-        }
+        if (!_isHost.value) return
+        _participants.value = _participants.value.filter { it.userId != userId }
     }
 
     // =========================================================================
-    // Host Playback Events -> WebSocket Broadcast
+    // Collaborative Playback: Any Joined User Can Control Playback!
     // =========================================================================
 
     fun onHostTrackChanged(track: VideoItem) {
-        if (!_isInRoom.value || !_isHost.value || isApplyingRemoteSync || activeWebSocket == null) return
+        // Any joined user in the room can broadcast track changes
+        if (!_isInRoom.value || isApplyingRemoteSync) return
         try {
             val durationMs = parseDurationMs(track.duration)
-            val actionMsg = JSONObject().apply {
-                put("type", "playback_action")
-                put("payload", JSONObject().apply {
-                    put("action", "change_track")
-                    put("track_id", track.id)
-                    put("track_info", JSONObject().apply {
-                        put("id", track.id)
-                        put("title", track.title)
-                        put("artist", track.channelName.ifBlank { track.artist })
-                        put("album", track.album)
-                        put("duration", durationMs)
-                        put("thumbnail", track.thumbnailUrl)
-                    })
+            val payload = JSONObject().apply {
+                put("track", JSONObject().apply {
+                    put("id", track.id)
+                    put("title", track.title)
+                    put("artist", track.channelName.ifBlank { track.artist })
+                    put("album", track.album)
+                    put("duration", durationMs)
+                    put("thumbnail", track.thumbnailUrl)
                 })
             }
-            activeWebSocket?.send(actionMsg.toString())
-            Log.d(TAG, "Host sent change_track: ${track.title} (${track.id})")
+            publishEvent("change_track", payload)
+            Log.d(TAG, "Jam user broadcasted change_track: ${track.title} (${track.id})")
         } catch (e: Exception) {
-            Log.e(TAG, "Error sending track change action", e)
+            Log.e(TAG, "Error broadcasting track change", e)
         }
     }
 
     fun onHostPlayStateChanged(isPlaying: Boolean, positionMs: Long) {
-        if (!_isInRoom.value || !_isHost.value || isApplyingRemoteSync || activeWebSocket == null) return
+        if (!_isInRoom.value || isApplyingRemoteSync) return
         try {
             val track = PlaybackController.currentTrack.value
-            val actionMsg = JSONObject().apply {
-                put("type", "playback_action")
-                put("payload", JSONObject().apply {
-                    put("action", if (isPlaying) "play" else "pause")
-                    if (track != null) put("track_id", track.id)
-                    put("position", positionMs)
-                })
+            val payload = JSONObject().apply {
+                put("isPlaying", isPlaying)
+                put("positionMs", positionMs)
+                if (track != null) put("track_id", track.id)
             }
-            activeWebSocket?.send(actionMsg.toString())
-            Log.d(TAG, "Host sent play/pause ($isPlaying) at $positionMs ms")
+            publishEvent("play_state", payload)
+            Log.d(TAG, "Jam user broadcasted play_state ($isPlaying) at $positionMs ms")
         } catch (e: Exception) {
-            Log.e(TAG, "Error sending play/pause action", e)
+            Log.e(TAG, "Error broadcasting play state", e)
         }
     }
 
     fun onHostSeek(positionMs: Long) {
-        if (!_isInRoom.value || !_isHost.value || isApplyingRemoteSync || activeWebSocket == null) return
+        if (!_isInRoom.value || isApplyingRemoteSync) return
         try {
             val track = PlaybackController.currentTrack.value
-            val actionMsg = JSONObject().apply {
-                put("type", "playback_action")
-                put("payload", JSONObject().apply {
-                    put("action", "seek")
-                    if (track != null) put("track_id", track.id)
-                    put("position", positionMs)
-                })
+            val payload = JSONObject().apply {
+                put("positionMs", positionMs)
+                if (track != null) put("track_id", track.id)
             }
-            activeWebSocket?.send(actionMsg.toString())
-            Log.d(TAG, "Host sent seek to $positionMs ms")
+            publishEvent("seek", payload)
+            Log.d(TAG, "Jam user broadcasted seek to $positionMs ms")
         } catch (e: Exception) {
-            Log.e(TAG, "Error sending seek action", e)
+            Log.e(TAG, "Error broadcasting seek", e)
         }
     }
 
     // =========================================================================
-    // WebSocket Connection & Dispatcher
+    // WebSocket & HTTP Pub/Sub Transport
     // =========================================================================
 
-    private fun connectAndExecute() {
+    private fun getTopicForCode(code: String): String {
+        return "auralix_jam_${code.lowercase().trim()}"
+    }
+
+    private fun publishEvent(type: String, payload: JSONObject) {
+        val code = _roomCode.value ?: return
+        val topic = getTopicForCode(code)
+        val myId = _myUserId.value ?: "usr"
+        val myName = _myUsername.value
+
+        val root = JSONObject().apply {
+            put("type", type)
+            put("userId", myId)
+            put("username", myName)
+            put("payload", payload)
+            put("timestamp", System.currentTimeMillis())
+        }
+
+        val client = okHttpClient ?: OkHttpClient()
+        val body = root.toString().toRequestBody(JSON_MEDIA_TYPE)
+        val request = Request.Builder()
+            .url("https://ntfy.sh/$topic")
+            .post(body)
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e(TAG, "Failed to publish $type to ntfy topic $topic", e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.close()
+            }
+        })
+    }
+
+    private fun connectToRoom(code: String, isHostJoin: Boolean) {
         disconnectSocket()
         _connectionState.value = JamConnectionState.CONNECTING
 
+        val topic = getTopicForCode(code)
+        val wsUrl = "wss://ntfy.sh/$topic/ws"
+
         val client = okHttpClient ?: OkHttpClient.Builder()
             .readTimeout(0, TimeUnit.MILLISECONDS)
-            .pingInterval(25, TimeUnit.SECONDS)
+            .pingInterval(20, TimeUnit.SECONDS)
             .build().also { okHttpClient = it }
 
         val request = Request.Builder()
-            .url(_serverUrl.value)
+            .url(wsUrl)
             .build()
 
         activeWebSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d(TAG, "WebSocket connected successfully to ${_serverUrl.value}")
+                Log.d(TAG, "WebSocket connected successfully to Jam topic: $topic")
                 _connectionState.value = JamConnectionState.CONNECTED
                 startHeartbeat(webSocket)
-                executePendingAction(webSocket)
+
+                if (!isHostJoin) {
+                    // Send user_joined event so room knows we're here
+                    val myId = _myUserId.value ?: "usr"
+                    val myName = _myUsername.value
+                    publishEvent("user_joined", JSONObject().apply {
+                        put("userId", myId)
+                        put("username", myName)
+                    })
+                } else {
+                    // If Host already has a track playing, broadcast it immediately!
+                    val current = PlaybackController.currentTrack.value
+                    if (current != null) {
+                        mainHandler.postDelayed({
+                            onHostTrackChanged(current)
+                            if (PlaybackController.isPlaying.value) {
+                                val posMs = (PlaybackController.currentTimeSeconds.value * 1000).toLong()
+                                onHostPlayStateChanged(true, posMs)
+                            }
+                        }, 500)
+                    }
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                handleIncomingMessage(webSocket, text)
+                handleIncomingMessage(text)
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -344,283 +471,61 @@ object ListenTogetherEngine {
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket closed: $code / $reason")
                 _connectionState.value = JamConnectionState.DISCONNECTED
-                if (_isInRoom.value) {
-                    resetRoomState()
-                }
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket failure: ${t.message}", t)
                 _connectionState.value = JamConnectionState.ERROR
-                _errorMessage.value = "Connection lost: ${t.localizedMessage ?: "Unknown error"}"
+                _errorMessage.value = "Jam connection issue: ${t.localizedMessage ?: "Network error"}"
             }
         })
     }
 
-    private fun executePendingAction(ws: WebSocket) {
-        val action = pendingAction ?: return
-        pendingAction = null
-        try {
-            when (action) {
-                is PendingAction.CreateRoom -> {
-                    val createMsg = JSONObject().apply {
-                        put("type", "create_room")
-                        put("payload", JSONObject().apply {
-                            put("username", action.username)
-                        })
-                    }
-                    ws.send(createMsg.toString())
-                    Log.d(TAG, "Sent create_room as ${action.username}")
-                }
-                is PendingAction.JoinRoom -> {
-                    val joinMsg = JSONObject().apply {
-                        put("type", "join_room")
-                        put("payload", JSONObject().apply {
-                            put("room_code", action.roomCode)
-                            put("username", action.username)
-                        })
-                    }
-                    ws.send(joinMsg.toString())
-                    Log.d(TAG, "Sent join_room for code ${action.roomCode} as ${action.username}")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error executing pending action", e)
-        }
-    }
-
-    private fun handleIncomingMessage(ws: WebSocket, text: String) {
+    private fun handleIncomingMessage(text: String) {
         try {
             val root = JSONObject(text)
-            val type = root.optString("type")
-            val payload = root.optJSONObject("payload") ?: JSONObject()
+            val event = root.optString("event")
+
+            // ntfy.sh pushes: { "event": "message", "message": "<our_json_string>" }
+            val rawMessage = if (event == "message") {
+                root.optString("message")
+            } else if (root.has("type")) {
+                text
+            } else {
+                return
+            }
+
+            val msgJson = JSONObject(rawMessage)
+            val type = msgJson.optString("type")
+            val senderId = msgJson.optString("userId")
+            val senderName = msgJson.optString("username")
+            val payload = msgJson.optJSONObject("payload") ?: JSONObject()
+
+            // Echo filter: ignore messages sent by self
+            if (senderId == _myUserId.value) {
+                return
+            }
 
             when (type) {
-                "room_created" -> {
-                    val roomCode = payload.optString("room_code")
-                    val userId = payload.optString("user_id")
-                    val token = payload.optString("session_token")
-
-                    _roomCode.value = roomCode
-                    _myUserId.value = userId
-                    _sessionToken.value = token
-                    _isInRoom.value = true
-                    _isHost.value = true
-                    _hostUsername.value = _myUsername.value
-
-                    _participants.value = listOf(
-                        RoomParticipant(
-                            userId = userId,
-                            username = _myUsername.value,
-                            isHost = true,
-                            isConnected = true
-                        )
-                    )
-
-                    // If Host already has a track playing, broadcast it immediately!
-                    val current = PlaybackController.currentTrack.value
-                    if (current != null) {
-                        mainHandler.postDelayed({
-                            onHostTrackChanged(current)
-                            if (PlaybackController.isPlaying.value) {
-                                val posMs = (PlaybackController.currentTimeSeconds.value * 1000).toLong()
-                                onHostPlayStateChanged(true, posMs)
-                            }
-                        }, 300)
-                    }
-                }
-
-                "join_request" -> {
-                    val guestId = payload.optString("user_id")
-                    val guestName = payload.optString("username")
-                    Log.d(TAG, "Join request received from $guestName ($guestId)")
-
-                    if (_autoApprove.value && _isHost.value) {
-                        approveJoin(guestId)
-                    }
-                }
-
-                "join_approved" -> {
-                    val roomCode = payload.optString("room_code")
-                    val userId = payload.optString("user_id")
-                    val token = payload.optString("session_token")
-                    val stateObj = payload.optJSONObject("state")
-
-                    _roomCode.value = roomCode
-                    _myUserId.value = userId
-                    _sessionToken.value = token
-                    _isInRoom.value = true
-                    _isHost.value = false
-
-                    if (stateObj != null) {
-                        parseAndApplyRoomState(stateObj)
-                    }
-                }
-
-                "join_rejected" -> {
-                    val reason = payload.optString("reason", "Join request declined by host")
-                    _errorMessage.value = reason
-                    leaveRoom()
-                }
-
-                "user_joined" -> {
-                    val userId = payload.optString("user_id")
-                    val username = payload.optString("username")
-                    val currentList = _participants.value.toMutableList()
-                    if (currentList.none { it.userId == userId }) {
-                        currentList.add(RoomParticipant(userId, username, isHost = false))
-                        _participants.value = currentList
-                    }
-
-                    // Add system message
-                    val sysMsg = JamChatMessage(
-                        userId = "system",
-                        username = "Auralix Jam",
-                        message = "🎉 $username joined the room"
-                    )
-                    _chatMessages.value = _chatMessages.value + sysMsg
-
-                    // If Host, re-broadcast current track & position for the new joiner!
-                    if (_isHost.value) {
-                        val current = PlaybackController.currentTrack.value
-                        if (current != null) {
-                            onHostTrackChanged(current)
-                            if (PlaybackController.isPlaying.value) {
-                                val posMs = (PlaybackController.currentTimeSeconds.value * 1000).toLong()
-                                onHostPlayStateChanged(true, posMs)
-                            }
-                        }
-                    }
-                }
-
-                "user_left", "user_disconnected" -> {
-                    val userId = payload.optString("user_id")
-                    val username = payload.optString("username")
-                    _participants.value = _participants.value.filter { it.userId != userId }
-
-                    val sysMsg = JamChatMessage(
-                        userId = "system",
-                        username = "Auralix Jam",
-                        message = "$username left the room"
-                    )
-                    _chatMessages.value = _chatMessages.value + sysMsg
-                }
-
-                "sync_playback" -> {
-                    handleSyncPlaybackPayload(payload)
-                }
-
-                "chat" -> {
-                    val userId = payload.optString("user_id")
-                    val username = payload.optString("username")
-                    val message = payload.optString("message")
-                    val timestamp = payload.optLong("timestamp", System.currentTimeMillis())
-
-                    val chatObj = JamChatMessage(
-                        userId = userId,
-                        username = username,
-                        message = message,
-                        timestamp = timestamp
-                    )
-                    _chatMessages.value = _chatMessages.value + chatObj
-                }
-
-                "kicked" -> {
-                    val reason = payload.optString("reason", "You were removed from the room")
-                    _errorMessage.value = reason
-                    leaveRoom()
-                }
-
-                "error" -> {
-                    val msg = payload.optString("message", "An error occurred")
-                    _errorMessage.value = msg
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error handling incoming WS message: $text", e)
-        }
-    }
-
-    private fun parseAndApplyRoomState(state: JSONObject) {
-        try {
-            val usersArray = state.optJSONArray("users")
-            val usersList = mutableListOf<RoomParticipant>()
-            var foundHostName: String? = null
-
-            if (usersArray != null) {
-                for (i in 0 until usersArray.length()) {
-                    val u = usersArray.getJSONObject(i)
-                    val uid = u.optString("user_id")
-                    val name = u.optString("username")
-                    val host = u.optBoolean("is_host", false)
-                    val connected = u.optBoolean("is_connected", true)
-                    usersList.add(RoomParticipant(uid, name, host, connected))
-                    if (host) foundHostName = name
-                }
-            }
-            _participants.value = usersList
-            _hostUsername.value = foundHostName
-
-            val currentTrackObj = state.optJSONObject("current_track")
-            val isPlaying = state.optBoolean("is_playing", false)
-            val positionMs = state.optLong("position", 0)
-            val lastUpdate = state.optLong("last_update", 0)
-
-            if (currentTrackObj != null) {
-                val trackId = currentTrackObj.optString("id")
-                val title = currentTrackObj.optString("title", "Unknown Track")
-                val artist = currentTrackObj.optString("artist", "Various Artists")
-                val thumb = currentTrackObj.optString("thumbnail", "")
-                val durMs = currentTrackObj.optLong("duration", 0)
-
-                val elapsedSinceUpdateMs = if (lastUpdate > 0 && isPlaying) {
-                    (System.currentTimeMillis() - lastUpdate).coerceIn(0, 10000)
-                } else 0L
-
-                val targetSec = ((positionMs + elapsedSinceUpdateMs) / 1000f).coerceAtLeast(0f)
-
-                mainHandler.post {
-                    applyGuestTrackSync(
-                        trackId = trackId,
-                        title = title,
-                        artist = artist,
-                        thumbnail = thumb,
-                        durationMs = durMs,
-                        targetPositionSec = targetSec,
-                        shouldPlay = isPlaying
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error parsing room state", e)
-        }
-    }
-
-    private fun handleSyncPlaybackPayload(payload: JSONObject) {
-        // If we are Host, we don't apply remote playback controls
-        if (_isHost.value) return
-
-        try {
-            val action = payload.optString("action")
-            val trackId = payload.optString("track_id")
-            val positionMs = payload.optLong("position", -1)
-            val serverTime = payload.optLong("server_time", 0)
-            val trackInfo = payload.optJSONObject("track_info")
-
-            Log.d(TAG, "Guest received sync_playback: $action (track=$trackId, pos=$positionMs)")
-
-            when (action) {
                 "change_track" -> {
-                    if (trackInfo != null || trackId.isNotBlank()) {
-                        val realId = trackId.ifBlank { trackInfo?.optString("id") ?: "" }
-                        val title = trackInfo?.optString("title") ?: "Sync Track"
-                        val artist = trackInfo?.optString("artist") ?: ""
-                        val thumb = trackInfo?.optString("thumbnail") ?: ""
-                        val durMs = trackInfo?.optLong("duration", 0) ?: 0L
+                    val trackObj = payload.optJSONObject("track")
+                    if (trackObj != null) {
+                        val trackId = trackObj.optString("id")
+                        val title = trackObj.optString("title", "Jam Track")
+                        val artist = trackObj.optString("artist", "")
+                        val thumb = trackObj.optString("thumbnail", "")
+                        val durMs = trackObj.optLong("duration", 180000L)
+
+                        val sysMsg = JamChatMessage(
+                            userId = "system",
+                            username = "Auralix Jam",
+                            message = "🎵 $senderName changed track to: $title"
+                        )
+                        _chatMessages.value = _chatMessages.value + sysMsg
 
                         mainHandler.post {
                             applyGuestTrackSync(
-                                trackId = realId,
+                                trackId = trackId,
                                 title = title,
                                 artist = artist,
                                 thumbnail = thumb,
@@ -632,16 +537,146 @@ object ListenTogetherEngine {
                     }
                 }
 
-                "play" -> {
+                "play_state" -> {
+                    val isPlaying = payload.optBoolean("isPlaying", false)
+                    val posMs = payload.optLong("positionMs", -1L)
+
+                    mainHandler.post {
+                        isApplyingRemoteSync = true
+                        try {
+                            if (posMs >= 0) {
+                                val currentPos = PlaybackController.currentTimeSeconds.value
+                                val targetSec = posMs / 1000f
+                                if (kotlin.math.abs(currentPos - targetSec) > 2.0f) {
+                                    PlaybackController.seekTo(targetSec)
+                                }
+                            }
+                            if (isPlaying) {
+                                PlaybackController.play()
+                            } else {
+                                PlaybackController.pause()
+                            }
+                        } finally {
+                            mainHandler.postDelayed({ isApplyingRemoteSync = false }, 600)
+                        }
+                    }
+                }
+
+                "seek" -> {
+                    val posMs = payload.optLong("positionMs", -1L)
+                    if (posMs >= 0) {
+                        val targetSec = posMs / 1000f
+                        mainHandler.post {
+                            isApplyingRemoteSync = true
+                            try {
+                                PlaybackController.seekTo(targetSec)
+                            } finally {
+                                mainHandler.postDelayed({ isApplyingRemoteSync = false }, 600)
+                            }
+                        }
+                    }
+                }
+
+                "chat" -> {
+                    val msgText = payload.optString("message")
+                    val ts = payload.optLong("timestamp", System.currentTimeMillis())
+                    if (msgText.isNotBlank()) {
+                        val chatObj = JamChatMessage(
+                            userId = senderId,
+                            username = senderName,
+                            message = msgText,
+                            timestamp = ts
+                        )
+                        _chatMessages.value = _chatMessages.value + chatObj
+                    }
+                }
+
+                "reaction" -> {
+                    val emoji = payload.optString("emoji")
+                    if (emoji.isNotBlank()) {
+                        mainHandler.post {
+                            triggerFloatingReaction(emoji)
+                        }
+                    }
+                }
+
+                "user_joined" -> {
+                    val currentList = _participants.value.toMutableList()
+                    if (currentList.none { it.userId == senderId }) {
+                        currentList.add(RoomParticipant(senderId, senderName, isHost = false))
+                        _participants.value = currentList
+                    }
+
+                    val sysMsg = JamChatMessage(
+                        userId = "system",
+                        username = "Auralix Jam",
+                        message = "🎉 $senderName joined the Jam"
+                    )
+                    _chatMessages.value = _chatMessages.value + sysMsg
+
+                    // Broadcast current room playback state so the new joiner syncs immediately
                     val current = PlaybackController.currentTrack.value
-                    if (trackId.isNotBlank() && (current == null || current.id != trackId)) {
-                        // Track differs: load and play
-                        val title = trackInfo?.optString("title") ?: "Jam Song"
-                        val artist = trackInfo?.optString("artist") ?: ""
-                        val thumb = trackInfo?.optString("thumbnail") ?: ""
-                        val durMs = trackInfo?.optLong("duration", 0) ?: 0L
-                        val latency = if (serverTime > 0) (System.currentTimeMillis() - serverTime).coerceIn(0, 5000) else 0L
-                        val targetSec = if (positionMs >= 0) ((positionMs + latency) / 1000f) else 0f
+                    if (current != null) {
+                        val durMs = parseDurationMs(current.duration)
+                        val posMs = (PlaybackController.currentTimeSeconds.value * 1000).toLong()
+                        val syncPayload = JSONObject().apply {
+                            put("hostUsername", _hostUsername.value ?: _myUsername.value)
+                            put("isPlaying", PlaybackController.isPlaying.value)
+                            put("positionMs", posMs)
+                            put("track", JSONObject().apply {
+                                put("id", current.id)
+                                put("title", current.title)
+                                put("artist", current.channelName.ifBlank { current.artist })
+                                put("album", current.album)
+                                put("duration", durMs)
+                                put("thumbnail", current.thumbnailUrl)
+                            })
+                            val pArray = JSONArray()
+                            _participants.value.forEach { p ->
+                                pArray.put(JSONObject().apply {
+                                    put("userId", p.userId)
+                                    put("username", p.username)
+                                    put("isHost", p.isHost)
+                                })
+                            }
+                            put("participants", pArray)
+                        }
+                        publishEvent("sync_state", syncPayload)
+                    }
+                }
+
+                "sync_state" -> {
+                    val hostName = payload.optString("hostUsername")
+                    if (hostName.isNotBlank()) {
+                        _hostUsername.value = hostName
+                    }
+
+                    val pArray = payload.optJSONArray("participants")
+                    if (pArray != null && pArray.length() > 0) {
+                        val currentList = _participants.value.toMutableList()
+                        for (i in 0 until pArray.length()) {
+                            val pObj = pArray.getJSONObject(i)
+                            val uid = pObj.optString("userId")
+                            val uname = pObj.optString("username")
+                            val isH = pObj.optBoolean("isHost", false)
+                            if (currentList.none { it.userId == uid }) {
+                                currentList.add(RoomParticipant(uid, uname, isH))
+                            }
+                        }
+                        _participants.value = currentList
+                    }
+
+                    val trackObj = payload.optJSONObject("track")
+                    val isPlaying = payload.optBoolean("isPlaying", false)
+                    val posMs = payload.optLong("positionMs", 0L)
+
+                    if (trackObj != null) {
+                        val trackId = trackObj.optString("id")
+                        val title = trackObj.optString("title", "Jam Track")
+                        val artist = trackObj.optString("artist", "")
+                        val thumb = trackObj.optString("thumbnail", "")
+                        val durMs = trackObj.optLong("duration", 180000L)
+                        val targetSec = (posMs / 1000f).coerceAtLeast(0f)
 
                         mainHandler.post {
                             applyGuestTrackSync(
@@ -651,61 +686,24 @@ object ListenTogetherEngine {
                                 thumbnail = thumb,
                                 durationMs = durMs,
                                 targetPositionSec = targetSec,
-                                shouldPlay = true
+                                shouldPlay = isPlaying
                             )
                         }
-                    } else {
-                        // Same track: sync position and resume
-                        val latency = if (serverTime > 0) (System.currentTimeMillis() - serverTime).coerceIn(0, 5000) else 0L
-                        val targetSec = if (positionMs >= 0) ((positionMs + latency) / 1000f) else null
-
-                        mainHandler.post {
-                            isApplyingRemoteSync = true
-                            try {
-                                if (targetSec != null) {
-                                    val currentPos = PlaybackController.currentTimeSeconds.value
-                                    if (kotlin.math.abs(currentPos - targetSec) > 1.8f) {
-                                        PlaybackController.seekTo(targetSec)
-                                    }
-                                }
-                                PlaybackController.play()
-                            } finally {
-                                mainHandler.postDelayed({ isApplyingRemoteSync = false }, 500)
-                            }
-                        }
                     }
                 }
 
-                "pause" -> {
-                    mainHandler.post {
-                        isApplyingRemoteSync = true
-                        try {
-                            if (positionMs >= 0) {
-                                PlaybackController.seekTo(positionMs / 1000f)
-                            }
-                            PlaybackController.pause()
-                        } finally {
-                            mainHandler.postDelayed({ isApplyingRemoteSync = false }, 500)
-                        }
-                    }
-                }
-
-                "seek" -> {
-                    if (positionMs >= 0) {
-                        val targetSec = positionMs / 1000f
-                        mainHandler.post {
-                            isApplyingRemoteSync = true
-                            try {
-                                PlaybackController.seekTo(targetSec)
-                            } finally {
-                                mainHandler.postDelayed({ isApplyingRemoteSync = false }, 500)
-                            }
-                        }
-                    }
+                "user_left" -> {
+                    _participants.value = _participants.value.filter { it.userId != senderId }
+                    val sysMsg = JamChatMessage(
+                        userId = "system",
+                        username = "Auralix Jam",
+                        message = "$senderName left the Jam"
+                    )
+                    _chatMessages.value = _chatMessages.value + sysMsg
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error handling sync playback payload", e)
+            Log.e(TAG, "Error handling incoming WS message: $text", e)
         }
     }
 
@@ -761,7 +759,7 @@ object ListenTogetherEngine {
         pingJob?.cancel()
         pingJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
-                delay(25000)
+                delay(20000)
                 try {
                     val pingMsg = JSONObject().apply {
                         put("type", "ping")
@@ -790,7 +788,7 @@ object ListenTogetherEngine {
         _hostUsername.value = null
         _participants.value = emptyList()
         _chatMessages.value = emptyList()
-        _sessionToken.value = null
+        _floatingReactions.value = emptyList()
     }
 
     private fun parseDurationMs(durationStr: String): Long {

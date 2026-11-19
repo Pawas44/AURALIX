@@ -46,6 +46,7 @@
 		VG000037 /* LyricsEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00038 /* LyricsEngine.swift */; };
 		VG000038 /* ListenTogetherEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00039 /* ListenTogetherEngine.swift */; };
 		VG000039 /* ListenTogetherSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00040 /* ListenTogetherSheet.swift */; };
+		VG000040 /* FloatingReactionsOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00041 /* FloatingReactionsOverlay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -90,6 +91,7 @@
 		VGF00038 /* LyricsEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LyricsEngine.swift; sourceTree = "<group>"; };
 		VGF00039 /* ListenTogetherEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenTogetherEngine.swift; sourceTree = "<group>"; };
 		VGF00040 /* ListenTogetherSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenTogetherSheet.swift; sourceTree = "<group>"; };
+		VGF00041 /* FloatingReactionsOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingReactionsOverlay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -192,6 +194,7 @@
 				VGF00035 /* PlayerControlsOverlay.swift */,
 				VGF00036 /* GoogleAuthSheet.swift */,
 				VGF00040 /* ListenTogetherSheet.swift */,
+				VGF00041 /* FloatingReactionsOverlay.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -329,6 +332,7 @@
 				VG000037 /* LyricsEngine.swift in Sources */,
 				VG000038 /* ListenTogetherEngine.swift in Sources */,
 				VG000039 /* ListenTogetherSheet.swift in Sources */,
+				VG000040 /* FloatingReactionsOverlay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

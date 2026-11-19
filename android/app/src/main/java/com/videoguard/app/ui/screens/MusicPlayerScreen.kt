@@ -577,6 +577,21 @@ fun MusicPlayerScreen(
                             tint = Color(0xFF8B5CF6),
                             modifier = Modifier.size(15.dp)
                         )
+                        // Quick floating reaction buttons directly on music player
+                        Spacer(modifier = Modifier.width(4.dp))
+                        listOf("🔥", "❤️", "🎵", "🚀").forEach { emoji ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .background(Color.White.copy(alpha = 0.15f))
+                                    .clickable {
+                                        com.videoguard.app.data.ListenTogetherEngine.sendReaction(emoji)
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(text = emoji, fontSize = 12.sp)
+                            }
+                        }
                     }
                 }
             }
@@ -1508,6 +1523,9 @@ fun MusicPlayerScreen(
     if (showListenTogetherSheet) {
         com.videoguard.app.ui.components.ListenTogetherSheet(onDismiss = { showListenTogetherSheet = false })
     }
+
+    // Floating Reactions Overlay: flies up over the album art and full music player!
+    com.videoguard.app.ui.components.FloatingReactionsOverlay(modifier = Modifier.fillMaxSize())
 }
 
 
