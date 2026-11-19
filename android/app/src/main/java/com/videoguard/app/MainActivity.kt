@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
         com.videoguard.app.data.GoogleDriveBackupEngine.init(this)
 
         CoroutineScope(Dispatchers.IO).launch {
+            com.videoguard.app.data.GoogleDriveBackupEngine.checkAndAutoRestoreOnInstall(this@MainActivity)
             com.videoguard.app.data.YouTubeSyncEngine.syncAllUserData()
             com.videoguard.app.data.AppUpdateManager.checkForUpdates(this@MainActivity)
             com.videoguard.app.data.AppUpdateManager.startPeriodicChecks(this@MainActivity)

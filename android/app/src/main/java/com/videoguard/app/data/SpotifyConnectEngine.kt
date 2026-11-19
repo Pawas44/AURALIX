@@ -167,6 +167,14 @@ object SpotifyConnectEngine {
         _userDisplayName.value = displayName
     }
 
+    fun restoreSession(spDcCookie: String, displayName: String?) {
+        saveSession(spDcCookie)
+        if (!displayName.isNullOrBlank()) {
+            _userDisplayName.value = displayName
+            prefs?.edit()?.putString(KEY_DISPLAY_NAME, displayName)?.apply()
+        }
+    }
+
     fun createAuthUrl(): String = "https://accounts.spotify.com/login?continue=https%3A%2F%2Fopen.spotify.com%2F"
 
     fun handleAuthCallback(redirectedUrl: String): Boolean = false

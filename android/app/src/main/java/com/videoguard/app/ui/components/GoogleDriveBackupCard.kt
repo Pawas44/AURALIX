@@ -30,11 +30,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.videoguard.app.data.AccountRepository
 import com.videoguard.app.data.GoogleDriveBackupEngine
+import com.videoguard.app.data.SpotifyConnectEngine
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private val DriveBlue = Color(0xFF4285F4)
 private val DriveYellow = Color(0xFFFBBC04)
 private val DriveGreen = Color(0xFF34A853)
+private val SpotifyGreen = Color(0xFF1DB954)
 private val CardBackground = Color(0xFF141624)
 private val CardSurface = Color(0xFF1B1E30)
 
@@ -46,26 +51,42 @@ fun GoogleDriveBackupCard(
     val coroutineScope = rememberCoroutineScope()
     val backupState by GoogleDriveBackupEngine.backupState.collectAsState()
     val currentAccount by AccountRepository.currentAccount.collectAsState()
+    val isSpotifyConnected by SpotifyConnectEngine.isConnected.collectAsState()
+    val spotifyUser by SpotifyConnectEngine.userDisplayName.collectAsState()
 
     LaunchedEffect(Unit) {
         GoogleDriveBackupEngine.init(context)
     }
 
-    // Google Drive Tree Folder Linker (One-time link: creates "AURALIX Data" on Drive & auto-backs up)
-    val folderTreeLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree()
+    // Google Drive SAF Exporter (Save copy to Google Drive)
+    val exportToDriveLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
     ) { uri: Uri? ->
         if (uri != null) {
             coroutineScope.launch {
-                val success = GoogleDriveBackupEngine.linkDriveFolder(context, uri)
+                val outputStream = context.contentResolver.openOutputStream(uri)
+                val success = GoogleDriveBackupEngine.writeBackupToStream(context, outputStream)
                 if (success) {
-                    Toast.makeText(
-                        context,
-                        "Google Drive connected! 'AURALIX Data' folder created & synced!",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(context, "Full app backup saved to Google Drive!", Toast.LENGTH_LONG).show()
                 } else {
-                    Toast.makeText(context, "Could not access selected folder", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Failed to save backup to Google Drive", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // Google Drive SAF Importer (Open from Google Drive)
+    val importFromDriveLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            coroutineScope.launch {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val success = GoogleDriveBackupEngine.restoreFromStream(inputStream)
+                if (success) {
+                    Toast.makeText(context, "Spotify account, playlists & recommendations restored!", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "Invalid backup file selected", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -99,7 +120,7 @@ fun GoogleDriveBackupCard(
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Header: Official Google Drive Badge & Cloud Sync Headline
+            // Header: Official Google Drive Badge & Title
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -109,22 +130,22 @@ fun GoogleDriveBackupCard(
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Google Drive Cloud Sync",
+                        text = "Cloud & App Backup",
                         color = Color.White,
                         fontSize = 16.5.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = if (backupState.isDriveConnected) "Auto-synced to 'AURALIX Data' folder" else "Auto-backup recommendations & library",
+                        text = "Spotify login, playlists & recommendations",
                         color = Color(0xFF9E9EAF),
                         fontSize = 11.5.sp
                     )
                 }
 
-                // Cloud Status Badge Pill
-                val statusText = if (backupState.isDriveConnected) "Connected" else "Not Linked"
-                val statusColor = if (backupState.isDriveConnected) DriveGreen else Color(0xFFF59E0B)
+                // Status Pill
+                val statusColor = if (backupState.hasLocalBackup) DriveGreen else Color(0xFFF59E0B)
+                val statusText = if (backupState.hasLocalBackup) "Ready" else "No Backup"
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
@@ -157,247 +178,232 @@ fun GoogleDriveBackupCard(
                 thickness = 1.dp
             )
 
-            if (!backupState.isDriveConnected) {
-                // NOT LINKED YET: One-click Setup Banner
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(CardSurface.copy(alpha = 0.6f))
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.FolderSpecial,
-                            contentDescription = null,
-                            tint = DriveBlue,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "Automatic 'AURALIX Data' Cloud Folder",
-                            color = Color.White,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    Text(
-                        text = "Select your Google Drive once. AURALIX will automatically create an 'AURALIX Data' folder and silently keep all your recommendations, Daily Mixes, and playlists backed up with zero manual file saving.",
-                        color = Color(0xFFA0AEC0),
-                        fontSize = 11.5.sp,
-                        lineHeight = 16.sp
-                    )
-                }
+            // Status Details Box
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(CardSurface.copy(alpha = 0.6f))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Spotify Status
+                val spText = if (isSpotifyConnected) "Connected as ${spotifyUser ?: "User"} (Backed up)" else "Not connected"
+                val spColor = if (isSpotifyConnected) SpotifyGreen else Color(0xFFA0AEC0)
+                BackupDetailRow(
+                    icon = Icons.Default.MusicNote,
+                    label = "Spotify Account",
+                    value = spText,
+                    valueColor = spColor
+                )
 
-                // Connect Drive Button (Launches Folder Selector once)
-                Button(
-                    onClick = {
-                        folderTreeLauncher.launch(null)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = DriveBlue),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                ) {
+                // Recommendations & Playlists
+                BackupDetailRow(
+                    icon = Icons.Default.LibraryMusic,
+                    label = "Library & Taste",
+                    value = "${backupState.playlistsCount} Playlists • Recommendations"
+                )
+
+                // Auto Restore Status
+                BackupDetailRow(
+                    icon = Icons.Default.AutoMode,
+                    label = "Auto-Restore on Install",
+                    value = "Enabled (Documents/AURALIX)",
+                    valueColor = DriveBlue
+                )
+
+                // Last Backup & Size
+                BackupDetailRow(
+                    icon = Icons.Default.Schedule,
+                    label = "Last Backup",
+                    value = "${backupState.lastBackupFormatted} (${backupState.formattedSize})"
+                )
+            }
+
+            // ACTION 1: Silent Instant Full App Backup (ZERO Files App!)
+            Button(
+                onClick = {
+                    if (!backupState.isBackingUp) {
+                        coroutineScope.launch {
+                            val success = GoogleDriveBackupEngine.backupLocally(context)
+                            if (success) {
+                                Toast.makeText(
+                                    context,
+                                    "Full app data backed up! Auto-restore enabled on reinstall.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                Toast.makeText(context, "Backup failed", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                },
+                enabled = !backupState.isBackingUp && !backupState.isRestoring,
+                colors = ButtonDefaults.buttonColors(containerColor = DriveBlue),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                if (backupState.isBackingUp) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Backing up full app...",
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
                     Icon(
                         imageVector = Icons.Default.CloudSync,
-                        contentDescription = "Connect",
+                        contentDescription = "Back Up",
                         tint = Color.White,
                         modifier = Modifier.size(19.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Select Google Drive & Auto-Create Folder",
+                        text = "Back Up Full App (Instant Auto-Save)",
                         color = Color.White,
-                        fontSize = 13.5.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
-            } else {
-                // CONNECTED: Active Cloud Sync Hub
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(CardSurface.copy(alpha = 0.6f))
-                        .padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    BackupDetailRow(
-                        icon = Icons.Default.Folder,
-                        label = "Drive Folder",
-                        value = "Google Drive > AURALIX Data"
-                    )
+            }
 
-                    BackupDetailRow(
-                        icon = Icons.Default.Schedule,
-                        label = "Last Sync",
-                        value = backupState.lastBackupFormatted
-                    )
-
-                    BackupDetailRow(
-                        icon = Icons.Default.Storage,
-                        label = "Backup Size",
-                        value = backupState.formattedSize
-                    )
-                }
-
-                // Action 1: Silent Instant Back Up Now (ZERO files app opens!)
-                Button(
-                    onClick = {
-                        if (!backupState.isBackingUp) {
-                            coroutineScope.launch {
-                                val success = GoogleDriveBackupEngine.backupToDrive(context)
-                                if (success) {
-                                    Toast.makeText(
-                                        context,
-                                        "Backed up to 'AURALIX Data' on Google Drive!",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                } else {
-                                    Toast.makeText(context, "Backup failed", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                    },
-                    enabled = !backupState.isBackingUp && !backupState.isRestoring,
-                    colors = ButtonDefaults.buttonColors(containerColor = DriveBlue),
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                ) {
-                    if (backupState.isBackingUp) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(20.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Backing up to 'AURALIX Data'...",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.CloudUpload,
-                            contentDescription = "Back Up",
-                            tint = Color.White,
-                            modifier = Modifier.size(19.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Back Up Now (Silent Auto-Sync)",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+            // ACTION 2: Save Copy directly to Google Drive
+            OutlinedButton(
+                onClick = {
+                    if (!backupState.isBackingUp && !backupState.isRestoring) {
+                        val dateSuffix = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
+                        exportToDriveLauncher.launch("AURALIX_FullBackup_$dateSuffix.json")
                     }
-                }
+                },
+                enabled = !backupState.isBackingUp && !backupState.isRestoring,
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, DriveBlue.copy(alpha = 0.45f)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = DriveBlue.copy(alpha = 0.08f)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CloudUpload,
+                    contentDescription = "Drive Upload",
+                    tint = DriveBlue,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Upload / Save to Google Drive",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
 
-                // Action 2: Silent Instant Restore Now (ZERO files app opens!)
+            // ACTION 3: Restore Buttons (Quick Device Restore OR Google Drive File)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Quick Restore from Device (Instant, No Picker)
                 OutlinedButton(
                     onClick = {
                         if (!backupState.isRestoring) {
                             coroutineScope.launch {
-                                val success = GoogleDriveBackupEngine.restoreFromDrive(context)
-                                if (success) {
-                                    Toast.makeText(
-                                        context,
-                                        "Restored recommendations & library from Google Drive!",
-                                        Toast.LENGTH_LONG
-                                    ).show()
+                                val backupFile = GoogleDriveBackupEngine.findAnyExistingBackup(context)
+                                if (backupFile != null && backupFile.exists()) {
+                                    val success = GoogleDriveBackupEngine.restoreFromStream(backupFile.inputStream())
+                                    if (success) {
+                                        Toast.makeText(context, "Spotify & library restored from device!", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "Failed to restore backup", Toast.LENGTH_SHORT).show()
+                                    }
                                 } else {
-                                    Toast.makeText(
-                                        context,
-                                        "No backup found in 'AURALIX Data'. Back up first!",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    Toast.makeText(context, "No local backup found. Please select from Google Drive.", Toast.LENGTH_SHORT).show()
+                                    importFromDriveLauncher.launch(arrayOf("application/json", "text/*"))
                                 }
                             }
                         }
                     },
                     enabled = !backupState.isBackingUp && !backupState.isRestoring,
                     shape = RoundedCornerShape(14.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.22f)),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color.White.copy(alpha = 0.04f)
-                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White.copy(alpha = 0.04f)),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
+                        .weight(1f)
+                        .height(42.dp)
                 ) {
-                    if (backupState.isRestoring) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            color = Color(0xFFCBD5E1),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Restoring taste & playlists...",
-                            color = Color(0xFFCBD5E1),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.CloudDownload,
-                            contentDescription = "Restore",
-                            tint = Color(0xFFCBD5E1),
-                            modifier = Modifier.size(17.dp)
-                        )
-                        Spacer(modifier = Modifier.width(7.dp))
-                        Text(
-                            text = "Restore from 'AURALIX Data'",
-                            color = Color(0xFFCBD5E1),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-
-                // Switch / Change Drive Account Option
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Lock,
-                            contentDescription = null,
-                            tint = Color(0xFF818CF8),
-                            modifier = Modifier.size(12.dp)
-                        )
-                        Text(
-                            text = "100% Private & Free",
-                            color = Color(0xFF818CF8),
-                            fontSize = 11.sp
-                        )
-                    }
-
+                    Icon(
+                        imageVector = Icons.Default.Restore,
+                        contentDescription = "Quick Restore",
+                        tint = Color(0xFFCBD5E1),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Change Drive Folder",
-                        color = Color(0xFF9E9EAF),
-                        fontSize = 11.5.sp,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable {
-                                folderTreeLauncher.launch(null)
-                            }
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                        text = "Quick Restore",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
+
+                // Restore from Google Drive File
+                OutlinedButton(
+                    onClick = {
+                        if (!backupState.isRestoring) {
+                            importFromDriveLauncher.launch(arrayOf("application/json", "text/*"))
+                        }
+                    },
+                    enabled = !backupState.isBackingUp && !backupState.isRestoring,
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)),
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White.copy(alpha = 0.04f)),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(42.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CloudDownload,
+                        contentDescription = "Drive Restore",
+                        tint = Color(0xFFCBD5E1),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "From Google Drive",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+
+            // Info Note
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = DriveGreen,
+                    modifier = Modifier.size(12.dp)
+                )
+                Text(
+                    text = "Auto-restores Spotify login, recommendations & playlists on app install.",
+                    color = Color(0xFFA0AEC0),
+                    fontSize = 11.sp
+                )
             }
         }
     }
@@ -407,7 +413,8 @@ fun GoogleDriveBackupCard(
 private fun BackupDetailRow(
     icon: ImageVector,
     label: String,
-    value: String
+    value: String,
+    valueColor: Color = Color.White
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -427,14 +434,14 @@ private fun BackupDetailRow(
             Text(
                 text = label,
                 color = Color(0xFFCBD5E1),
-                fontSize = 12.5.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Medium
             )
         }
         Text(
             text = value,
-            color = Color.White,
-            fontSize = 12.5.sp,
+            color = valueColor,
+            fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold
         )
     }

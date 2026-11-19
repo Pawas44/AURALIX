@@ -1,10 +1,11 @@
 package com.videoguard.app.data
 
 import android.content.Context
-import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
+import android.os.Environment
+import android.webkit.CookieManager
+import com.videoguard.app.model.UserAccount
 import com.videoguard.app.model.UserPlaylist
 import com.videoguard.app.model.VideoItem
 import com.videoguard.app.recommendation.RecommendationEngine
@@ -24,13 +25,14 @@ import java.util.Date
 import java.util.Locale
 
 data class BackupState(
-    val isDriveConnected: Boolean = false,
-    val linkedFolderName: String = "AURALIX Data",
+    val hasLocalBackup: Boolean = false,
     val lastBackupFormatted: String = "Never",
     val backupSizeBytes: Long = 0L,
     val isBackingUp: Boolean = false,
     val isRestoring: Boolean = false,
-    val autoBackupDaily: Boolean = true
+    val isSpotifySaved: Boolean = false,
+    val isYouTubeSaved: Boolean = false,
+    val playlistsCount: Int = 0
 ) {
     val formattedSize: String
         get() = when {
@@ -43,15 +45,12 @@ data class BackupState(
 
 object GoogleDriveBackupEngine {
 
-    private const val PREFS_NAME = "auralix_cloud_backup_prefs"
-    private const val KEY_LINKED_TREE_URI = "linked_tree_uri"
+    private const val PREFS_NAME = "auralix_full_backup_prefs"
     private const val KEY_LAST_BACKUP_TIME = "last_backup_time"
     private const val KEY_LAST_BACKUP_SIZE = "last_backup_size"
-    private const val KEY_AUTO_BACKUP = "auto_backup_daily"
+    private const val KEY_AUTO_RESTORED = "auto_restored_on_install"
 
-    const val CLOUD_FOLDER_NAME = "AURALIX Data"
     private const val BACKUP_FILENAME = "auralix_backup.json"
-    private const val LOCAL_BACKUP_FILENAME = "auralix_drive_backup.json"
 
     private var prefs: SharedPreferences? = null
 
@@ -63,198 +62,78 @@ object GoogleDriveBackupEngine {
         val sp = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs = sp
 
-        val savedTreeUri = sp.getString(KEY_LINKED_TREE_URI, null)
         val lastTime = sp.getLong(KEY_LAST_BACKUP_TIME, 0L)
         val lastSize = sp.getLong(KEY_LAST_BACKUP_SIZE, 0L)
-        val autoBackup = sp.getBoolean(KEY_AUTO_BACKUP, true)
-
-        val hasValidTree = !savedTreeUri.isNullOrBlank()
         val formattedDate = if (lastTime > 0) formatTimestamp(lastTime) else "Never"
 
+        val backupFile = findAnyExistingBackup(context)
+        val hasBackup = backupFile != null && backupFile.exists() && backupFile.length() > 0
+
         _backupState.value = BackupState(
-            isDriveConnected = hasValidTree,
-            linkedFolderName = CLOUD_FOLDER_NAME,
+            hasLocalBackup = hasBackup,
             lastBackupFormatted = formattedDate,
-            backupSizeBytes = lastSize,
-            autoBackupDaily = autoBackup
+            backupSizeBytes = if (lastSize > 0) lastSize else (backupFile?.length() ?: 0L),
+            isSpotifySaved = SpotifyConnectEngine.isConnected.value,
+            isYouTubeSaved = YouTubeSyncEngine.hasAuthCookies(),
+            playlistsCount = UserDataRepository.playlists.value.size
         )
     }
 
     /**
-     * Connects Google Drive root folder chosen once by user, takes persistent permissions,
-     * automatically creates "AURALIX Data" folder, and triggers the first silent backup.
+     * Checks if a backup file exists from a previous install or transfer,
+     * and automatically restores Spotify, YouTube, Playlists, and Recommendations!
      */
-    suspend fun linkDriveFolder(context: Context, treeUri: Uri): Boolean = withContext(Dispatchers.IO) {
-        try {
-            // 1. Take persistent permissions
-            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            try {
-                context.contentResolver.takePersistableUriPermission(treeUri, flags)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+    suspend fun checkAndAutoRestoreOnInstall(context: Context): Boolean = withContext(Dispatchers.IO) {
+        val sp = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val alreadyChecked = sp.getBoolean(KEY_AUTO_RESTORED, false)
+        if (alreadyChecked) return@withContext false
 
-            prefs?.edit()?.putString(KEY_LINKED_TREE_URI, treeUri.toString())?.apply()
+        // Only auto-restore on a fresh launch where user data is not yet populated
+        val hasExistingUserData = UserDataRepository.history.value.isNotEmpty() ||
+                                  UserDataRepository.playlists.value.any { it.id != "liked_videos" } ||
+                                  SpotifyConnectEngine.isConnected.value
 
-            // 2. Resolve or create "AURALIX Data" directory
-            val rootDoc = DocumentFile.fromTreeUri(context, treeUri) ?: return@withContext false
-            var auralixFolder = rootDoc.findFile(CLOUD_FOLDER_NAME)
-            if (auralixFolder == null || !auralixFolder.isDirectory) {
-                auralixFolder = rootDoc.createDirectory(CLOUD_FOLDER_NAME)
-            }
-
-            if (auralixFolder == null) {
-                return@withContext false
-            }
-
-            _backupState.value = _backupState.value.copy(
-                isDriveConnected = true,
-                linkedFolderName = CLOUD_FOLDER_NAME
-            )
-
-            // 3. Immediately perform initial backup silently into "AURALIX Data"
-            backupToDrive(context)
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            false
+        if (hasExistingUserData) {
+            sp.edit().putBoolean(KEY_AUTO_RESTORED, true).apply()
+            return@withContext false
         }
-    }
 
-    /**
-     * Disconnects / unlinks the current Drive folder so the user can switch accounts or folders.
-     */
-    fun unlinkDrive() {
-        prefs?.edit()?.remove(KEY_LINKED_TREE_URI)?.apply()
-        _backupState.value = _backupState.value.copy(
-            isDriveConnected = false,
-            lastBackupFormatted = "Never",
-            backupSizeBytes = 0L
-        )
-    }
-
-    /**
-     * 100% SILENT DIRECT CLOUD BACKUP
-     * Automatically writes recommendations, history, and playlists into the "AURALIX Data" folder
-     * on the user's Google Drive. NO Files app opens!
-     */
-    suspend fun backupToDrive(context: Context): Boolean = withContext(Dispatchers.IO) {
-        val sp = prefs ?: context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val treeUriStr = sp.getString(KEY_LINKED_TREE_URI, null) ?: return@withContext false
-        val treeUri = Uri.parse(treeUriStr)
-
+        val backupFile = findAnyExistingBackup(context) ?: return@withContext false
         try {
-            _backupState.value = _backupState.value.copy(isBackingUp = true)
-
-            val rootDoc = DocumentFile.fromTreeUri(context, treeUri)
-            if (rootDoc == null) {
-                _backupState.value = _backupState.value.copy(isBackingUp = false)
-                return@withContext false
+            val success = restoreFromStream(backupFile.inputStream())
+            if (success) {
+                sp.edit().putBoolean(KEY_AUTO_RESTORED, true).apply()
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Restored your Spotify, playlists & recommendations!",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
             }
-
-            var auralixFolder = rootDoc.findFile(CLOUD_FOLDER_NAME)
-            if (auralixFolder == null || !auralixFolder.isDirectory) {
-                auralixFolder = rootDoc.createDirectory(CLOUD_FOLDER_NAME)
-            }
-
-            if (auralixFolder == null) {
-                _backupState.value = _backupState.value.copy(isBackingUp = false)
-                return@withContext false
-            }
-
-            // Find or create auralix_backup.json
-            var backupFile = auralixFolder.findFile(BACKUP_FILENAME)
-            if (backupFile == null || !backupFile.isFile) {
-                backupFile = auralixFolder.createFile("application/json", BACKUP_FILENAME)
-            }
-
-            if (backupFile == null) {
-                _backupState.value = _backupState.value.copy(isBackingUp = false)
-                return@withContext false
-            }
-
-            val json = createBackupJson()
-            val bytes = json.toString(2).toByteArray(Charsets.UTF_8)
-
-            context.contentResolver.openOutputStream(backupFile.uri, "wt")?.use { out ->
-                out.write(bytes)
-                out.flush()
-            }
-
-            // Save local cache snapshot as well
-            saveLocalSnapshot(context, bytes)
-
-            val now = System.currentTimeMillis()
-            val formatted = formatTimestamp(now)
-            sp.edit()
-                .putLong(KEY_LAST_BACKUP_TIME, now)
-                .putLong(KEY_LAST_BACKUP_SIZE, bytes.size.toLong())
-                .apply()
-
-            _backupState.value = _backupState.value.copy(
-                isDriveConnected = true,
-                lastBackupFormatted = formatted,
-                backupSizeBytes = bytes.size.toLong(),
-                isBackingUp = false
-            )
-            true
-        } catch (e: Exception) {
-            e.printStackTrace()
-            _backupState.value = _backupState.value.copy(isBackingUp = false)
-            false
-        }
-    }
-
-    /**
-     * 100% SILENT DIRECT CLOUD RESTORE
-     * Automatically reads the latest backup directly from "AURALIX Data" on Google Drive.
-     * NO Files app opens!
-     */
-    suspend fun restoreFromDrive(context: Context): Boolean = withContext(Dispatchers.IO) {
-        val sp = prefs ?: context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val treeUriStr = sp.getString(KEY_LINKED_TREE_URI, null) ?: return@withContext false
-        val treeUri = Uri.parse(treeUriStr)
-
-        try {
-            _backupState.value = _backupState.value.copy(isRestoring = true)
-
-            val rootDoc = DocumentFile.fromTreeUri(context, treeUri)
-            if (rootDoc == null) {
-                _backupState.value = _backupState.value.copy(isRestoring = false)
-                return@withContext false
-            }
-
-            val auralixFolder = rootDoc.findFile(CLOUD_FOLDER_NAME)
-            val backupFile = auralixFolder?.findFile(BACKUP_FILENAME)
-
-            if (backupFile == null) {
-                _backupState.value = _backupState.value.copy(isRestoring = false)
-                return@withContext false
-            }
-
-            val inputStream = context.contentResolver.openInputStream(backupFile.uri)
-            val success = restoreFromStream(inputStream)
-
-            _backupState.value = _backupState.value.copy(isRestoring = false)
             success
         } catch (e: Exception) {
             e.printStackTrace()
-            _backupState.value = _backupState.value.copy(isRestoring = false)
             false
         }
     }
 
     /**
-     * Serializes complete taste profile, playlists, and history into a clean JSON payload.
+     * Serializes COMPLETE application state:
+     * - Taste Profile & Affinities
+     * - User Playlists & Listening History
+     * - Spotify Session (sp_dc cookie + display name)
+     * - YouTube Session (authenticated cookies)
+     * - Connected Google Account info
      */
-    fun createBackupJson(): JSONObject {
+    fun createFullBackupJson(): JSONObject {
         val root = JSONObject()
         root.put("app", "AURALIX")
-        root.put("version", 1)
+        root.put("version", 2)
         root.put("timestamp", System.currentTimeMillis())
         root.put("formattedDate", SimpleDateFormat("MMM dd, yyyy 'at' hh:mm a", Locale.getDefault()).format(Date()))
 
-        // 1. Personalized Taste Profile (artists, affinities, hidden tracks)
+        // 1. Personalized Taste Profile
         root.put("tasteProfile", UserTasteProfile.get().exportTasteProfileJson())
 
         // 2. Playlists
@@ -271,34 +150,78 @@ object GoogleDriveBackupEngine {
         }
         root.put("history", historyArr)
 
+        // 4. Spotify Session & Auth
+        val spotifyObj = JSONObject()
+        val spDc = SpotifyConnectEngine.getSpDcCookie()
+        val spName = SpotifyConnectEngine.userDisplayName.value
+        val isSpConnected = SpotifyConnectEngine.isConnected.value
+        spotifyObj.put("connected", isSpConnected)
+        if (!spDc.isNullOrBlank()) {
+            spotifyObj.put("sp_dc", spDc)
+        }
+        if (!spName.isNullOrBlank()) {
+            spotifyObj.put("displayName", spName)
+        }
+        root.put("spotify", spotifyObj)
+
+        // 5. YouTube Auth & Session Cookies
+        val ytObj = JSONObject()
+        val ytCookies = YouTubeSyncEngine.getAuthCookies()
+        if (ytCookies.isNotBlank()) {
+            ytObj.put("cookies", ytCookies)
+        }
+        root.put("youtube", ytObj)
+
+        // 6. Connected Google Account
+        val account = AccountRepository.currentAccount.value
+        if (account != null) {
+            val accObj = JSONObject().apply {
+                put("name", account.name)
+                put("email", account.email)
+                put("handle", account.handle)
+                put("avatarUrl", account.avatarUrl ?: "")
+            }
+            root.put("account", accObj)
+        }
+
         return root
     }
 
     /**
-     * Fallback manual export via SAF stream.
+     * Saves complete backup locally to Documents/AURALIX and app internal cache.
+     * Persists across app uninstalls!
      */
-    suspend fun writeBackupToStream(context: Context, outputStream: OutputStream?): Boolean = withContext(Dispatchers.IO) {
-        if (outputStream == null) return@withContext false
+    suspend fun backupLocally(context: Context): Boolean = withContext(Dispatchers.IO) {
         try {
             _backupState.value = _backupState.value.copy(isBackingUp = true)
-            val json = createBackupJson()
+
+            val json = createFullBackupJson()
             val bytes = json.toString(2).toByteArray(Charsets.UTF_8)
-            outputStream.use { out ->
-                out.write(bytes)
-                out.flush()
-            }
-            saveLocalSnapshot(context, bytes)
+
+            // 1. Write to Documents/AURALIX/auralix_backup.json (survives uninstall!)
+            val publicFile = getPublicBackupFile()
+            publicFile?.writeBytes(bytes)
+
+            // 2. Write to app internal cache
+            val internalFile = File(context.filesDir, BACKUP_FILENAME)
+            internalFile.writeBytes(bytes)
+
             val now = System.currentTimeMillis()
             val formatted = formatTimestamp(now)
+
             prefs?.edit()
                 ?.putLong(KEY_LAST_BACKUP_TIME, now)
                 ?.putLong(KEY_LAST_BACKUP_SIZE, bytes.size.toLong())
                 ?.apply()
 
             _backupState.value = _backupState.value.copy(
+                hasLocalBackup = true,
                 lastBackupFormatted = formatted,
                 backupSizeBytes = bytes.size.toLong(),
-                isBackingUp = false
+                isBackingUp = false,
+                isSpotifySaved = SpotifyConnectEngine.isConnected.value,
+                isYouTubeSaved = YouTubeSyncEngine.hasAuthCookies(),
+                playlistsCount = UserDataRepository.playlists.value.size
             )
             true
         } catch (e: Exception) {
@@ -309,12 +232,62 @@ object GoogleDriveBackupEngine {
     }
 
     /**
-     * Restores complete data from given InputStream.
+     * Writes backup JSON to given OutputStream (e.g. Google Drive SAF URI).
+     */
+    suspend fun writeBackupToStream(context: Context, outputStream: OutputStream?): Boolean = withContext(Dispatchers.IO) {
+        if (outputStream == null) return@withContext false
+        try {
+            _backupState.value = _backupState.value.copy(isBackingUp = true)
+
+            val json = createFullBackupJson()
+            val bytes = json.toString(2).toByteArray(Charsets.UTF_8)
+
+            outputStream.use { out ->
+                out.write(bytes)
+                out.flush()
+            }
+
+            // Also keep local and documents snapshots
+            getPublicBackupFile()?.writeBytes(bytes)
+            File(context.filesDir, BACKUP_FILENAME).writeBytes(bytes)
+
+            val now = System.currentTimeMillis()
+            val formatted = formatTimestamp(now)
+            prefs?.edit()
+                ?.putLong(KEY_LAST_BACKUP_TIME, now)
+                ?.putLong(KEY_LAST_BACKUP_SIZE, bytes.size.toLong())
+                ?.apply()
+
+            _backupState.value = _backupState.value.copy(
+                hasLocalBackup = true,
+                lastBackupFormatted = formatted,
+                backupSizeBytes = bytes.size.toLong(),
+                isBackingUp = false,
+                isSpotifySaved = SpotifyConnectEngine.isConnected.value,
+                isYouTubeSaved = YouTubeSyncEngine.hasAuthCookies(),
+                playlistsCount = UserDataRepository.playlists.value.size
+            )
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            _backupState.value = _backupState.value.copy(isBackingUp = false)
+            false
+        }
+    }
+
+    /**
+     * Restores COMPLETE application state from given InputStream (Google Drive or local file):
+     * - Taste Profile
+     * - Playlists & History
+     * - Spotify Session
+     * - YouTube Session
+     * - Google Account
      */
     suspend fun restoreFromStream(inputStream: InputStream?): Boolean = withContext(Dispatchers.IO) {
         if (inputStream == null) return@withContext false
         try {
             _backupState.value = _backupState.value.copy(isRestoring = true)
+
             val content = inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             val root = JSONObject(content)
 
@@ -347,10 +320,51 @@ object GoogleDriveBackupEngine {
 
             UserDataRepository.restoreFullData(restoredHistory, restoredPlaylists)
 
-            // 4. Force refresh home recommendation feeds with restored taste profile
+            // 4. Restore Spotify Session
+            root.optJSONObject("spotify")?.let { spObj ->
+                val spDc = spObj.optString("sp_dc", "")
+                val displayName = spObj.optString("displayName", "Spotify User")
+                if (spDc.isNotBlank()) {
+                    SpotifyConnectEngine.restoreSession(spDc, displayName)
+                }
+            }
+
+            // 5. Restore YouTube Cookies
+            root.optJSONObject("youtube")?.let { ytObj ->
+                val cookies = ytObj.optString("cookies", "")
+                if (cookies.isNotBlank()) {
+                    try {
+                        val cm = CookieManager.getInstance()
+                        cm.setAcceptCookie(true)
+                        cm.setCookie("https://www.youtube.com", cookies)
+                        cm.setCookie("https://m.youtube.com", cookies)
+                        cm.flush()
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+
+            // 6. Restore Google Account
+            root.optJSONObject("account")?.let { accObj ->
+                val name = accObj.optString("name", "")
+                val email = accObj.optString("email", "")
+                val handle = accObj.optString("handle", "@user")
+                val avatarUrl = accObj.optString("avatarUrl", null).takeIf { it?.isNotBlank() == true }
+                if (name.isNotBlank()) {
+                    AccountRepository.setGoogleAccount(name, email, avatarUrl, handle)
+                }
+            }
+
+            // 7. Force refresh home feeds with restored taste profile
             RecommendationEngine.refreshHomeFeed(forceRefresh = true)
 
-            _backupState.value = _backupState.value.copy(isRestoring = false)
+            _backupState.value = _backupState.value.copy(
+                isRestoring = false,
+                isSpotifySaved = SpotifyConnectEngine.isConnected.value,
+                isYouTubeSaved = YouTubeSyncEngine.hasAuthCookies(),
+                playlistsCount = UserDataRepository.playlists.value.size
+            )
             true
         } catch (e: Exception) {
             e.printStackTrace()
@@ -359,12 +373,48 @@ object GoogleDriveBackupEngine {
         }
     }
 
-    private fun saveLocalSnapshot(context: Context, bytes: ByteArray) {
+    /**
+     * Finds any existing backup file across public Documents, Downloads, or app internal storage.
+     */
+    fun findAnyExistingBackup(context: Context): File? {
+        // 1. Documents/AURALIX/auralix_backup.json
         try {
-            val file = File(context.filesDir, LOCAL_BACKUP_FILENAME)
-            file.writeBytes(bytes)
+            val pub = getPublicBackupFile()
+            if (pub != null && pub.exists() && pub.length() > 0) return pub
         } catch (e: Exception) {
             e.printStackTrace()
+        }
+
+        // 2. Download/auralix_backup.json
+        try {
+            val dlDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val dlFile = File(dlDir, BACKUP_FILENAME)
+            if (dlFile.exists() && dlFile.length() > 0) return dlFile
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        // 3. App internal filesDir
+        val internalFile = File(context.filesDir, BACKUP_FILENAME)
+        if (internalFile.exists() && internalFile.length() > 0) return internalFile
+
+        val legacyInternal = File(context.filesDir, "auralix_drive_backup.json")
+        if (legacyInternal.exists() && legacyInternal.length() > 0) return legacyInternal
+
+        return null
+    }
+
+    private fun getPublicBackupFile(): File? {
+        return try {
+            val docs = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+            val auralixDir = File(docs, "AURALIX")
+            if (!auralixDir.exists()) {
+                auralixDir.mkdirs()
+            }
+            File(auralixDir, BACKUP_FILENAME)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
     }
 
