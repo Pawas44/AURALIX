@@ -132,7 +132,14 @@ fun KaraokeLyricsView(
                             label = "lyricsColor"
                         )
 
-                        val itemScale = 1f
+                        val itemScale by animateFloatAsState(
+                            targetValue = if (isActive) 1.07f else 0.94f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            ),
+                            label = "lyricsScale"
+                        )
 
                         val itemAlpha by animateFloatAsState(
                             targetValue = when {

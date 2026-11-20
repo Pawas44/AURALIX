@@ -270,39 +270,35 @@ fun MusicPlayerScreen(
 
     LaunchedEffect(track.id) {
         lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.getOffsetMs(track.id)
-        isLoadingLyrics = true
-        try {
-            lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
-                trackTitle = track.title,
-                artistName = track.artist.ifBlank { track.channelName },
-                durationSeconds = duration.toInt(),
-                videoId = track.id
-            )
-        } catch (e: Exception) {}
-
-        if (lyricsResult == null && track.lyrics.isNotBlank()) {
-            lyricsResult = com.videoguard.app.data.LyricsEngine.autoSyncPlainLyrics(track.lyrics, duration.toInt())
+        if (!com.videoguard.app.service.PlaybackController.isOfflineModeActive) {
+            isLoadingLyrics = true
+            try {
+                lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
+                    trackTitle = track.title,
+                    artistName = track.artist.ifBlank { track.channelName },
+                    durationSeconds = duration.toInt(),
+                    videoId = track.id
+                )
+            } catch (e: Exception) {}
+            isLoadingLyrics = false
+        } else {
+            lyricsResult = null
+            isLoadingLyrics = false
         }
-        isLoadingLyrics = false
     }
 
-    val safeActiveQueue = remember(liveQueue, queueTracks, track.id) {
-        val baseList = when {
-            liveQueue.isNotEmpty() && liveQueue.any { it.id == track.id || it.title.equals(track.title, ignoreCase = true) } -> liveQueue
-            queueTracks.isNotEmpty() && queueTracks.any { it.id == track.id || it.title.equals(track.title, ignoreCase = true) } -> queueTracks
-            liveQueue.isNotEmpty() -> liveQueue
-            queueTracks.isNotEmpty() -> queueTracks
-            else -> listOf(track)
-        }
-        val withCurrent = if (baseList.any { it.id == track.id || it.title.equals(track.title, ignoreCase = true) }) {
-            baseList
+    val activeQueue = remember(liveQueue, track.id) {
+        if (liveQueue.isNotEmpty() && liveQueue.any { it.id == track.id }) {
+            liveQueue
         } else {
-            listOf(track) + baseList
+            listOf(track)
         }
-        withCurrent.distinctBy { it.id }
+    }
+    val safeActiveQueue = remember(activeQueue) {
+        if (activeQueue.isNotEmpty()) activeQueue else listOf(track)
     }
     val initialIndex = remember(track.id) {
-        val idx = safeActiveQueue.indexOfFirst { it.id == track.id || it.title.equals(track.title, ignoreCase = true) }
+        val idx = safeActiveQueue.indexOfFirst { it.id == track.id }
         if (idx >= 0) idx else 0
     }
     val pagerState = rememberPagerState(
@@ -311,23 +307,28 @@ fun MusicPlayerScreen(
         maxOf(safeActiveQueue.size, 1)
     }
 
-    // Distinguish programmatic synchronization from deliberate user swipe gestures
-    var isProgrammaticScroll by remember { mutableStateOf(false) }
+    // Only allow track changes from authentic, deliberate user drag gestures on the carousel
+    var userSwipedByDrag by remember { mutableStateOf(false) }
+
+    LaunchedEffect(pagerState.interactionSource) {
+        pagerState.interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is androidx.compose.foundation.interaction.DragInteraction.Start -> {
+                    userSwipedByDrag = true
+                }
+            }
+        }
+    }
 
     // Sync pager when track changes externally (Next/Prev buttons, playlist clicks, auto-play)
     LaunchedEffect(track.id, safeActiveQueue) {
-        val targetIdx = safeActiveQueue.indexOfFirst {
-            it.id == track.id || it.title.equals(track.title, ignoreCase = true)
-        }
+        val targetIdx = safeActiveQueue.indexOfFirst { it.id == track.id }
         if (targetIdx >= 0 && targetIdx != pagerState.currentPage && targetIdx < safeActiveQueue.size) {
-            isProgrammaticScroll = true
+            userSwipedByDrag = false
             try {
                 pagerState.scrollToPage(targetIdx)
             } catch (e: Exception) {
                 // Ignore transient pager scroll race
-            } finally {
-                kotlinx.coroutines.delay(120)
-                isProgrammaticScroll = false
             }
         }
     }
@@ -335,10 +336,11 @@ fun MusicPlayerScreen(
     // When pager settles from an authentic user swipe gesture, trigger track playback
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.settledPage }.collect { settledPage ->
-            if (!isProgrammaticScroll && !pagerState.isScrollInProgress) {
+            if (userSwipedByDrag && !pagerState.isScrollInProgress) {
+                userSwipedByDrag = false
                 if (settledPage in safeActiveQueue.indices) {
                     val settledTrack = safeActiveQueue[settledPage]
-                    if (settledTrack.id != track.id && !settledTrack.title.equals(track.title, ignoreCase = true)) {
+                    if (settledTrack.id != track.id) {
                         try {
                             com.videoguard.app.service.PlaybackController.playTrack(settledTrack, safeActiveQueue)
                         } catch (e: Exception) {

@@ -137,7 +137,6 @@ fun YouTubeVideoPlayer(
                         javaScriptEnabled = true
                         mediaPlaybackRequiresUserGesture = false
                         domStorageEnabled = true
-                        databaseEnabled = true
                         cacheMode = WebSettings.LOAD_DEFAULT
                         allowContentAccess = true
                         allowFileAccess = true
@@ -145,14 +144,12 @@ fun YouTubeVideoPlayer(
                         allowUniversalAccessFromFileURLs = true
                         useWideViewPort = true
                         loadWithOverviewMode = true
-                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                     }
 
-                    setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                     webChromeClient = WebChromeClient()
 
-                    val tabletUserAgent = "Mozilla/5.0 (Linux; Android 14; Pixel Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-                    settings.userAgentString = tabletUserAgent
+                    val chromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+                    settings.userAgentString = chromeUserAgent
                     webViewClient = WebViewClient()
 
                     val bridge = YouTubeBridge(
@@ -213,7 +210,6 @@ fun YouTubeVideoPlayer(
             },
             update = { webView ->
                 webViewRef = webView
-                val wasHidden = webView.alpha == 0f || webView.translationX != 0f
                 webView.alpha = if (isVisible) 1f else 0f
                 if (!isVisible) {
                     webView.translationX = -50000f
@@ -221,9 +217,6 @@ fun YouTubeVideoPlayer(
                 } else {
                     webView.translationX = 0f
                     webView.translationY = 0f
-                    if (wasHidden) {
-                        webView.evaluateJavascript("if (typeof updatePlayerResolution === 'function') { updatePlayerResolution(); }", null)
-                    }
                 }
             }
         )
@@ -237,18 +230,6 @@ private fun getYouTubePlayerHtml(videoId: String): String {
         com.videoguard.app.service.PlaybackController.playbackQuality.value.contains("360") -> "medium"
         else -> "hd1080"
     }
-    val initialW = when (qualityCode) {
-        "hd720" -> 1280
-        "large" -> 854
-        "medium" -> 640
-        else -> 1920
-    }
-    val initialH = when (qualityCode) {
-        "hd720" -> 720
-        "large" -> 480
-        "medium" -> 360
-        else -> 1080
-    }
     return """
         <!DOCTYPE html>
         <html>
@@ -258,15 +239,6 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body, html { width: 100%; height: 100%; background-color: #000; overflow: hidden; pointer-events: none; user-select: none; }
             #player-wrapper { width: 100%; height: 100%; position: relative; overflow: hidden; background-color: #000; }
-            #player-scaler {
-              position: absolute;
-              top: 50%;
-              left: 50%;
-              transform-origin: center center;
-              width: ${initialW}px;
-              height: ${initialH}px;
-              transform: translate(-50%, -50%) scale(1);
-            }
             #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
             .ytPlayerControlsContainerHost,
             .ytPlayerControlsContainerRendered,
@@ -314,16 +286,8 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             }
           </style>
           <script>
-            try {
-              var exp = Date.now() + 31536000000;
-              localStorage.setItem('yt-player-quality', JSON.stringify({ data: '$qualityCode', expiration: exp, creation: Date.now() }));
-              localStorage.setItem('yt-player-bandwidth', JSON.stringify({ data: 50000000, expiration: exp, creation: Date.now() }));
-              localStorage.setItem('yt-player-av1-pref', JSON.stringify({ data: 1, expiration: exp, creation: Date.now() }));
-            } catch(e) {}
-
             window.userWantsPlay = true;
             window.isLoadingNewVideo = false;
-            window.lastLoadedVideoTime = 0;
             window.currentVideoId = '$videoId';
             window.targetQuality = '$qualityCode';
             window.pendingSeekTime = null;
@@ -423,12 +387,11 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               window.currentVideoId = id;
               window.userWantsPlay = true;
               window.isLoadingNewVideo = true;
-              window.lastLoadedVideoTime = Date.now();
               setTimeout(function() {
                 if (window.currentVideoId === id) {
                   window.isLoadingNewVideo = false;
                 }
-              }, 4000);
+              }, 2500);
 
               var targetQ = window.targetQuality || '$qualityCode';
               if (window.ytPlayer && typeof window.ytPlayer.loadVideoById === 'function') {
@@ -489,53 +452,13 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               }
             }
 
-            function updatePlayerResolution() {
-              var targetW = 1920;
-              var targetH = 1080;
-              var q = window.targetQuality || '$qualityCode';
-              if (q === 'hd720') {
-                targetW = 1280;
-                targetH = 720;
-              } else if (q === 'large') {
-                targetW = 854;
-                targetH = 480;
-              } else if (q === 'medium') {
-                targetW = 640;
-                targetH = 360;
-              } else {
-                targetW = 1920;
-                targetH = 1080;
-              }
-
-              var scaler = document.getElementById('player-scaler');
-              if (scaler) {
-                scaler.style.width = targetW + 'px';
-                scaler.style.height = targetH + 'px';
-                var curW = window.innerWidth || document.documentElement.clientWidth || screen.width;
-                var curH = window.innerHeight || document.documentElement.clientHeight || screen.height;
-                if (curW > 0 && curH > 0) {
-                  var sX = curW / targetW;
-                  var sY = curH / targetH;
-                  var scale = Math.max(sX, sY);
-                  scaler.style.transform = 'translate(-50%, -50%) scale(' + scale + ')';
-                }
-              }
-            }
-            window.addEventListener('resize', updatePlayerResolution);
-
             function setPlaybackQuality(quality) {
               window.targetQuality = quality;
-              try {
-                var exp = Date.now() + 31536000000;
-                localStorage.setItem('yt-player-quality', JSON.stringify({ data: quality, expiration: exp, creation: Date.now() }));
-                localStorage.setItem('yt-player-bandwidth', JSON.stringify({ data: 50000000, expiration: exp, creation: Date.now() }));
-              } catch(e) {}
-
               if (window.ytPlayer) {
                 try { if (typeof window.ytPlayer.setPlaybackQuality === 'function') window.ytPlayer.setPlaybackQuality(quality); } catch(e) {}
                 try { if (typeof window.ytPlayer.setPlaybackQualityRange === 'function') window.ytPlayer.setPlaybackQualityRange(quality, quality); } catch(e) {}
               }
-              var iframe = document.querySelector('iframe') || document.getElementById('player');
+              var iframe = document.getElementById('player');
               if (iframe && iframe.contentWindow) {
                 try {
                   iframe.contentWindow.postMessage(JSON.stringify({
@@ -549,9 +472,6 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                     "args": [quality, quality]
                   }), '*');
                 } catch(e) {}
-              }
-              if (typeof updatePlayerResolution === 'function') {
-                updatePlayerResolution();
               }
             }
 
@@ -689,12 +609,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             setInterval(cleanEmbedDOM, 50);
 
             setInterval(function() {
-              if (window.isLoadingNewVideo) {
-                if (Date.now() - (window.lastLoadedVideoTime || 0) < 4000) {
-                  return;
-                }
-                window.isLoadingNewVideo = false;
-              }
+              if (window.isLoadingNewVideo) return;
               if (window.ytPlayer && typeof window.ytPlayer.getCurrentTime === 'function' && typeof window.ytPlayer.getDuration === 'function') {
                 try {
                   var cur = window.ytPlayer.getCurrentTime();
@@ -722,9 +637,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
         </head>
         <body>
           <div id="player-wrapper">
-            <div id="player-scaler">
-              <div id="player"></div>
-            </div>
+            <div id="player"></div>
           </div>
           <script>
             var tag = document.createElement('script');
@@ -759,18 +672,12 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                 }
               });
               window.ytPlayer = ytPlayer;
-              if (typeof updatePlayerResolution === 'function') {
-                updatePlayerResolution();
-              }
             }
 
             function onPlayerReady(event) {
               window.ytPlayer = event.target;
               if (window.targetQuality) {
                 setPlaybackQuality(window.targetQuality);
-              }
-              if (typeof updatePlayerResolution === 'function') {
-                updatePlayerResolution();
               }
               if (window.currentVideoId && window.currentVideoId !== '$videoId') {
                 try {
@@ -815,13 +722,6 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                     window.AndroidBridge.onStateChange(2);
                   }
                 }
-              } else if (state === 3) { // BUFFERING
-                if (window.targetQuality && window.ytPlayer && typeof window.ytPlayer.setPlaybackQuality === 'function') {
-                  try {
-                    window.ytPlayer.setPlaybackQuality(window.targetQuality);
-                    window.ytPlayer.setPlaybackQualityRange(window.targetQuality, window.targetQuality);
-                  } catch(e) {}
-                }
               } else if (state === 5) { // CUED
                 if (window.userWantsPlay) {
                   if (window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
@@ -829,12 +729,6 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                   }
                 }
               } else if (state === -1) { // UNSTARTED
-                if (window.targetQuality && window.ytPlayer && typeof window.ytPlayer.setPlaybackQuality === 'function') {
-                  try {
-                    window.ytPlayer.setPlaybackQuality(window.targetQuality);
-                    window.ytPlayer.setPlaybackQualityRange(window.targetQuality, window.targetQuality);
-                  } catch(e) {}
-                }
                 if (window.userWantsPlay) {
                   if (window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
                     window.ytPlayer.playVideo();
