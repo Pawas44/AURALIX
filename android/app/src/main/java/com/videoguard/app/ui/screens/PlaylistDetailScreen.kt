@@ -43,10 +43,13 @@ fun PlaylistDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val isDownloads = playlistId == "downloads"
+    val isAlbumPlaylist = playlistId.startsWith("album_") || playlistId.startsWith("user_album_") || playlistId.startsWith("OLAK5uy_") || playlistId.startsWith("MPREb_")
+    val isRemoteYouTubePlaylist = playlistId.startsWith("PL") || playlistId.startsWith("RD") || playlistId.startsWith("VL") || playlistId.startsWith("OLAK5uy_") || playlistId.startsWith("MPREb_")
     val offlineTracks by UserDataRepository.offlineTracks.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val playlists by UserDataRepository.playlists.collectAsState()
+    val isSaved = playlists.any { it.id == playlistId }
     val repoPlaylist = if (isDownloads) {
         UserDataRepository.getDownloadsPlaylist()
     } else {
@@ -85,8 +88,6 @@ fun PlaylistDetailScreen(
     val scope = rememberCoroutineScope()
 
     suspend fun refreshVideos() {
-        val isRemoteYouTubePlaylist = playlistId.startsWith("PL") || playlistId.startsWith("RD") || playlistId.startsWith("VL") || playlistId.startsWith("OLAK5uy_") || playlistId.startsWith("MPREb_")
-        val isAlbumPlaylist = playlistId.startsWith("album_") || playlistId.startsWith("user_album_") || playlistId.startsWith("OLAK5uy_") || playlistId.startsWith("MPREb_")
         if (isDownloads) {
             isRefreshing = false
             isLoading = false
@@ -114,7 +115,10 @@ fun PlaylistDetailScreen(
                 videos = online,
                 customCoverUrl = playlist.customCoverUrl ?: online.firstOrNull()?.thumbnailUrl
             )
-            UserDataRepository.savePlaylist(updatedPl)
+            // Only update in repository if this playlist has already been explicitly saved in the user's library
+            if (UserDataRepository.playlists.value.any { it.id == playlistId }) {
+                UserDataRepository.savePlaylist(updatedPl)
+            }
         }
         isRefreshing = false
         isLoading = false
@@ -328,6 +332,33 @@ fun PlaylistDetailScreen(
                         if (!isDownloads) {
                             IconButton(
                                 onClick = {
+                                    if (isSaved) {
+                                        UserDataRepository.deletePlaylist(playlistId)
+                                        android.widget.Toast.makeText(context, "Removed from library", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        val toSave = playlist.copy(
+                                            videos = currentVideos,
+                                            customCoverUrl = playlist.customCoverUrl ?: currentVideos.firstOrNull()?.thumbnailUrl
+                                        )
+                                        UserDataRepository.savePlaylist(toSave)
+                                        android.widget.Toast.makeText(context, "Saved to library", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(if (isSaved) Color(0xFF331E54) else Color(0xFF272727))
+                            ) {
+                                Icon(
+                                    imageVector = if (isSaved) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                    contentDescription = if (isSaved) "Remove from library" else "Save to library",
+                                    tint = if (isSaved) Color(0xFFC084FC) else Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
                                     val safeList = currentVideos.filter { it.id.isNotBlank() }
                                     if (safeList.isNotEmpty()) {
                                         UserDataRepository.downloadAllSongs(context, safeList, playlist.title)
@@ -349,7 +380,7 @@ fun PlaylistDetailScreen(
                         }
                     }
 
-                    if (!isDownloads) {
+                    if (!isDownloads && !isAlbumPlaylist && isSaved) {
                         Spacer(modifier = Modifier.height(10.dp))
                         Button(
                             onClick = { showAddSongsSheet = true },
