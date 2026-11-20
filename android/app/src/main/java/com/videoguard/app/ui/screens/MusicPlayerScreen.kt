@@ -631,62 +631,6 @@ fun MusicPlayerScreen(
             }
         }
 
-        // Floating Real-Time Download Progress Banner
-        AnimatedVisibility(
-            visible = currentDownload != null,
-            enter = slideInVertically() + fadeIn(),
-            exit = slideOutVertically() + fadeOut()
-        ) {
-            currentDownload?.let { dl ->
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 4.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = Color(0xFF1B1D2C),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, YTMusicRedAccent.copy(alpha = 0.5f))
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (dl.isComplete) "✓ Download Complete" else "Downloading: ${dl.title}",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = if (dl.isComplete) "Ready" else "${dl.progress}%",
-                                color = YTMusicRedAccent,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = { dl.progress / 100f },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = YTMusicRedAccent,
-                            trackColor = Color.White.copy(alpha = 0.15f)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = dl.bytesText,
-                            color = Color(0xFFAAAAAA),
-                            fontSize = 10.sp
-                        )
-                    }
-                }
-            }
-        }
-
         // Top Bar: Collapse Icon | [ Song | Video ] Toggle (Top Center) | Background Play & More
         Box(
             modifier = Modifier
@@ -723,41 +667,65 @@ fun MusicPlayerScreen(
                 )
             }
 
-            // Video mode switcher pill in Top Centre (matching homescreen switcher style)
-            Box(
+            // Dual Switcher Pill: [ Song | Video ] in Top Centre (YouTube Music style)
+            Row(
                 modifier = Modifier
                     .align(Alignment.Center)
                     .shadow(elevation = 6.dp, shape = RoundedCornerShape(20.dp), ambientColor = Color.Black.copy(alpha = 0.5f))
                     .clip(RoundedCornerShape(20.dp))
-                    .background(
-                        androidx.compose.ui.graphics.Brush.linearGradient(
-                            listOf(
-                                Color.White.copy(alpha = 0.16f),
-                                Color.White.copy(alpha = 0.05f)
-                            )
-                        )
-                    )
-                    .border(1.dp, LiquidGlassDefaults.BorderSpecular, RoundedCornerShape(20.dp))
-                    .clickable { onSwitchToVideoMode() }
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
-                contentAlignment = Alignment.Center
+                    .background(Color(0xE012141F))
+                    .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(20.dp))
+                    .padding(3.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
+                // Song tab (active in MusicPlayerScreen)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.White.copy(alpha = 0.20f))
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Switch to Video",
-                        tint = YouTubeRed,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Video",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = "Song",
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Song",
+                            color = Color.White,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                // Video tab (switches to video playback mode)
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { onSwitchToVideoMode() }
+                        .padding(horizontal = 12.dp, vertical = 5.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Switch to Video",
+                            tint = YouTubeRed,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Video",
+                            color = Color.White.copy(alpha = 0.70f),
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
 
@@ -800,55 +768,92 @@ fun MusicPlayerScreen(
         ) {
             if (showInPlayerLyrics) {
                 Box(
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Song's album artwork in the background (centered & softly blurred, 100% transparent overlay!)
-                    AsyncImage(
-                        model = track.thumbnailUrl,
-                        contentDescription = track.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .blur(14.dp)
-                            .graphicsLayer { alpha = 0.50f }
-                    )
-
-                    // 100% Transparent Synchronized Karaoke Lyrics
-                    com.videoguard.app.ui.components.KaraokeLyricsView(
-                        lyrics = lyricsResult,
-                        isLoading = isLoadingLyrics,
-                        track = track,
-                        currentSeconds = currentSeconds,
-                        lyricsOffsetMs = lyricsOffsetMs,
-                        romanizeMode = romanizeMode,
-                        onSeekTo = { posSec ->
-                            com.videoguard.app.service.PlaybackController.seekTo(posSec)
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
-
-                    // Top-right sleek floating ABC pill toggle
-                    val (modeLabel, isHighlighted) = when (romanizeMode) {
-                        com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "ABC: Both" to true
-                        com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "ABC: Roman" to true
-                        com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> "ABC: Off" to false
-                    }
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(end = 16.dp, top = 8.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.12f))
-                            .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
-                            .clickable { onCycleRomanizeMode() }
-                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Text(
-                            text = modeLabel,
-                            color = if (isHighlighted) Color(0xFF3EA6FF) else Color.White.copy(alpha = 0.85f),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 38.dp)
+                                .aspectRatio(1f)
+                                .shadow(
+                                    elevation = 20.dp,
+                                    shape = RoundedCornerShape(18.dp),
+                                    spotColor = Color(0xFF3EA6FF).copy(alpha = 0.35f)
+                                )
+                                .clip(RoundedCornerShape(18.dp))
+                        ) {
+                            // Softly blurred poster artwork inside the exact poster footprint
+                            AsyncImage(
+                                model = track.thumbnailUrl,
+                                contentDescription = track.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .blur(16.dp)
+                                    .graphicsLayer { alpha = 0.45f }
+                            )
+
+                            // Subtle tint overlay for crystal clear readability
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            listOf(
+                                                Color.Black.copy(alpha = 0.45f),
+                                                Color.Black.copy(alpha = 0.25f),
+                                                Color.Black.copy(alpha = 0.45f)
+                                            )
+                                        )
+                                    )
+                            )
+
+                            // 100% Transparent Synchronized Karaoke Lyrics
+                            com.videoguard.app.ui.components.KaraokeLyricsView(
+                                lyrics = lyricsResult,
+                                isLoading = isLoadingLyrics,
+                                track = track,
+                                currentSeconds = currentSeconds,
+                                lyricsOffsetMs = lyricsOffsetMs,
+                                romanizeMode = romanizeMode,
+                                onSeekTo = { posSec ->
+                                    com.videoguard.app.service.PlaybackController.seekTo(posSec)
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            // Top-right sleek floating ABC pill toggle
+                            val (modeLabel, isHighlighted) = when (romanizeMode) {
+                                com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "ABC: Both" to true
+                                com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "ABC: Roman" to true
+                                com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> "ABC: Off" to false
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(end = 12.dp, top = 10.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.14f))
+                                    .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
+                                    .clickable { onCycleRomanizeMode() }
+                                    .padding(horizontal = 9.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = modeLabel,
+                                    color = if (isHighlighted) Color(0xFF3EA6FF) else Color.White.copy(alpha = 0.85f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        // Maintain vertical alignment balance with the artwork carousel's bottom spacing
+                        Spacer(modifier = Modifier.height(32.dp))
                     }
                 }
             } else {

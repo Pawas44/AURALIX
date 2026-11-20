@@ -378,7 +378,19 @@ object PlaybackController {
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
 
-                // Parallel instant resolution: query both InnerTube and YouTubeSearchEngine concurrently
+                // Parallel instant resolution: query for clean Topic/Official Audio first, fallback to Music Video
+                val dTopic = async {
+                    try {
+                        com.videoguard.app.data.YouTubeSearchEngine.searchVideos("$query Topic", isMusicOnly = true)
+                            .firstOrNull { it.id.length == 11 && (it.channelName.contains("Topic", ignoreCase = true) || it.title.contains("Audio", ignoreCase = true)) }
+                    } catch (e: Exception) { null }
+                }
+                val dAudio = async {
+                    try {
+                        com.videoguard.app.data.YouTubeSearchEngine.searchVideos("$query Official Audio", isMusicOnly = true)
+                            .firstOrNull { it.id.length == 11 && it.title.contains("Audio", ignoreCase = true) }
+                    } catch (e: Exception) { null }
+                }
                 val d1 = async {
                     try {
                         com.videoguard.app.data.YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true)
@@ -392,7 +404,7 @@ object PlaybackController {
                     } catch (e: Exception) { null }
                 }
 
-                val best = d1.await() ?: d2.await()
+                val best = dTopic.await() ?: dAudio.await() ?: d1.await() ?: d2.await()
                     ?: com.videoguard.app.data.MusicImportEngine.resolveSingleTrack(track.title, track.artist)
 
                 if (best != null && best.id.length == 11) {

@@ -32,7 +32,19 @@ fun DynamicIslandDownloadPill(
     val batchDownload by UserDataRepository.batchDownload.collectAsState()
     val currentDownload by UserDataRepository.currentDownload.collectAsState()
 
-    val isVisible = batchDownload != null || (currentDownload != null && !currentDownload!!.isComplete)
+    var showCompletedSingle by remember { mutableStateOf(false) }
+    var lastCompletedTitle by remember { mutableStateOf("") }
+
+    LaunchedEffect(currentDownload?.isComplete) {
+        if (currentDownload?.isComplete == true) {
+            showCompletedSingle = true
+            lastCompletedTitle = currentDownload?.title ?: ""
+            kotlinx.coroutines.delay(2800)
+            showCompletedSingle = false
+        }
+    }
+
+    val isVisible = batchDownload != null || (currentDownload != null && !currentDownload!!.isComplete) || showCompletedSingle
 
     AnimatedVisibility(
         visible = isVisible,
@@ -179,54 +191,73 @@ fun DynamicIslandDownloadPill(
                         )
                     }
                 }
-            } else if (single != null) {
-                // Single Track Download Pill
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF1DB954).copy(alpha = 0.18f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (single.isComplete) Icons.Default.Check else Icons.Default.Download,
-                            contentDescription = null,
-                            tint = Color(0xFF1DB954),
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
+            } else if (single != null || showCompletedSingle) {
+                // Single Track Download Pill (Apple Dynamic Island style with real-time progress)
+                val isDone = single?.isComplete == true || showCompletedSingle
+                val title = if (isDone) (single?.title ?: lastCompletedTitle) else (single?.title ?: "")
+                val progress = single?.progress ?: 100
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = if (single.isComplete) "✓ Download Complete" else "Downloading: ${single.title}",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (!single.isComplete && single.bytesText.isNotBlank()) {
-                            Text(
-                                text = single.bytesText,
-                                color = Color.Gray,
-                                fontSize = 10.5.sp
+                Column(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1DB954).copy(alpha = 0.18f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isDone) Icons.Default.Check else Icons.Default.Download,
+                                contentDescription = null,
+                                tint = Color(0xFF1DB954),
+                                modifier = Modifier.size(14.dp)
                             )
                         }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isDone) "✓ Download Complete" else "Downloading: $title",
+                                color = if (isDone) Color(0xFF1DB954) else Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (!isDone && single?.bytesText?.isNotBlank() == true) {
+                                Text(
+                                    text = single.bytesText,
+                                    color = Color(0xFFA5ABC0),
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = if (isDone) "Ready" else "$progress%",
+                            color = Color(0xFF1DB954),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
-                    Text(
-                        text = if (single.isComplete) "Ready" else "${single.progress}%",
-                        color = Color(0xFF1DB954),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    if (!isDone) {
+                        LinearProgressIndicator(
+                            progress = { progress / 100f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                            color = Color(0xFF1DB954),
+                            trackColor = Color.White.copy(alpha = 0.12f)
+                        )
+                    }
                 }
             }
         }

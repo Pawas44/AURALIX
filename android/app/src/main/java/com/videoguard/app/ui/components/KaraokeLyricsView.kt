@@ -3,6 +3,8 @@
 package com.videoguard.app.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -21,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -34,9 +37,9 @@ import com.videoguard.app.model.VideoItem
 /**
  * Transparent Synchronized Karaoke Lyrics View
  * Features:
+ * - Centered vertical alignment: current playing line stays in the middle
+ * - Smooth spring & easing animations on line changes (scale, color, alpha)
  * - 100% Transparent background floating seamlessly over the player's blurred artwork
- * - Smooth frame-by-frame synchronized scrolling
- * - Large, glowing typography for active lyrics
  * - Tap any line to seek playback
  * - Universal Romanization support (Hindi, Punjabi, Korean, Japanese, Russian, etc.)
  */
@@ -61,18 +64,22 @@ fun KaraokeLyricsView(
 
     val listState = rememberLazyListState()
 
+    // Smoothly animate the active line to the exact vertical center
     LaunchedEffect(activeIndex) {
         if (activeIndex >= 0 && lyrics?.isSynced == true) {
-            val target = (activeIndex - 1).coerceAtLeast(0)
-            listState.animateScrollToItem(target)
+            listState.animateScrollToItem(activeIndex, scrollOffset = 0)
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(Color.Transparent)
     ) {
+        val containerHeight = maxHeight
+        // Calculate vertical padding so active item (scrolled with offset 0) sits in vertical center
+        val centerPadding = ((containerHeight / 2) - 26.dp).coerceAtLeast(16.dp)
+
         when {
             isLoading -> {
                 Box(
@@ -89,7 +96,7 @@ fun KaraokeLyricsView(
             lyrics != null && lyrics.lines.isNotEmpty() -> {
                 LazyColumn(
                     state = listState,
-                    contentPadding = PaddingValues(top = 28.dp, bottom = 48.dp, start = 12.dp, end = 12.dp),
+                    contentPadding = PaddingValues(top = centerPadding, bottom = centerPadding, start = 14.dp, end = 14.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     itemsIndexed(lyrics.lines) { index, line ->
@@ -114,39 +121,70 @@ fun KaraokeLyricsView(
                                 effectiveRoman.isNotBlank() &&
                                 effectiveRoman != line.text
 
+                        // Smooth fluid transitions for color, scale, and opacity
+                        val itemColor by animateColorAsState(
+                            targetValue = when {
+                                isActive -> Color(0xFF3EA6FF)
+                                isPast -> Color.White.copy(alpha = 0.32f)
+                                else -> Color.White.copy(alpha = 0.65f)
+                            },
+                            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                            label = "lyricsColor"
+                        )
+
+                        val itemScale by animateFloatAsState(
+                            targetValue = if (isActive) 1.07f else 0.94f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                stiffness = Spring.StiffnessMediumLow
+                            ),
+                            label = "lyricsScale"
+                        )
+
+                        val itemAlpha by animateFloatAsState(
+                            targetValue = when {
+                                isActive -> 1f
+                                isPast -> 0.35f
+                                else -> 0.70f
+                            },
+                            animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+                            label = "lyricsAlpha"
+                        )
+
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
+                                .graphicsLayer {
+                                    scaleX = itemScale
+                                    scaleY = itemScale
+                                    this.alpha = itemAlpha
+                                }
+                                .clip(RoundedCornerShape(10.dp))
                                 .clickable {
                                     if (lyrics.isSynced) {
                                         val targetSec = ((line.timestampMs - lyricsOffsetMs) / 1000f).coerceAtLeast(0f)
                                         onSeekTo(targetSec)
                                     }
                                 }
-                                .padding(vertical = if (isActive) 10.dp else 5.dp),
+                                .padding(vertical = if (isActive) 8.dp else 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text(
                                 text = mainText,
-                                color = when {
-                                    isActive -> Color(0xFF3EA6FF)
-                                    isPast -> Color.White.copy(alpha = 0.35f)
-                                    else -> Color.White.copy(alpha = 0.60f)
-                                },
-                                fontSize = if (isActive) 21.sp else 16.sp,
-                                lineHeight = if (isActive) 28.sp else 23.sp,
+                                color = itemColor,
+                                fontSize = if (isActive) 19.sp else 16.sp,
+                                lineHeight = if (isActive) 26.sp else 22.sp,
                                 fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Medium,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth()
                             )
 
                             if (showSubtitle) {
-                                Spacer(modifier = Modifier.height(3.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = effectiveRoman,
-                                    color = if (isActive) Color(0xFF93C5FD).copy(alpha = 0.92f) else Color.White.copy(alpha = 0.30f),
-                                    fontSize = if (isActive) 14.sp else 12.sp,
+                                    color = if (isActive) Color(0xFF93C5FD).copy(alpha = 0.90f) else Color.White.copy(alpha = 0.30f),
+                                    fontSize = if (isActive) 13.sp else 12.sp,
                                     fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
                                     textAlign = TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth()
@@ -170,7 +208,7 @@ fun KaraokeLyricsView(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(24.dp),
+                        .padding(20.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -178,13 +216,13 @@ fun KaraokeLyricsView(
                             imageVector = Icons.Default.MusicNote,
                             contentDescription = null,
                             tint = Color.White.copy(alpha = 0.35f),
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(32.dp)
                         )
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = displayPlain,
                             color = Color.White.copy(alpha = 0.75f),
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             textAlign = TextAlign.Center
                         )
                     }
