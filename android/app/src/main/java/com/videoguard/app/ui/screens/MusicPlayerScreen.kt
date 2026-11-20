@@ -1142,13 +1142,13 @@ fun MusicPlayerScreen(
                 .fillMaxWidth()
                 .height(sheetHeight)
                 .align(Alignment.BottomCenter)
-                .shadow(elevation = if (activeTab == MusicSheetTab.LYRICS && isSheetExpanded) 0.dp else 20.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                .border(
-                    1.dp,
-                    if (activeTab == MusicSheetTab.LYRICS && isSheetExpanded) Color.White.copy(alpha = 0.12f) else LiquidGlassDefaults.BorderSpecular,
-                    RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-                ),
+                .shadow(elevation = if (activeTab == MusicSheetTab.LYRICS && isSheetExpanded) 0.dp else 20.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            border = if (activeTab == MusicSheetTab.LYRICS && isSheetExpanded) {
+                BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
+            } else {
+                BorderStroke(1.dp, LiquidGlassDefaults.BorderSpecular)
+            },
             colors = CardDefaults.cardColors(
                 containerColor = if (activeTab == MusicSheetTab.LYRICS && isSheetExpanded) {
                     Color.Black.copy(alpha = 0.40f)
