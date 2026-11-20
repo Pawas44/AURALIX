@@ -447,7 +447,7 @@ fun AccountBottomSheet(
                     title = "Check for Updates",
                     badge = if (isCheckingUpdates) "Checking..." else "v${com.videoguard.app.BuildConfig.APP_VERSION_NAME.removePrefix("v")}",
                     onClick = {
-                        com.videoguard.app.data.AppUpdateManager.checkForUpdates(context, isManualCheck = true)
+                        com.videoguard.app.data.AppUpdateManager.checkForUpdates(context, isManualCheck = true, forceShowIfSame = true)
                     }
                 )
 

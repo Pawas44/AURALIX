@@ -86,16 +86,22 @@ object AppUpdateManager {
             _isChecking.value = true
             var resolvedRelease: AppReleaseInfo? = null
 
-            // Tier 1: GitHub Web Latest Redirect (Zero rate limits! Directly inspects 302 Found Location header)
+            // Tier 1: GitHub Web Latest Redirect (Fastest, zero rate limits)
             try {
                 val webUrl = URL("https://github.com/Pawas44/AURALIX/releases/latest")
                 val conn = (webUrl.openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = false
-                    connectTimeout = 8000
-                    readTimeout = 8000
+                    connectTimeout = 6000
+                    readTimeout = 6000
                     setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 }
-                val redirectLocation = conn.getHeaderField("Location")
+                val code = conn.responseCode
+                val redirectLocation = if (code in 300..399) {
+                    conn.getHeaderField("Location")
+                } else if (code == 200) {
+                    conn.url?.toString()
+                } else null
+
                 if (!redirectLocation.isNullOrBlank() && redirectLocation.contains("/tag/")) {
                     val tag = redirectLocation.substringAfterLast("/tag/").trim()
                     if (tag.isNotBlank()) {
