@@ -3,6 +3,12 @@ package com.videoguard.app.data
 import android.content.Context
 import android.content.SharedPreferences
 
+enum class LyricsRomanizeMode {
+    BOTH,       // Native text + Romanized pronunciation underneath
+    ROMANIZED,  // Only Romanized English script
+    NATIVE      // Only original Native script
+}
+
 data class LyricsSearchResultItem(
     val id: Long,
     val trackName: String,
@@ -21,6 +27,19 @@ object LyricsOffsetManager {
         if (prefs == null) {
             prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         }
+    }
+
+    fun getRomanizeMode(): LyricsRomanizeMode {
+        val modeStr = prefs?.getString("lyrics_romanize_mode", LyricsRomanizeMode.BOTH.name) ?: LyricsRomanizeMode.BOTH.name
+        return try {
+            LyricsRomanizeMode.valueOf(modeStr)
+        } catch (e: Exception) {
+            LyricsRomanizeMode.BOTH
+        }
+    }
+
+    fun setRomanizeMode(mode: LyricsRomanizeMode) {
+        prefs?.edit()?.putString("lyrics_romanize_mode", mode.name)?.apply()
     }
 
     fun getOffsetMs(videoId: String): Long {

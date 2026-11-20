@@ -180,6 +180,13 @@ object LyricsEngine {
         }
     }
 
+    private fun shareSignificantWord(s1: String, s2: String): Boolean {
+        val stopwords = setOf("the", "and", "official", "audio", "video", "feat", "with", "prod")
+        val w1 = s1.split(Regex("[\\s\\-_,./&|()]+")).map { it.trim().lowercase() }.filter { it.length > 2 && it !in stopwords }
+        val w2 = s2.split(Regex("[\\s\\-_,./&|()]+")).map { it.trim().lowercase() }.filter { it.length > 2 && it !in stopwords }
+        return w1.any { it in w2 }
+    }
+
     fun parseCustomLrc(synced: String, plain: String): LyricsResult {
         if (synced.isNotBlank()) {
             val lines = parseLrcText(synced)

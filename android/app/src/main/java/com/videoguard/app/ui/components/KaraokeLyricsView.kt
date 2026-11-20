@@ -57,10 +57,10 @@ fun KaraokeLyricsView(
     track: VideoItem,
     currentSeconds: Float,
     lyricsOffsetMs: Long,
-    showTransliteration: Boolean,
+    romanizeMode: com.videoguard.app.data.LyricsRomanizeMode,
     onAdjustOffset: (Long) -> Unit,
     onResetOffset: () -> Unit,
-    onToggleTransliteration: () -> Unit,
+    onCycleRomanizeMode: () -> Unit,
     onWrongLyricsClicked: () -> Unit,
     onSeekTo: (Float) -> Unit,
     modifier: Modifier = Modifier,
@@ -193,6 +193,16 @@ fun KaraokeLyricsView(
                                 val isActive = index == activeIndex && lyrics.isSynced
                                 val isPast = index < activeIndex && lyrics.isSynced
 
+                                val mainText = when (romanizeMode) {
+                                    com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> {
+                                        if (line.romanizedText.isNotBlank()) line.romanizedText else line.text
+                                    }
+                                    else -> line.text
+                                }
+                                val showSubtitle = romanizeMode == com.videoguard.app.data.LyricsRomanizeMode.BOTH &&
+                                        line.romanizedText.isNotBlank() &&
+                                        line.romanizedText != line.text
+
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -207,7 +217,7 @@ fun KaraokeLyricsView(
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     Text(
-                                        text = line.text,
+                                        text = mainText,
                                         color = when {
                                             isActive -> Color(0xFF3EA6FF)
                                             isPast -> Color.White.copy(alpha = 0.35f)
@@ -220,7 +230,7 @@ fun KaraokeLyricsView(
                                         modifier = Modifier.fillMaxWidth()
                                     )
 
-                                    if (showTransliteration && line.romanizedText.isNotBlank() && line.romanizedText != line.text) {
+                                    if (showSubtitle) {
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = line.romanizedText,
@@ -262,6 +272,16 @@ fun KaraokeLyricsView(
                         )
                     }
                     else -> {
+                        val displayPlain = remember(track.lyrics, romanizeMode) {
+                            if (track.lyrics.isBlank()) {
+                                "Lyrics not available for this track"
+                            } else when (romanizeMode) {
+                                com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> {
+                                    com.videoguard.app.data.TransliterationEngine.romanize(track.lyrics)
+                                }
+                                else -> track.lyrics
+                            }
+                        }
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -277,7 +297,7 @@ fun KaraokeLyricsView(
                                 )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
-                                    text = track.lyrics.ifEmpty { "Lyrics not available for this track" },
+                                    text = displayPlain,
                                     color = Color(0xFFAAAAAA),
                                     fontSize = 13.sp,
                                     textAlign = TextAlign.Center
@@ -340,17 +360,22 @@ fun KaraokeLyricsView(
                         .padding(horizontal = 6.dp, vertical = 3.dp)
                 )
 
-                // ABC Transliteration toggle
+                // ABC Transliteration 3-Way Mode Toggle
+                val (modeLabel, isHighlighted) = when (romanizeMode) {
+                    com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "ABC: Both" to true
+                    com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "ABC: Roman" to true
+                    com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> "ABC: Native" to false
+                }
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(if (showTransliteration) Color(0xFF1E3A5F) else Color.White.copy(alpha = 0.08f))
-                        .clickable { onToggleTransliteration() }
+                        .background(if (isHighlighted) Color(0xFF1E3A5F) else Color.White.copy(alpha = 0.08f))
+                        .clickable { onCycleRomanizeMode() }
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(
-                        text = "ABC",
-                        color = if (showTransliteration) Color(0xFF3EA6FF) else Color(0xFFAAAAAA),
+                        text = modeLabel,
+                        color = if (isHighlighted) Color(0xFF3EA6FF) else Color(0xFFAAAAAA),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold
                     )

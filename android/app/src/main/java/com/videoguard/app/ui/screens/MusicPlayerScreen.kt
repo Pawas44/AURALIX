@@ -123,6 +123,7 @@ fun MusicPlayerScreen(
     val currentDownload by com.videoguard.app.data.UserDataRepository.currentDownload.collectAsState()
     val sleepTimerRemaining by com.videoguard.app.service.PlaybackController.sleepTimerRemainingSeconds.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
 
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -240,7 +241,24 @@ fun MusicPlayerScreen(
     }
 
     var showInPlayerLyrics by remember { mutableStateOf(false) }
-    var showTransliteration by remember { mutableStateOf(true) }
+    var romanizeMode by remember {
+        mutableStateOf(com.videoguard.app.data.LyricsOffsetManager.getRomanizeMode())
+    }
+    val onCycleRomanizeMode = {
+        val nextMode = when (romanizeMode) {
+            com.videoguard.app.data.LyricsRomanizeMode.BOTH -> com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED
+            com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> com.videoguard.app.data.LyricsRomanizeMode.NATIVE
+            com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> com.videoguard.app.data.LyricsRomanizeMode.BOTH
+        }
+        romanizeMode = nextMode
+        com.videoguard.app.data.LyricsOffsetManager.setRomanizeMode(nextMode)
+        val toastMsg = when (nextMode) {
+            com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "Lyrics: Original + Romanized"
+            com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "Lyrics: Romanized only"
+            com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> "Lyrics: Original script only"
+        }
+        android.widget.Toast.makeText(context, toastMsg, android.widget.Toast.LENGTH_SHORT).show()
+    }
     var lyricsOffsetMs by remember(track.id) {
         mutableLongStateOf(com.videoguard.app.data.LyricsOffsetManager.getOffsetMs(track.id))
     }
@@ -790,7 +808,7 @@ fun MusicPlayerScreen(
                         track = track,
                         currentSeconds = currentSeconds,
                         lyricsOffsetMs = lyricsOffsetMs,
-                        showTransliteration = showTransliteration,
+                        romanizeMode = romanizeMode,
                         onAdjustOffset = { delta ->
                             lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, delta)
                         },
@@ -798,7 +816,7 @@ fun MusicPlayerScreen(
                             com.videoguard.app.data.LyricsOffsetManager.resetOffset(track.id)
                             lyricsOffsetMs = 0L
                         },
-                        onToggleTransliteration = { showTransliteration = !showTransliteration },
+                        onCycleRomanizeMode = onCycleRomanizeMode,
                         onWrongLyricsClicked = {
                             customLyricsQuery = "${track.title} ${track.artist}".trim()
                             showWrongLyricsDialog = true
@@ -1509,7 +1527,7 @@ fun MusicPlayerScreen(
                                 track = track,
                                 currentSeconds = currentSeconds,
                                 lyricsOffsetMs = lyricsOffsetMs,
-                                showTransliteration = showTransliteration,
+                                romanizeMode = romanizeMode,
                                 onAdjustOffset = { delta ->
                                     lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, delta)
                                 },
@@ -1517,7 +1535,7 @@ fun MusicPlayerScreen(
                                     com.videoguard.app.data.LyricsOffsetManager.resetOffset(track.id)
                                     lyricsOffsetMs = 0L
                                 },
-                                onToggleTransliteration = { showTransliteration = !showTransliteration },
+                                onCycleRomanizeMode = onCycleRomanizeMode,
                                 onWrongLyricsClicked = {
                                     customLyricsQuery = "${track.title} ${track.artist}".trim()
                                     showWrongLyricsDialog = true
