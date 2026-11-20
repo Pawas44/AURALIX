@@ -762,7 +762,7 @@ object PlaybackController {
 
         // Debounce stale progress updates immediately following a track change
         val elapsedTrackChange = System.currentTimeMillis() - lastTrackChangeTimeMs
-        if (elapsedTrackChange < 1800L && current > 4.0f) {
+        if (elapsedTrackChange < 3500L && current > 2.0f) {
             return
         }
 

@@ -151,8 +151,8 @@ fun YouTubeVideoPlayer(
                     setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                     webChromeClient = WebChromeClient()
 
-                    val chromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
-                    settings.userAgentString = chromeUserAgent
+                    val tabletUserAgent = "Mozilla/5.0 (Linux; Android 14; Pixel Tablet) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+                    settings.userAgentString = tabletUserAgent
                     webViewClient = WebViewClient()
 
                     val bridge = YouTubeBridge(
@@ -323,6 +323,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
 
             window.userWantsPlay = true;
             window.isLoadingNewVideo = false;
+            window.lastLoadedVideoTime = 0;
             window.currentVideoId = '$videoId';
             window.targetQuality = '$qualityCode';
             window.pendingSeekTime = null;
@@ -422,11 +423,12 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               window.currentVideoId = id;
               window.userWantsPlay = true;
               window.isLoadingNewVideo = true;
+              window.lastLoadedVideoTime = Date.now();
               setTimeout(function() {
                 if (window.currentVideoId === id) {
                   window.isLoadingNewVideo = false;
                 }
-              }, 2500);
+              }, 4000);
 
               var targetQ = window.targetQuality || '$qualityCode';
               if (window.ytPlayer && typeof window.ytPlayer.loadVideoById === 'function') {
@@ -687,7 +689,12 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             setInterval(cleanEmbedDOM, 50);
 
             setInterval(function() {
-              if (window.isLoadingNewVideo) return;
+              if (window.isLoadingNewVideo) {
+                if (Date.now() - (window.lastLoadedVideoTime || 0) < 4000) {
+                  return;
+                }
+                window.isLoadingNewVideo = false;
+              }
               if (window.ytPlayer && typeof window.ytPlayer.getCurrentTime === 'function' && typeof window.ytPlayer.getDuration === 'function') {
                 try {
                   var cur = window.ytPlayer.getCurrentTime();
@@ -808,6 +815,13 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                     window.AndroidBridge.onStateChange(2);
                   }
                 }
+              } else if (state === 3) { // BUFFERING
+                if (window.targetQuality && window.ytPlayer && typeof window.ytPlayer.setPlaybackQuality === 'function') {
+                  try {
+                    window.ytPlayer.setPlaybackQuality(window.targetQuality);
+                    window.ytPlayer.setPlaybackQualityRange(window.targetQuality, window.targetQuality);
+                  } catch(e) {}
+                }
               } else if (state === 5) { // CUED
                 if (window.userWantsPlay) {
                   if (window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
@@ -815,6 +829,12 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                   }
                 }
               } else if (state === -1) { // UNSTARTED
+                if (window.targetQuality && window.ytPlayer && typeof window.ytPlayer.setPlaybackQuality === 'function') {
+                  try {
+                    window.ytPlayer.setPlaybackQuality(window.targetQuality);
+                    window.ytPlayer.setPlaybackQualityRange(window.targetQuality, window.targetQuality);
+                  } catch(e) {}
+                }
                 if (window.userWantsPlay) {
                   if (window.ytPlayer && typeof window.ytPlayer.playVideo === 'function') {
                     window.ytPlayer.playVideo();
