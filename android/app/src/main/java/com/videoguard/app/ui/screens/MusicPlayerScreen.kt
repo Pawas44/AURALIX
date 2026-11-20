@@ -800,100 +800,55 @@ fun MusicPlayerScreen(
         ) {
             if (showInPlayerLyrics) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 24.dp),
-                    contentAlignment = Alignment.Center
+                    modifier = Modifier.fillMaxSize()
                 ) {
+                    // Song's album artwork in the background (centered & softly blurred, 100% transparent overlay!)
+                    AsyncImage(
+                        model = track.thumbnailUrl,
+                        contentDescription = track.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .blur(14.dp)
+                            .graphicsLayer { alpha = 0.50f }
+                    )
+
+                    // 100% Transparent Synchronized Karaoke Lyrics
+                    com.videoguard.app.ui.components.KaraokeLyricsView(
+                        lyrics = lyricsResult,
+                        isLoading = isLoadingLyrics,
+                        track = track,
+                        currentSeconds = currentSeconds,
+                        lyricsOffsetMs = lyricsOffsetMs,
+                        romanizeMode = romanizeMode,
+                        onSeekTo = { posSec ->
+                            com.videoguard.app.service.PlaybackController.seekTo(posSec)
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Top-right sleek floating ABC pill toggle
+                    val (modeLabel, isHighlighted) = when (romanizeMode) {
+                        com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "ABC: Both" to true
+                        com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "ABC: Roman" to true
+                        com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> "ABC: Off" to false
+                    }
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .shadow(
-                                elevation = 20.dp,
-                                shape = RoundedCornerShape(18.dp),
-                                spotColor = extractedPalette.primary.copy(alpha = 0.65f)
-                            )
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(Color(0xFF101018))
+                            .align(Alignment.TopEnd)
+                            .padding(end = 16.dp, top = 8.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.12f))
+                            .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
+                            .clickable { onCycleRomanizeMode() }
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        // Background blurred artwork of current track
-                        AsyncImage(
-                            model = track.thumbnailUrl,
-                            contentDescription = track.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .blur(28.dp)
-                                .graphicsLayer { alpha = 0.35f }
+                        Text(
+                            text = modeLabel,
+                            color = if (isHighlighted) Color(0xFF3EA6FF) else Color.White.copy(alpha = 0.85f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
                         )
-
-                        // Dark scrim overlay for high contrast lyrics readability
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.50f))
-                        )
-
-                        // KaraokeLyricsView in exact poster bounds
-                        com.videoguard.app.ui.components.KaraokeLyricsView(
-                            lyrics = lyricsResult,
-                            isLoading = isLoadingLyrics,
-                            track = track,
-                            currentSeconds = currentSeconds,
-                            lyricsOffsetMs = lyricsOffsetMs,
-                            romanizeMode = romanizeMode,
-                            onSeekTo = { posSec ->
-                                com.videoguard.app.service.PlaybackController.seekTo(posSec)
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-
-                        // Top-right pill for Romanize & Close
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(10.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val (modeLabel, isHighlighted) = when (romanizeMode) {
-                                com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "ABC: Both" to true
-                                com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "ABC: Roman" to true
-                                com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> "ABC: Off" to false
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.90f) else Color.Black.copy(alpha = 0.50f))
-                                    .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
-                                    .clickable { onCycleRomanizeMode() }
-                                    .padding(horizontal = 9.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = modeLabel,
-                                    color = if (isHighlighted) Color(0xFF3EA6FF) else Color.White.copy(alpha = 0.85f),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .size(26.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.50f))
-                                    .clickable { showInPlayerLyrics = false },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Close lyrics",
-                                    tint = Color.White.copy(alpha = 0.85f),
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            }
-                        }
                     }
                 }
             } else {

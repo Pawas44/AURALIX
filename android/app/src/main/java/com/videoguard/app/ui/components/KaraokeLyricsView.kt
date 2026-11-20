@@ -155,32 +155,6 @@ fun KaraokeLyricsView(
                         }
                     }
                 }
-
-                // Top Gradient Edge Fade (Transparent fade)
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(36.dp)
-                        .align(Alignment.TopCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Black.copy(alpha = 0.50f), Color.Transparent)
-                            )
-                        )
-                )
-
-                // Bottom Gradient Edge Fade
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(36.dp)
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.50f))
-                            )
-                        )
-                )
             }
             else -> {
                 val displayPlain = remember(track.lyrics, romanizeMode) {
