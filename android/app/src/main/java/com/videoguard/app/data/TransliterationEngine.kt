@@ -415,7 +415,7 @@ object TransliterationEngine {
         'य' to "y", 'र' to "r", 'ल' to "l", 'व' to "v", 'श' to "sh",
         'ष' to "sh", 'स' to "s", 'ह' to "h",
         'क़' to "q", 'ख़' to "kh", 'ग़' to "gh", 'ज़' to "z",
-        'ड़' to "r", 'ढ़' to "rh", 'फ़' to "f", 'य़' to "y"
+        'ड़' to "d", 'ढ़' to "dh", 'फ़' to "f", 'य़' to "y"
     )
     private const val VIRAMA = '्'
     private const val ANUSVARA = 'ं'
@@ -438,8 +438,8 @@ object TransliterationEngine {
                     'ख' -> "kh"
                     'ग' -> "gh"
                     'ज' -> "z"
-                    'ड' -> "r"
-                    'ढ' -> "rh"
+                    'ड' -> "d"
+                    'ढ' -> "dh"
                     'फ' -> "f"
                     else -> devanagariConsonants[c] ?: "$c$NUKTA"
                 }

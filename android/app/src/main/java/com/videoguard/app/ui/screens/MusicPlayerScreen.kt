@@ -775,13 +775,39 @@ fun MusicPlayerScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
+                        // Poster Area with Floating Synchronized Lyrics (Same exact dimensions as the album artwork carousel)
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 24.dp)
+                                .padding(horizontal = 38.dp)
                                 .aspectRatio(1f)
+                                .shadow(
+                                    elevation = 22.dp,
+                                    shape = RoundedCornerShape(18.dp),
+                                    spotColor = palette.primary.copy(alpha = 0.65f)
+                                )
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(Color(0xFF161616))
+                                .clickable {
+                                    showInPlayerLyrics = false
+                                }
                         ) {
-                            // 100% Transparent Synchronized Karaoke Lyrics (No square box, floating directly over player backdrop)
+                            // 1. Song's Album Poster in background
+                            AsyncImage(
+                                model = track.thumbnailUrl.ifBlank { "https://img.youtube.com/vi/${track.id}/hqdefault.jpg" },
+                                contentDescription = track.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            // 2. Gentle dark scrim so lyrics are sharp, high-contrast and crystal-clear
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.52f))
+                            )
+
+                            // 3. 100% Transparent Synchronized Karaoke Lyrics (No inner square card, edge-to-edge over poster)
                             com.videoguard.app.ui.components.KaraokeLyricsView(
                                 lyrics = lyricsResult,
                                 isLoading = isLoadingLyrics,
@@ -795,7 +821,7 @@ fun MusicPlayerScreen(
                                 modifier = Modifier.fillMaxSize()
                             )
 
-                            // Top-right sleek floating ABC pill toggle
+                            // 4. Top-right sleek floating ABC pill toggle
                             val (modeLabel, isHighlighted) = when (romanizeMode) {
                                 com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "ABC: Both" to true
                                 com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "ABC: Roman" to true
@@ -804,10 +830,10 @@ fun MusicPlayerScreen(
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
-                                    .padding(end = 6.dp, top = 6.dp)
+                                    .padding(end = 8.dp, top = 8.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.14f))
-                                    .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.18f), RoundedCornerShape(12.dp))
+                                    .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.45f))
+                                    .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
                                     .clickable { onCycleRomanizeMode() }
                                     .padding(horizontal = 9.dp, vertical = 4.dp)
                             ) {
