@@ -82,7 +82,7 @@ fun getTrackPalette(track: VideoItem): AmbientPalette {
 
 enum class MusicSheetTab {
     UP_NEXT,
-    LYRICS
+    RELATED
 }
 
 @Composable
@@ -1339,59 +1339,25 @@ fun MusicPlayerScreen(
                             }
                         )
                         TabPill(
-                            title = "LYRICS",
-                            isActive = showInPlayerLyrics || (activeTab == MusicSheetTab.LYRICS && isSheetExpanded),
+                            title = "RELATED",
+                            isActive = activeTab == MusicSheetTab.RELATED && isSheetExpanded,
                             onClick = {
-                                showInPlayerLyrics = !showInPlayerLyrics
-                                if (showInPlayerLyrics) {
-                                    isSheetExpanded = false
-                                } else {
-                                    activeTab = MusicSheetTab.LYRICS
-                                    isSheetExpanded = true
-                                }
+                                activeTab = MusicSheetTab.RELATED
+                                isSheetExpanded = true
                             }
                         )
                     }
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    IconButton(
+                        onClick = { isSheetExpanded = !isSheetExpanded },
+                        modifier = Modifier.size(32.dp)
                     ) {
-                        // ABC Romanize Pill (Visible on LYRICS tab when expanded)
-                        if (activeTab == MusicSheetTab.LYRICS && isSheetExpanded) {
-                            val (modeLabel, isHighlighted) = when (romanizeMode) {
-                                com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "ABC: Both" to true
-                                com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "ABC: Roman" to true
-                                com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> "ABC: Off" to false
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.90f) else Color.White.copy(alpha = 0.08f))
-                                    .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
-                                    .clickable { onCycleRomanizeMode() }
-                                    .padding(horizontal = 9.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = modeLabel,
-                                    color = if (isHighlighted) Color(0xFF3EA6FF) else Color.White.copy(alpha = 0.75f),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        IconButton(
-                            onClick = { isSheetExpanded = !isSheetExpanded },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isSheetExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                                contentDescription = if (isSheetExpanded) "Collapse Queue" else "Expand Queue",
-                                tint = Color(0xFFAAAAAA),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        Icon(
+                            imageVector = if (isSheetExpanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                            contentDescription = if (isSheetExpanded) "Collapse Queue" else "Expand Queue",
+                            tint = Color(0xFFAAAAAA),
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
 
@@ -1599,21 +1565,27 @@ fun MusicPlayerScreen(
                                     }
                             }
                         }
-                        MusicSheetTab.LYRICS -> {
-                            com.videoguard.app.ui.components.KaraokeLyricsView(
-                                lyrics = lyricsResult,
-                                isLoading = isLoadingLyrics,
-                                track = track,
-                                currentSeconds = currentSeconds,
-                                lyricsOffsetMs = lyricsOffsetMs,
-                                romanizeMode = romanizeMode,
-                                onSeekTo = { posSec ->
-                                    com.videoguard.app.service.PlaybackController.seekTo(posSec)
-                                },
+                        MusicSheetTab.RELATED -> {
+                            Column(
                                 modifier = Modifier
                                     .fillMaxSize()
-                                    .padding(bottom = navBarBottom + 8.dp)
-                            )
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(top = 6.dp, bottom = navBarBottom + 8.dp)
+                            ) {
+                                Text(
+                                    text = "About the Artist",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "${track.artist.ifEmpty { track.channelName }} has over ${track.views} across YouTube and YouTube Music. Album: ${track.album.ifEmpty { "Single" }}.",
+                                    color = Color(0xFFCCCCCC),
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp
+                                )
+                            }
                         }
                     }
                 }
