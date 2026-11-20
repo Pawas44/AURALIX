@@ -133,7 +133,7 @@ object PlaybackController {
             quality.contains("720") -> "hd720"
             quality.contains("480") -> "large"
             quality.contains("360") -> "medium"
-            else -> "hd1080"
+            else -> "default"
         }
         sendCommand("setPlaybackQuality('$ytQuality')")
     }
