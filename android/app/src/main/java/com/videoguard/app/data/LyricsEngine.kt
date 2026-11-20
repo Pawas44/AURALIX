@@ -11,7 +11,8 @@ import java.util.regex.Pattern
 
 data class LyricLine(
     val timestampMs: Long,
-    val text: String
+    val text: String,
+    val romanizedText: String = ""
 )
 
 data class LyricsResult(
@@ -61,7 +62,7 @@ object LyricsEngine {
         if (result == null || !result.isSynced) {
             val q = "$cleanTitle $cleanArtist".trim()
             if (q.isNotBlank()) {
-                val searched = trySearchLrc(q, cleanTitle, cleanArtist)
+                val searched = trySearchLrc(q, cleanTitle, cleanArtist, durationSeconds)
                 if (searched != null) {
                     if (searched.isSynced) {
                         result = searched
@@ -103,7 +104,7 @@ object LyricsEngine {
         }
     }
 
-    private fun trySearchLrc(query: String, expectedTitle: String, expectedArtist: String): LyricsResult? {
+    private fun trySearchLrc(query: String, expectedTitle: String, expectedArtist: String, durationSeconds: Int = 0): LyricsResult? {
         return try {
             val encodedQ = URLEncoder.encode(query, "UTF-8")
             val searchUrl = "https://lrclib.net/api/search?q=$encodedQ"
@@ -145,10 +146,23 @@ object LyricsEngine {
                     if (!hasSynced && !hasPlain) continue
 
                     var score = 0
-                    if (hasSynced) score += 20
+                    if (hasSynced) score += 30
                     if (hasPlain) score += 5
                     if (resArtist == expArtistClean) score += 30
                     if (resTrack == expTitleClean) score += 30
+
+                    // DURATION MATCHING: Ensures lyrics match the exact edition / cut of the song
+                    val candidateDur = obj.optDouble("duration", 0.0).toInt()
+                    if (durationSeconds > 0 && candidateDur > 0) {
+                        val diff = kotlin.math.abs(candidateDur - durationSeconds)
+                        if (diff <= 3) {
+                            score += 50 // Perfect duration match
+                        } else if (diff <= 8) {
+                            score += 25
+                        } else if (diff > 30) {
+                            score -= 35 // Different mix or version length
+                        }
+                    }
 
                     if (score > bestScore) {
                         bestScore = score
@@ -166,11 +180,19 @@ object LyricsEngine {
         }
     }
 
-    private fun shareSignificantWord(s1: String, s2: String): Boolean {
-        val stopwords = setOf("the", "and", "official", "audio", "video", "feat", "with", "prod")
-        val w1 = s1.split(Regex("[\\s\\-_,./&|()]+")).map { it.trim().lowercase() }.filter { it.length > 2 && it !in stopwords }
-        val w2 = s2.split(Regex("[\\s\\-_,./&|()]+")).map { it.trim().lowercase() }.filter { it.length > 2 && it !in stopwords }
-        return w1.any { it in w2 }
+    fun parseCustomLrc(synced: String, plain: String): LyricsResult {
+        if (synced.isNotBlank()) {
+            val lines = parseLrcText(synced)
+            if (lines.isNotEmpty()) {
+                return LyricsResult(lines = lines, plainLyrics = plain, isSynced = true)
+            }
+        }
+        val plainLines = plain.lines().mapIndexed { idx, line ->
+            val trimmed = line.trim()
+            val roman = if (TransliterationEngine.isDevanagari(trimmed)) TransliterationEngine.romanize(trimmed) else ""
+            LyricLine(timestampMs = idx * 3000L, text = trimmed, romanizedText = roman)
+        }.filter { it.text.isNotBlank() }
+        return LyricsResult(lines = plainLines, plainLyrics = plain, isSynced = false)
     }
 
     private fun parseLrcResponse(json: JSONObject): LyricsResult? {
@@ -186,7 +208,9 @@ object LyricsEngine {
 
         if (plain.isNotBlank()) {
             val plainLines = plain.lines().mapIndexed { idx, line ->
-                LyricLine(timestampMs = idx * 3000L, text = line.trim())
+                val trimmed = line.trim()
+                val roman = if (TransliterationEngine.isDevanagari(trimmed)) TransliterationEngine.romanize(trimmed) else ""
+                LyricLine(timestampMs = idx * 3000L, text = trimmed, romanizedText = roman)
             }.filter { it.text.isNotBlank() }
             return LyricsResult(lines = plainLines, plainLyrics = plain, isSynced = false)
         }
@@ -205,7 +229,8 @@ object LyricsEngine {
                 val secFloat = secStr.toFloatOrNull() ?: 0f
                 val ms = (min * 60 * 1000L) + (secFloat * 1000).toLong()
                 val text = matcher.group(3)?.trim() ?: ""
-                list.add(LyricLine(timestampMs = ms, text = text))
+                val roman = if (TransliterationEngine.isDevanagari(text)) TransliterationEngine.romanize(text) else ""
+                list.add(LyricLine(timestampMs = ms, text = text, romanizedText = roman))
             }
         }
         return list.sortedBy { it.timestampMs }
@@ -214,7 +239,7 @@ object LyricsEngine {
     private fun cleanTrackName(name: String): String {
         var res = name
             .replace(Regex("(?i)\\[.*?\\]|\\(.*?\\)"), "") // remove bracketed text
-            .replace(Regex("(?i)\\b(official music video|official video|music video|lyric video|visualizer|official audio|audio|video|4k|hd|remastered|lyrics|prod\\. by.*)\\b"), "")
+            .replace(Regex("(?i)\\b(official music video|official video|music video|lyric video|lyrical video|visualizer|official audio|audio|video|4k|hd|1080p|remastered|lyrics|prod\\. by.*|full song|full video)\\b"), "")
             .replace(Regex("(?i)\\b(ft\\.?|feat\\.?|featuring)\\s+[^|\\-]+"), "")
             .replace(Regex("\\|.*$"), "")
             .trim()

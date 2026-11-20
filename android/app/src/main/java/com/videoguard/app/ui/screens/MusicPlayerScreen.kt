@@ -235,7 +235,22 @@ fun MusicPlayerScreen(
     var lyricsResult by remember(track.id) { mutableStateOf<com.videoguard.app.data.LyricsResult?>(null) }
     var isLoadingLyrics by remember(track.id) { mutableStateOf(false) }
 
+    LaunchedEffect(context) {
+        com.videoguard.app.data.LyricsOffsetManager.init(context)
+    }
+
+    var showInPlayerLyrics by remember { mutableStateOf(false) }
+    var showTransliteration by remember { mutableStateOf(true) }
+    var lyricsOffsetMs by remember(track.id) {
+        mutableLongStateOf(com.videoguard.app.data.LyricsOffsetManager.getOffsetMs(track.id))
+    }
+    var showWrongLyricsDialog by remember { mutableStateOf(false) }
+    var customLyricsQuery by remember { mutableStateOf("") }
+    var isSearchingCustomLyrics by remember { mutableStateOf(false) }
+    var customLyricsResults by remember { mutableStateOf<List<com.videoguard.app.data.LyricsSearchResultItem>>(emptyList()) }
+
     LaunchedEffect(track.id) {
+        lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.getOffsetMs(track.id)
         if (!com.videoguard.app.service.PlaybackController.isOfflineModeActive) {
             isLoadingLyrics = true
             try {
@@ -746,7 +761,7 @@ fun MusicPlayerScreen(
             }
         }
 
-        // Center Area: YouTube Music Artwork Carousel (Swipe left/right to change tracks, drag down to minimize)
+        // Center Area: YouTube Music Artwork Carousel OR Centered Synchronized Karaoke Card
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -764,85 +779,195 @@ fun MusicPlayerScreen(
                     )
                 }
         ) {
-            HorizontalPager(
-                state = pagerState,
-                contentPadding = PaddingValues(horizontal = 38.dp),
-                pageSpacing = 16.dp,
-                modifier = Modifier.fillMaxSize()
-            ) { pageIndex ->
-                val itemTrack = safeActiveQueue.getOrNull(pageIndex) ?: track
-                val rawOffset = abs((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction)
-                val pageOffset = if (rawOffset.isNaN()) 0f else rawOffset.coerceIn(0f, 1f)
-                val scale = (0.88f + (1f - 0.88f) * (1f - pageOffset)).coerceIn(0.5f, 1.5f)
-                val alpha = (0.45f + (1f - 0.45f) * (1f - pageOffset)).coerceIn(0f, 1f)
-                val itemPalette = remember(itemTrack.id) { getTrackPalette(itemTrack) }
-                LaunchedEffect(itemTrack.id, itemTrack.thumbnailUrl) {
-                    ArtworkColorExtractor.extractPalette(context, itemTrack)
-                }
-
+            if (showInPlayerLyrics) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
-                                    this.alpha = alpha
-                                }
-                                .shadow(
-                                    elevation = ((22 * (1f - pageOffset)).coerceAtLeast(0f)).dp,
-                                    shape = RoundedCornerShape(18.dp),
-                                    spotColor = itemPalette.primary.copy(alpha = 0.65f)
-                                )
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(Color(0xFF161616))
-                        ) {
-                            AsyncImage(
-                                model = itemTrack.thumbnailUrl,
-                                contentDescription = itemTrack.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
+                    com.videoguard.app.ui.components.KaraokeLyricsView(
+                        lyrics = lyricsResult,
+                        isLoading = isLoadingLyrics,
+                        track = track,
+                        currentSeconds = currentSeconds,
+                        lyricsOffsetMs = lyricsOffsetMs,
+                        showTransliteration = showTransliteration,
+                        onAdjustOffset = { delta ->
+                            lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, delta)
+                        },
+                        onResetOffset = {
+                            com.videoguard.app.data.LyricsOffsetManager.resetOffset(track.id)
+                            lyricsOffsetMs = 0L
+                        },
+                        onToggleTransliteration = { showTransliteration = !showTransliteration },
+                        onWrongLyricsClicked = {
+                            customLyricsQuery = "${track.title} ${track.artist}".trim()
+                            showWrongLyricsDialog = true
+                        },
+                        onSeekTo = { posSec ->
+                            com.videoguard.app.service.PlaybackController.seekTo(posSec)
+                        },
+                        isHeroCard = true,
+                        onCloseHeroCard = { showInPlayerLyrics = false },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp)
+                            .aspectRatio(1f)
+                    )
+                }
+            } else {
+                HorizontalPager(
+                    state = pagerState,
+                    contentPadding = PaddingValues(horizontal = 38.dp),
+                    pageSpacing = 16.dp,
+                    modifier = Modifier.fillMaxSize()
+                ) { pageIndex ->
+                    val itemTrack = safeActiveQueue.getOrNull(pageIndex) ?: track
+                    val rawOffset = abs((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction)
+                    val pageOffset = if (rawOffset.isNaN()) 0f else rawOffset.coerceIn(0f, 1f)
+                    val scale = (0.88f + (1f - 0.88f) * (1f - pageOffset)).coerceIn(0.5f, 1.5f)
+                    val alpha = (0.45f + (1f - 0.45f) * (1f - pageOffset)).coerceIn(0f, 1f)
+                    val itemPalette = remember(itemTrack.id) { getTrackPalette(itemTrack) }
+                    LaunchedEffect(itemTrack.id, itemTrack.thumbnailUrl) {
+                        ArtworkColorExtractor.extractPalette(context, itemTrack)
+                    }
 
-                        // Audio visualizer bar when playing on the active page
-                        if (pageIndex == pagerState.currentPage && isPlaying) {
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.height(18.dp)
-                            ) {
-                                listOf(wave1, wave2, wave3, wave1 * 0.7f, wave2 * 0.9f).forEach { h ->
-                                    Box(
-                                        modifier = Modifier
-                                            .width(3.5.dp)
-                                            .fillMaxHeight(h)
-                                            .clip(RoundedCornerShape(2.dp))
-                                            .background(YTMusicRedAccent)
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f)
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                        this.alpha = alpha
+                                    }
+                                    .shadow(
+                                        elevation = ((22 * (1f - pageOffset)).coerceAtLeast(0f)).dp,
+                                        shape = RoundedCornerShape(18.dp),
+                                        spotColor = itemPalette.primary.copy(alpha = 0.65f)
                                     )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "High Quality Audio",
-                                    color = Color(0xFFAAAAAA),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(Color(0xFF161616))
+                                    .clickable { showInPlayerLyrics = true }
+                            ) {
+                                AsyncImage(
+                                    model = itemTrack.thumbnailUrl,
+                                    contentDescription = itemTrack.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
                                 )
                             }
-                        } else {
-                            Spacer(modifier = Modifier.height(32.dp))
+
+                            // Audio visualizer bar when playing on the active page
+                            if (pageIndex == pagerState.currentPage && isPlaying) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.height(18.dp)
+                                ) {
+                                    listOf(wave1, wave2, wave3, wave1 * 0.7f, wave2 * 0.9f).forEach { h ->
+                                        Box(
+                                            modifier = Modifier
+                                                .width(3.5.dp)
+                                                .fillMaxHeight(h)
+                                                .clip(RoundedCornerShape(2.dp))
+                                                .background(YTMusicRedAccent)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "High Quality Audio",
+                                        color = Color(0xFFAAAAAA),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.height(32.dp))
+                            }
                         }
                     }
                 }
+            }
+        }
+
+        // Quick Action Toolbar (ViMusic / RiMusic style: Playlist, Sleep Timer, Speed, Lyrics, EQ)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(
+                onClick = { showAddToPlaylistSheet = true },
+                modifier = Modifier.size(38.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlaylistAdd,
+                    contentDescription = "Add to playlist",
+                    tint = Color(0xFFAAAAAA),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            IconButton(
+                onClick = { showSettingsSheet = true },
+                modifier = Modifier.size(38.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Bedtime,
+                    contentDescription = "Sleep timer",
+                    tint = if (sleepTimerRemaining != null) Color(0xFF3EA6FF) else Color(0xFFAAAAAA),
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+
+            IconButton(
+                onClick = { showSettingsSheet = true },
+                modifier = Modifier.size(38.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Speed,
+                    contentDescription = "Playback speed",
+                    tint = Color(0xFFAAAAAA),
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            IconButton(
+                onClick = { showInPlayerLyrics = !showInPlayerLyrics },
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(if (showInPlayerLyrics) Color(0xFF1E3A5F) else Color.White.copy(alpha = 0.06f))
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = "Lyrics view",
+                    tint = if (showInPlayerLyrics) Color(0xFF3EA6FF) else Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            IconButton(
+                onClick = { showSettingsSheet = true },
+                modifier = Modifier.size(38.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.GraphicEq,
+                    contentDescription = "Equalizer",
+                    tint = Color(0xFFAAAAAA),
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
 
@@ -1378,76 +1503,33 @@ fun MusicPlayerScreen(
                             }
                         }
                         MusicSheetTab.LYRICS -> {
-                            val lyrics = lyricsResult
-                            val currentMs = (currentSeconds * 1000).toLong()
-                            val activeIndex = remember(lyrics, currentMs) {
-                                if (lyrics != null && lyrics.isSynced && lyrics.lines.isNotEmpty()) {
-                                    lyrics.lines.indexOfLast { it.timestampMs <= currentMs }.coerceAtLeast(0)
-                                } else -1
-                            }
-                            val lyricListState = rememberLazyListState()
-
-                            LaunchedEffect(activeIndex) {
-                                if (activeIndex >= 0 && lyrics?.isSynced == true) {
-                                    val target = (activeIndex - 1).coerceAtLeast(0)
-                                    lyricListState.animateScrollToItem(target)
-                                }
-                            }
-
-                            if (isLoadingLyrics) {
-                                Box(
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    CircularProgressIndicator(
-                                        color = YTMusicRedAccent,
-                                        modifier = Modifier.size(28.dp)
-                                    )
-                                }
-                            } else if (lyrics != null && lyrics.lines.isNotEmpty()) {
-                                LazyColumn(
-                                    state = lyricListState,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(top = 6.dp, bottom = navBarBottom + 8.dp)
-                                ) {
-                                    itemsIndexed(lyrics.lines) { index, line ->
-                                        val isActive = index == activeIndex && lyrics.isSynced
-                                        Text(
-                                            text = line.text,
-                                            color = if (isActive) Color.White else Color(0xFF777777),
-                                            fontSize = if (isActive) 18.sp else 15.sp,
-                                            lineHeight = if (isActive) 26.sp else 22.sp,
-                                            fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Normal,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable {
-                                                    if (lyrics.isSynced) {
-                                                        com.videoguard.app.service.PlaybackController.seekTo(line.timestampMs / 1000f)
-                                                    }
-                                                }
-                                                .padding(vertical = 4.dp)
-                                        )
-                                    }
-                                }
-                            } else {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .verticalScroll(rememberScrollState())
-                                        .padding(top = 6.dp, bottom = navBarBottom + 8.dp)
-                                ) {
-                                    Text(
-                                        text = track.lyrics.ifEmpty {
-                                            "Lyrics are not currently available for this track."
-                                        },
-                                        color = Color(0xFFEEEEEE),
-                                        fontSize = 15.sp,
-                                        lineHeight = 24.sp,
-                                        fontWeight = FontWeight.Normal
-                                    )
-                                }
-                            }
+                            com.videoguard.app.ui.components.KaraokeLyricsView(
+                                lyrics = lyricsResult,
+                                isLoading = isLoadingLyrics,
+                                track = track,
+                                currentSeconds = currentSeconds,
+                                lyricsOffsetMs = lyricsOffsetMs,
+                                showTransliteration = showTransliteration,
+                                onAdjustOffset = { delta ->
+                                    lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, delta)
+                                },
+                                onResetOffset = {
+                                    com.videoguard.app.data.LyricsOffsetManager.resetOffset(track.id)
+                                    lyricsOffsetMs = 0L
+                                },
+                                onToggleTransliteration = { showTransliteration = !showTransliteration },
+                                onWrongLyricsClicked = {
+                                    customLyricsQuery = "${track.title} ${track.artist}".trim()
+                                    showWrongLyricsDialog = true
+                                },
+                                onSeekTo = { posSec ->
+                                    com.videoguard.app.service.PlaybackController.seekTo(posSec)
+                                },
+                                isHeroCard = false,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(bottom = navBarBottom + 8.dp)
+                            )
                         }
                         MusicSheetTab.RELATED -> {
                             Column(
@@ -1497,6 +1579,100 @@ fun MusicPlayerScreen(
 
     if (showListenTogetherSheet) {
         com.videoguard.app.ui.components.ListenTogetherSheet(onDismiss = { showListenTogetherSheet = false })
+    }
+
+    if (showWrongLyricsDialog) {
+        ModalBottomSheet(
+            onDismissRequest = {
+                showWrongLyricsDialog = false
+                customLyricsResults = emptyList()
+            },
+            containerColor = Color(0xFF161722)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 32.dp)
+            ) {
+                Text(
+                    text = "Search Lyrics (Fix Sync)",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = customLyricsQuery,
+                    onValueChange = { customLyricsQuery = it },
+                    placeholder = { Text("Search song or artist name...", color = Color.Gray, fontSize = 13.sp) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    trailingIcon = {
+                        IconButton(
+                            onClick = {
+                                if (customLyricsQuery.isNotBlank()) {
+                                    scope.launch {
+                                        isSearchingCustomLyrics = true
+                                        customLyricsResults = com.videoguard.app.data.LyricsOffsetManager.searchAlternativeLyrics(customLyricsQuery)
+                                        isSearchingCustomLyrics = false
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Search, contentDescription = "Search", tint = Color(0xFF3EA6FF))
+                        }
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF3EA6FF),
+                        unfocusedBorderColor = Color(0xFF444444)
+                    )
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (isSearchingCustomLyrics) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = Color(0xFF3EA6FF), modifier = Modifier.size(28.dp))
+                    }
+                } else if (customLyricsResults.isNotEmpty()) {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 350.dp)) {
+                        items(customLyricsResults) { item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        lyricsResult = com.videoguard.app.data.LyricsEngine.parseCustomLrc(item.syncedLyrics, item.plainLyrics)
+                                        showWrongLyricsDialog = false
+                                        android.widget.Toast.makeText(context, "Lyrics updated!", android.widget.Toast.LENGTH_SHORT).show()
+                                    }
+                                    .padding(vertical = 10.dp, horizontal = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(item.trackName, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    Text("${item.artistName} • ${item.durationSeconds / 60}:${String.format(java.util.Locale.US, "%02d", item.durationSeconds % 60)}", color = Color(0xFFAAAAAA), fontSize = 12.sp)
+                                }
+                                if (item.isSynced) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(Color(0xFF1E3A5F))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text("SYNCED", color = Color(0xFF3EA6FF), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                            HorizontalDivider(color = Color(0xFF222222), thickness = 0.5.dp)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Floating Reactions Overlay: flies up over the album art and full music player!
