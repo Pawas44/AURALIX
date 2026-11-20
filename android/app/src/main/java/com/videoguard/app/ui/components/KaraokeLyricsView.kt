@@ -63,7 +63,7 @@ fun KaraokeLyricsView(
 
     LaunchedEffect(activeIndex) {
         if (activeIndex >= 0 && lyrics?.isSynced == true) {
-            val target = (activeIndex - 2).coerceAtLeast(0)
+            val target = (activeIndex - 1).coerceAtLeast(0)
             listState.animateScrollToItem(target)
         }
     }

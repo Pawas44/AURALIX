@@ -82,8 +82,7 @@ fun getTrackPalette(track: VideoItem): AmbientPalette {
 
 enum class MusicSheetTab {
     UP_NEXT,
-    LYRICS,
-    RELATED
+    LYRICS
 }
 
 @Composable
@@ -183,7 +182,7 @@ fun MusicPlayerScreen(
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
     val peekSheetHeight = 58.dp + navBarBottom
-    val expandedSheetHeight = (screenHeight * 0.90f).coerceAtLeast(640.dp) + navBarBottom
+    val expandedSheetHeight = (screenHeight * 0.75f).coerceAtLeast(540.dp) + navBarBottom
     val sheetHeight by animateDpAsState(
         targetValue = if (isSheetExpanded) expandedSheetHeight else peekSheetHeight,
         animationSpec = spring(
@@ -237,6 +236,7 @@ fun MusicPlayerScreen(
 
     var lyricsResult by remember(track.id) { mutableStateOf<com.videoguard.app.data.LyricsResult?>(null) }
     var isLoadingLyrics by remember(track.id) { mutableStateOf(false) }
+    var showInPlayerLyrics by remember { mutableStateOf(false) }
 
     LaunchedEffect(context) {
         com.videoguard.app.data.LyricsOffsetManager.init(context)
@@ -798,93 +798,265 @@ fun MusicPlayerScreen(
                     )
                 }
         ) {
-            HorizontalPager(
-                state = pagerState,
-                contentPadding = PaddingValues(horizontal = 38.dp),
-                pageSpacing = 16.dp,
-                modifier = Modifier.fillMaxSize()
-            ) { pageIndex ->
-                val itemTrack = safeActiveQueue.getOrNull(pageIndex) ?: track
-                val rawOffset = abs((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction)
-                val pageOffset = if (rawOffset.isNaN()) 0f else rawOffset.coerceIn(0f, 1f)
-                val scale = (0.88f + (1f - 0.88f) * (1f - pageOffset)).coerceIn(0.5f, 1.5f)
-                val alpha = (0.45f + (1f - 0.45f) * (1f - pageOffset)).coerceIn(0f, 1f)
-                val itemPalette = remember(itemTrack.id) { getTrackPalette(itemTrack) }
-                LaunchedEffect(itemTrack.id, itemTrack.thumbnailUrl) {
-                    ArtworkColorExtractor.extractPalette(context, itemTrack)
-                }
-
+            if (showInPlayerLyrics) {
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .shadow(
+                                elevation = 20.dp,
+                                shape = RoundedCornerShape(18.dp),
+                                spotColor = extractedPalette.primary.copy(alpha = 0.65f)
+                            )
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Color(0xFF101018))
                     ) {
+                        // Background blurred artwork of current track
+                        AsyncImage(
+                            model = track.thumbnailUrl,
+                            contentDescription = track.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .blur(28.dp)
+                                .graphicsLayer { alpha = 0.35f }
+                        )
+
+                        // Dark scrim overlay for high contrast lyrics readability
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
-                                    this.alpha = alpha
-                                }
-                                .shadow(
-                                    elevation = ((22 * (1f - pageOffset)).coerceAtLeast(0f)).dp,
-                                    shape = RoundedCornerShape(18.dp),
-                                    spotColor = itemPalette.primary.copy(alpha = 0.65f)
-                                )
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(Color(0xFF161616))
-                                .clickable {
-                                    activeTab = MusicSheetTab.LYRICS
-                                    isSheetExpanded = true
-                                }
-                        ) {
-                            AsyncImage(
-                                model = itemTrack.thumbnailUrl,
-                                contentDescription = itemTrack.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.50f))
+                        )
 
-                        // Audio visualizer bar when playing on the active page
-                        if (pageIndex == pagerState.currentPage && isPlaying) {
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.height(18.dp)
+                        // KaraokeLyricsView in exact poster bounds
+                        com.videoguard.app.ui.components.KaraokeLyricsView(
+                            lyrics = lyricsResult,
+                            isLoading = isLoadingLyrics,
+                            track = track,
+                            currentSeconds = currentSeconds,
+                            lyricsOffsetMs = lyricsOffsetMs,
+                            romanizeMode = romanizeMode,
+                            onSeekTo = { posSec ->
+                                com.videoguard.app.service.PlaybackController.seekTo(posSec)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+
+                        // Top-right pill for Romanize & Close
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val (modeLabel, isHighlighted) = when (romanizeMode) {
+                                com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "ABC: Both" to true
+                                com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "ABC: Roman" to true
+                                com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> "ABC: Off" to false
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.90f) else Color.Black.copy(alpha = 0.50f))
+                                    .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
+                                    .clickable { onCycleRomanizeMode() }
+                                    .padding(horizontal = 9.dp, vertical = 4.dp)
                             ) {
-                                listOf(wave1, wave2, wave3, wave1 * 0.7f, wave2 * 0.9f).forEach { h ->
-                                    Box(
-                                        modifier = Modifier
-                                            .width(3.5.dp)
-                                            .fillMaxHeight(h)
-                                            .clip(RoundedCornerShape(2.dp))
-                                            .background(YTMusicRedAccent)
-                                    )
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "High Quality Audio",
-                                    color = Color(0xFFAAAAAA),
+                                    text = modeLabel,
+                                    color = if (isHighlighted) Color(0xFF3EA6FF) else Color.White.copy(alpha = 0.85f),
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
-                        } else {
-                            Spacer(modifier = Modifier.height(32.dp))
+
+                            Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.50f))
+                                    .clickable { showInPlayerLyrics = false },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close lyrics",
+                                    tint = Color.White.copy(alpha = 0.85f),
+                                    modifier = Modifier.size(15.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            } else {
+                HorizontalPager(
+                    state = pagerState,
+                    contentPadding = PaddingValues(horizontal = 38.dp),
+                    pageSpacing = 16.dp,
+                    modifier = Modifier.fillMaxSize()
+                ) { pageIndex ->
+                    val itemTrack = safeActiveQueue.getOrNull(pageIndex) ?: track
+                    val rawOffset = abs((pagerState.currentPage - pageIndex) + pagerState.currentPageOffsetFraction)
+                    val pageOffset = if (rawOffset.isNaN()) 0f else rawOffset.coerceIn(0f, 1f)
+                    val scale = (0.88f + (1f - 0.88f) * (1f - pageOffset)).coerceIn(0.5f, 1.5f)
+                    val alpha = (0.45f + (1f - 0.45f) * (1f - pageOffset)).coerceIn(0f, 1f)
+                    val itemPalette = remember(itemTrack.id) { getTrackPalette(itemTrack) }
+                    LaunchedEffect(itemTrack.id, itemTrack.thumbnailUrl) {
+                        ArtworkColorExtractor.extractPalette(context, itemTrack)
+                    }
+
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f)
+                                    .graphicsLayer {
+                                        scaleX = scale
+                                        scaleY = scale
+                                        this.alpha = alpha
+                                    }
+                                    .shadow(
+                                        elevation = ((22 * (1f - pageOffset)).coerceAtLeast(0f)).dp,
+                                        shape = RoundedCornerShape(18.dp),
+                                        spotColor = itemPalette.primary.copy(alpha = 0.65f)
+                                    )
+                                    .clip(RoundedCornerShape(18.dp))
+                                    .background(Color(0xFF161616))
+                                    .clickable {
+                                        showInPlayerLyrics = true
+                                        isSheetExpanded = false
+                                    }
+                            ) {
+                                AsyncImage(
+                                    model = itemTrack.thumbnailUrl,
+                                    contentDescription = itemTrack.title,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+
+                            // Audio visualizer bar when playing on the active page
+                            if (pageIndex == pagerState.currentPage && isPlaying) {
+                                Spacer(modifier = Modifier.height(14.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.height(18.dp)
+                                ) {
+                                    listOf(wave1, wave2, wave3, wave1 * 0.7f, wave2 * 0.9f).forEach { h ->
+                                        Box(
+                                            modifier = Modifier
+                                                .width(3.5.dp)
+                                                .fillMaxHeight(h)
+                                                .clip(RoundedCornerShape(2.dp))
+                                                .background(YTMusicRedAccent)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "High Quality Audio",
+                                        color = Color(0xFFAAAAAA),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            } else {
+                                Spacer(modifier = Modifier.height(32.dp))
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Track Info & Like / Dislike (drag down anywhere here to minimize)
+        // Action Icons Row (Placed ABOVE Song Title, between poster and song name)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(
+                onClick = { showAddToPlaylistSheet = true },
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlaylistAdd,
+                    contentDescription = "Add to playlist",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            IconButton(
+                onClick = {
+                    com.videoguard.app.data.UserDataRepository.startDownload(context, track)
+                },
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    imageVector = if (isTrackDownloaded) Icons.Filled.CheckCircle else Icons.Default.Download,
+                    contentDescription = "Download Song",
+                    tint = if (isTrackDownloaded) YTMusicRedAccent else Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            // Music / Lyrics Toggle Button ("wo jo music wala button nhi tha wo lga de uskle press krke lyrics aaengi")
+            IconButton(
+                onClick = {
+                    showInPlayerLyrics = !showInPlayerLyrics
+                    if (showInPlayerLyrics) {
+                        isSheetExpanded = false
+                    }
+                },
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(if (showInPlayerLyrics) Color(0xFF1E3A5F) else Color.Transparent)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = "Lyrics view",
+                    tint = if (showInPlayerLyrics) Color(0xFF3EA6FF) else Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            // Like Button (Dislike / ThumbDown removed as requested!)
+            IconButton(
+                onClick = {
+                    com.videoguard.app.data.UserDataRepository.toggleLiked(track)
+                    if (isDisliked) isDisliked = false
+                },
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    imageVector = if (isLiked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+                    contentDescription = "Like",
+                    tint = if (isLiked) YTMusicRedAccent else Color.White,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+
+        // Track Info Row (Song Title & Artist below the action icons)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -900,7 +1072,7 @@ fun MusicPlayerScreen(
                         onDragCancel = { onSwipeDownRelease(0f) }
                     )
                 }
-                .padding(horizontal = 24.dp, vertical = 4.dp),
+                .padding(horizontal = 24.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -923,53 +1095,37 @@ fun MusicPlayerScreen(
                 )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                IconButton(onClick = { showAddToPlaylistSheet = true }) {
-                    Icon(
-                        imageVector = Icons.Default.PlaylistAdd,
-                        contentDescription = "Add to playlist",
-                        tint = Color.White
-                    )
-                }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 IconButton(
                     onClick = {
-                        com.videoguard.app.data.UserDataRepository.startDownload(context, track)
-                    }
-                ) {
-                    Icon(
-                        imageVector = if (isTrackDownloaded) Icons.Filled.CheckCircle else Icons.Default.Download,
-                        contentDescription = "Download Song",
-                        tint = if (isTrackDownloaded) YTMusicRedAccent else Color.White
-                    )
-                }
-                IconButton(
-                    onClick = {
-                        isDisliked = !isDisliked
-                        if (isDisliked) {
-                            if (isLiked) {
-                                com.videoguard.app.data.UserDataRepository.toggleLiked(track)
-                            }
-                            com.videoguard.app.service.PlaybackController.dontPlayTrack(track)
-                            android.widget.Toast.makeText(context, "Won't play this track again in this session", android.widget.Toast.LENGTH_SHORT).show()
+                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, track.title)
+                            putExtra(android.content.Intent.EXTRA_TEXT, "Listen to ${track.title} by ${track.artist} on AURALIX: https://youtu.be/${track.id}")
                         }
-                    }
+                        context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Track"))
+                    },
+                    modifier = Modifier.size(36.dp)
                 ) {
                     Icon(
-                        imageVector = if (isDisliked) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown,
-                        contentDescription = "Don't play this",
-                        tint = if (isDisliked) YTMusicRedAccent else Color.White
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Share",
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
-                IconButton(
-                    onClick = {
-                        com.videoguard.app.data.UserDataRepository.toggleLiked(track)
-                        if (isDisliked) isDisliked = false
-                    }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.White.copy(alpha = 0.10f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
-                    Icon(
-                        imageVector = if (isLiked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
-                        contentDescription = "Like",
-                        tint = if (isLiked) YTMusicRedAccent else Color.White
+                    Text(
+                        text = "AAC",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -1136,25 +1292,17 @@ fun MusicPlayerScreen(
             )
         }
 
-        // Bottom Sheet Tabs: [ UP NEXT | LYRICS | RELATED ] - Liquid Glass Dock Overlay (Slides UP over controls!)
+        // Bottom Sheet Tabs: [ UP NEXT | LYRICS ] - Liquid Glass Dock Overlay (Slides UP over controls!)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(sheetHeight)
                 .align(Alignment.BottomCenter)
-                .shadow(elevation = if (activeTab == MusicSheetTab.LYRICS && isSheetExpanded) 0.dp else 20.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
+                .shadow(elevation = 20.dp, shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            border = if (activeTab == MusicSheetTab.LYRICS && isSheetExpanded) {
-                BorderStroke(1.dp, Color.White.copy(alpha = 0.12f))
-            } else {
-                BorderStroke(1.dp, LiquidGlassDefaults.BorderSpecular)
-            },
+            border = BorderStroke(1.dp, LiquidGlassDefaults.BorderSpecular),
             colors = CardDefaults.cardColors(
-                containerColor = if (activeTab == MusicSheetTab.LYRICS && isSheetExpanded) {
-                    Color.Black.copy(alpha = 0.40f)
-                } else {
-                    Color(0xF8141524)
-                }
+                containerColor = Color(0xF8141524)
             )
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
@@ -1179,12 +1327,12 @@ fun MusicPlayerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TabPill(
                             title = "UP NEXT",
-                            isActive = activeTab == MusicSheetTab.UP_NEXT,
+                            isActive = activeTab == MusicSheetTab.UP_NEXT && isSheetExpanded,
                             onClick = {
                                 activeTab = MusicSheetTab.UP_NEXT
                                 isSheetExpanded = true
@@ -1192,18 +1340,15 @@ fun MusicPlayerScreen(
                         )
                         TabPill(
                             title = "LYRICS",
-                            isActive = activeTab == MusicSheetTab.LYRICS,
+                            isActive = showInPlayerLyrics || (activeTab == MusicSheetTab.LYRICS && isSheetExpanded),
                             onClick = {
-                                activeTab = MusicSheetTab.LYRICS
-                                isSheetExpanded = true
-                            }
-                        )
-                        TabPill(
-                            title = "RELATED",
-                            isActive = activeTab == MusicSheetTab.RELATED,
-                            onClick = {
-                                activeTab = MusicSheetTab.RELATED
-                                isSheetExpanded = true
+                                showInPlayerLyrics = !showInPlayerLyrics
+                                if (showInPlayerLyrics) {
+                                    isSheetExpanded = false
+                                } else {
+                                    activeTab = MusicSheetTab.LYRICS
+                                    isSheetExpanded = true
+                                }
                             }
                         )
                     }
@@ -1469,28 +1614,6 @@ fun MusicPlayerScreen(
                                     .fillMaxSize()
                                     .padding(bottom = navBarBottom + 8.dp)
                             )
-                        }
-                        MusicSheetTab.RELATED -> {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .verticalScroll(rememberScrollState())
-                                    .padding(top = 6.dp, bottom = navBarBottom + 8.dp)
-                            ) {
-                                Text(
-                                    text = "About the Artist",
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "${track.artist.ifEmpty { track.channelName }} has over ${track.views} across YouTube and YouTube Music. Album: ${track.album.ifEmpty { "Single" }}.",
-                                    color = Color(0xFFCCCCCC),
-                                    fontSize = 12.sp,
-                                    lineHeight = 18.sp
-                                )
-                            }
                         }
                     }
                 }
