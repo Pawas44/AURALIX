@@ -297,43 +297,47 @@ fun MusicPlayerScreen(
     val safeActiveQueue = remember(activeQueue) {
         if (activeQueue.isNotEmpty()) activeQueue else listOf(track)
     }
-    val queueKey = remember(safeActiveQueue) {
-        "${safeActiveQueue.size}_" + safeActiveQueue.take(6).joinToString("_") { it.id }
-    }
-    val initialIndex = remember(safeActiveQueue, track.id) {
+    val initialIndex = remember(track.id) {
         val idx = safeActiveQueue.indexOfFirst { it.id == track.id }
         if (idx >= 0) idx else 0
     }
-    val pagerState = key(queueKey) {
-        rememberPagerState(
-            initialPage = initialIndex.coerceIn(0, (safeActiveQueue.size - 1).coerceAtLeast(0))
-        ) {
-            maxOf(safeActiveQueue.size, 1)
-        }
+    val pagerState = rememberPagerState(
+        initialPage = initialIndex.coerceIn(0, (safeActiveQueue.size - 1).coerceAtLeast(0))
+    ) {
+        maxOf(safeActiveQueue.size, 1)
     }
 
-    // Guard against recursive re-triggers between programmatic page changes and user swipe gestures
-    var isProgrammaticScroll by remember { mutableStateOf(false) }
+    // Only allow track changes from authentic, deliberate user drag gestures on the carousel
+    var userSwipedByDrag by remember { mutableStateOf(false) }
 
-    // Sync pager when track changes externally (Next/Prev buttons, auto-play)
-    LaunchedEffect(track.id, safeActiveQueue) {
-        val targetIdx = safeActiveQueue.indexOfFirst { it.id == track.id }
-        if (targetIdx >= 0 && targetIdx != pagerState.currentPage && targetIdx < safeActiveQueue.size) {
-            isProgrammaticScroll = true
-            try {
-                pagerState.scrollToPage(targetIdx)
-            } catch (e: Exception) {
-                // Ignore transient pager scroll race
-            } finally {
-                isProgrammaticScroll = false
+    LaunchedEffect(pagerState.interactionSource) {
+        pagerState.interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is androidx.compose.foundation.interaction.DragInteraction.Start -> {
+                    userSwipedByDrag = true
+                }
             }
         }
     }
 
-    // When pager settles on a new page from an authentic user swipe gesture, trigger track playback
+    // Sync pager when track changes externally (Next/Prev buttons, playlist clicks, auto-play)
+    LaunchedEffect(track.id, safeActiveQueue) {
+        val targetIdx = safeActiveQueue.indexOfFirst { it.id == track.id }
+        if (targetIdx >= 0 && targetIdx != pagerState.currentPage && targetIdx < safeActiveQueue.size) {
+            userSwipedByDrag = false
+            try {
+                pagerState.scrollToPage(targetIdx)
+            } catch (e: Exception) {
+                // Ignore transient pager scroll race
+            }
+        }
+    }
+
+    // When pager settles from an authentic user swipe gesture, trigger track playback
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.settledPage }.collect { settledPage ->
-            if (!isProgrammaticScroll && !pagerState.isScrollInProgress) {
+            if (userSwipedByDrag && !pagerState.isScrollInProgress) {
+                userSwipedByDrag = false
                 if (settledPage in safeActiveQueue.indices) {
                     val settledTrack = safeActiveQueue[settledPage]
                     if (settledTrack.id != track.id) {
@@ -784,7 +788,7 @@ fun MusicPlayerScreen(
                                 .shadow(
                                     elevation = 22.dp,
                                     shape = RoundedCornerShape(18.dp),
-                                    spotColor = palette.primary.copy(alpha = 0.65f)
+                                    spotColor = extractedPalette.primary.copy(alpha = 0.65f)
                                 )
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(Color(0xFF161616))

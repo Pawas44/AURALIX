@@ -378,43 +378,40 @@ object PlaybackController {
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                 val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
 
-                // Parallel instant resolution: query for clean Topic/Official Audio first, fallback to Music Video
-                val dTopic = async {
-                    try {
-                        com.videoguard.app.data.YouTubeSearchEngine.searchVideos("$query Topic", isMusicOnly = true)
-                            .firstOrNull { it.id.length == 11 && (it.channelName.contains("Topic", ignoreCase = true) || it.title.contains("Audio", ignoreCase = true)) }
-                    } catch (e: Exception) { null }
-                }
-                val dAudio = async {
-                    try {
-                        com.videoguard.app.data.YouTubeSearchEngine.searchVideos("$query Official Audio", isMusicOnly = true)
-                            .firstOrNull { it.id.length == 11 && it.title.contains("Audio", ignoreCase = true) }
-                    } catch (e: Exception) { null }
-                }
-                val d1 = async {
-                    try {
-                        com.videoguard.app.data.YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true)
-                            .firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
-                    } catch (e: Exception) { null }
-                }
-                val d2 = async {
-                    try {
-                        com.videoguard.app.data.YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)
-                            .firstOrNull { it.id.length == 11 }
-                    } catch (e: Exception) { null }
-                }
+                // High-precision resolution: MusicImportEngine validates title, artist, and duration
+                val resolved = com.videoguard.app.data.MusicImportEngine.resolveSingleTrack(track.title, track.artist)
+                    ?: run {
+                        // Resilient fallback with strict title matching to prevent playing unrelated songs
+                        val cleanTarget = cleanSongTitle(cleanTitle)
+                        val d1 = async {
+                            try {
+                                com.videoguard.app.data.YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true)
+                                    .firstOrNull { cand ->
+                                        cand.id.length == 11 && !cand.id.startsWith("search_") &&
+                                        (cleanSongTitle(cand.title).contains(cleanTarget) || cleanTarget.contains(cleanSongTitle(cand.title)))
+                                    }
+                            } catch (e: Exception) { null }
+                        }
+                        val d2 = async {
+                            try {
+                                com.videoguard.app.data.YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)
+                                    .firstOrNull { cand ->
+                                        cand.id.length == 11 &&
+                                        (cleanSongTitle(cand.title).contains(cleanTarget) || cleanTarget.contains(cleanSongTitle(cand.title)))
+                                    }
+                            } catch (e: Exception) { null }
+                        }
+                        d1.await() ?: d2.await()
+                    }
 
-                val best = dTopic.await() ?: dAudio.await() ?: d1.await() ?: d2.await()
-                    ?: com.videoguard.app.data.MusicImportEngine.resolveSingleTrack(track.title, track.artist)
-
-                if (best != null && best.id.length == 11) {
-                    spotifyResolvedCache[track.id] = best.id
-                    spotifyResolvedCache[cacheKey] = best.id
+                if (resolved != null && resolved.id.length == 11) {
+                    spotifyResolvedCache[track.id] = resolved.id
+                    spotifyResolvedCache[cacheKey] = resolved.id
 
                     val targetTrack = track.copy(
-                        id = best.id,
-                        duration = if (track.duration != "0:00" && track.duration.isNotBlank()) track.duration else best.duration,
-                        thumbnailUrl = if (track.thumbnailUrl.isNotBlank() && !track.thumbnailUrl.contains("default")) track.thumbnailUrl else best.thumbnailUrl
+                        id = resolved.id,
+                        duration = if (track.duration != "0:00" && track.duration.isNotBlank()) track.duration else resolved.duration,
+                        thumbnailUrl = if (track.thumbnailUrl.isNotBlank() && !track.thumbnailUrl.contains("default")) track.thumbnailUrl else resolved.thumbnailUrl
                     )
                     try {
                         com.videoguard.app.data.UserDataRepository.updateTrackInPlaylists(track.id, targetTrack)
