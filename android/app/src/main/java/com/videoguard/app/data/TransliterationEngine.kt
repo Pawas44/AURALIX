@@ -183,14 +183,14 @@ object TransliterationEngine {
         'ੂ' to "oo", 'ੇ' to "e", 'ੈ' to "ai", 'ੋ' to "o",
         'ੌ' to "au"
     )
-    private val gurmukhiConsonants = mapOf(
+    private val gurmukhiConsonants: Map<Char, String> = mapOf(
         'ਕ' to "k", 'ਖ' to "kh", 'ਗ' to "g", 'ਘ' to "gh", 'ਙ' to "ng",
         'ਚ' to "ch", 'ਛ' to "chh", 'ਜ' to "j", 'ਝ' to "jh", 'ਞ' to "ny",
         'ਟ' to "t", 'ਠ' to "th", 'ਡ' to "d", 'ਢ' to "dh", 'ਣ' to "n",
         'ਤ' to "t", 'ਥ' to "th", 'ਦ' to "d", 'ਧ' to "dh", 'ਨ' to "n",
         'ਪ' to "p", 'ਫ' to "ph", 'ਬ' to "b", 'ਭ' to "bh", 'ਮ' to "m",
         'ਯ' to "y", 'ਰ' to "r", 'ਲ' to "l", 'ਵ' to "v", 'ੜ' to "r",
-        'ਸ਼' to "sh", 'ਖ਼' to "kh", 'ਗ਼' to "gh", 'ਜ਼' to "z", 'ਫ਼' to "f", 'ਲ਼' to "l"
+        '\u0A36' to "sh", '\u0A59' to "kh", '\u0A5A' to "gh", '\u0A5B' to "z", '\u0A5E' to "f", '\u0A33' to "l"
     )
 
     private fun romanizeGurmukhiWord(word: String): String {
@@ -199,6 +199,22 @@ object TransliterationEngine {
         var i = 0
         while (i < len) {
             val c = word[i]
+
+            // Check Gurmukhi Nukta composite (e.g. ਸ + ਼ = ਸ਼)
+            if (i + 1 < len && word[i + 1] == '\u0A3C') {
+                val trans = when (c) {
+                    'ਸ' -> "sh"
+                    'ਖ' -> "kh"
+                    'ਗ' -> "gh"
+                    'ਜ' -> "z"
+                    'ਫ' -> "f"
+                    'ਲ' -> "l"
+                    else -> gurmukhiConsonants[c] ?: c.toString()
+                }
+                sb.append(trans)
+                i += 2
+                continue
+            }
             if (gurmukhiVowels.containsKey(c)) {
                 sb.append(gurmukhiVowels[c])
                 i++
@@ -241,20 +257,20 @@ object TransliterationEngine {
     }
 
     // --- Japanese Kana ---
-    private val kanaMap = mapOf(
+    private val kanaMap: Map<Char, String> = mapOf(
         'あ' to "a", 'い' to "i", 'う' to "u", 'え' to "e", 'お' to "o",
         'か' to "ka", 'き' to "ki", 'く' to "ku", 'け' to "ke", 'こ' to "ko",
-        'さ' to "sa", 'し' to "shi", 'す' to "su", 'せ' to "se", 'そ' to "so",
+        'さ' to "sa", 'し' to "shi", 'す' to "su", 'せ' to "se", '\u305D' to "so",
         'た' to "ta", 'ち' to "chi", 'つ' to "tsu", 'て' to "te", 'と' to "to",
         'な' to "na", 'に' to "ni", 'ぬ' to "nu", 'ね' to "ne", 'の' to "no",
         'は' to "ha", 'ひ' to "hi", 'ふ' to "fu", 'へ' to "he", 'ほ' to "ho",
-        'ま' to "ma", 'み' to "mi", 'む' to "mu", 'め' to "me", 'も' to "mo",
+        'ま' to "ma", 'み' to "mi", 'む' to "mu", 'め' to "me", '\u3082' to "mo",
         'や' to "ya", 'ゆ' to "yu", 'よ' to "yo",
         'ら' to "ra", 'り' to "ri", 'る' to "ru", 'れ' to "re", 'ろ' to "ro",
         'わ' to "wa", 'を' to "wo", 'ん' to "n",
         'が' to "ga", 'ぎ' to "gi", 'ぐ' to "gu", 'げ' to "ge", 'ご' to "go",
         'ざ' to "za", 'じ' to "ji", 'ず' to "zu", 'ぜ' to "ze", 'ぞ' to "zo",
-        'だ' to "da", 'ぢ' to "ji", 'づ' to "zu", 'де' to "de", 'ど' to "do",
+        'だ' to "da", 'ぢ' to "ji", 'づ' to "zu", '\u3067' to "de", 'ど' to "do",
         'ば' to "ba", 'び' to "bi", 'ぶ' to "bu", 'べ' to "be", 'ぼ' to "bo",
         'ぱ' to "pa", 'ぴ' to "pi", 'ぷ' to "pu", 'ぺ' to "pe", 'ぽ' to "po",
         // Katakana
