@@ -270,21 +270,20 @@ fun MusicPlayerScreen(
 
     LaunchedEffect(track.id) {
         lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.getOffsetMs(track.id)
-        if (!com.videoguard.app.service.PlaybackController.isOfflineModeActive) {
-            isLoadingLyrics = true
-            try {
-                lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
-                    trackTitle = track.title,
-                    artistName = track.artist.ifBlank { track.channelName },
-                    durationSeconds = duration.toInt(),
-                    videoId = track.id
-                )
-            } catch (e: Exception) {}
-            isLoadingLyrics = false
-        } else {
-            lyricsResult = null
-            isLoadingLyrics = false
+        isLoadingLyrics = true
+        try {
+            lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
+                trackTitle = track.title,
+                artistName = track.artist.ifBlank { track.channelName },
+                durationSeconds = duration.toInt(),
+                videoId = track.id
+            )
+        } catch (e: Exception) {}
+
+        if (lyricsResult == null && track.lyrics.isNotBlank()) {
+            lyricsResult = com.videoguard.app.data.LyricsEngine.autoSyncPlainLyrics(track.lyrics, duration.toInt())
         }
+        isLoadingLyrics = false
     }
 
     val activeQueue = remember(liveQueue, track.id) {
