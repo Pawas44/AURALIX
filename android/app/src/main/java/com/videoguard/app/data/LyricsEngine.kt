@@ -24,65 +24,129 @@ data class LyricsResult(
 object LyricsEngine {
     private val memoryCache = mutableMapOf<String, LyricsResult?>()
 
+    private val RECORD_LABELS = setOf(
+        "t-series", "tseries", "t series", "zee music", "sony music", "tips", "speed records",
+        "white hill", "saregama", "yrf", "yash raj", "eros", "desi melodies", "desi music factory",
+        "geet mp3", "nav haryanvi", "gringo", "single track", "jass records", "saga hits",
+        "times music", "bhojpuri", "goldmines", "venus", "ultra", "pen music", "dharma",
+        "universal music", "warner music", "vevo", "topic", "official", "records", "music",
+        "channel", "production", "films"
+    )
+
+    private fun isGenericOrLabel(name: String): Boolean {
+        val lower = name.lowercase().trim()
+        if (lower.isBlank()) return true
+        return RECORD_LABELS.any { lower.contains(it) }
+    }
+
     suspend fun getLyrics(
         trackTitle: String,
         artistName: String,
         durationSeconds: Int = 0,
         videoId: String = ""
     ): LyricsResult? = withContext(Dispatchers.IO) {
-        val cleanTitle = cleanTrackName(trackTitle)
-        val cleanArtist = cleanArtistName(artistName)
+        val cleanTitle = cleanTrackNameRaw(trackTitle)
+        val cleanArtist = cleanArtistRaw(artistName)
         val cacheKey = "${cleanTitle.lowercase()}_${cleanArtist.lowercase()}_$videoId"
 
         if (memoryCache.containsKey(cacheKey)) {
             return@withContext memoryCache[cacheKey]
         }
 
-        var result: LyricsResult? = null
+        // Build list of smart search pairs (Title to Artist)
+        val variants = mutableListOf<Pair<String, String>>()
+        if (cleanTitle.isNotBlank()) {
+            variants.add(cleanTitle to cleanArtist)
+        }
 
-        // 1. Direct LRCLib GET endpoint (for synced lyrics)
-        result = tryGetLrc(cleanTitle, cleanArtist, durationSeconds)
-
-        // 1b. If YouTube title has "Artist - Track" format
-        if ((result == null || !result.isSynced) && trackTitle.contains(" - ")) {
+        // Split by " - " to test both Track/Artist and Artist/Track combinations
+        if (trackTitle.contains(" - ")) {
             val parts = trackTitle.split(" - ")
             if (parts.size >= 2) {
-                val guessedArtist = cleanArtistName(parts[0])
-                val guessedTitle = cleanTrackName(parts[1])
-                val alt = tryGetLrc(guessedTitle, guessedArtist, durationSeconds)
-                if (alt != null && alt.isSynced) {
-                    result = alt
-                } else if (result == null) {
-                    result = alt
+                val p0 = cleanTrackNameRaw(parts[0])
+                val p1 = cleanTrackNameRaw(parts[1])
+                if (p0.isNotBlank() && p1.isNotBlank()) {
+                    variants.add(p0 to p1)
+                    variants.add(p1 to p0)
                 }
             }
         }
 
-        // 2. LRCLib Search: query = title + artist
-        if (result == null || !result.isSynced) {
-            val q = "$cleanTitle $cleanArtist".trim()
-            if (q.isNotBlank()) {
-                val searched = trySearchLrc(q, cleanTitle, cleanArtist, durationSeconds)
-                if (searched != null) {
-                    if (searched.isSynced) {
-                        result = searched
-                    } else if (result == null) {
-                        result = searched
-                    }
+        // Split by "|" e.g. "Barsaat | Banjaare, Roni"
+        if (trackTitle.contains("|")) {
+            val parts = trackTitle.split("|")
+            if (parts.size >= 2) {
+                val p0 = cleanTrackNameRaw(parts[0])
+                val p1 = cleanArtistRaw(parts[1])
+                if (p0.isNotBlank()) {
+                    variants.add(p0 to p1)
                 }
             }
         }
 
-        // 3. Fallback to Official YouTube Music Native Lyrics if LRCLib did not provide synced lyrics
-        if ((result == null || !result.isSynced) && videoId.isNotBlank()) {
-            val ytmLyrics = fetchYouTubeMusicOfficialLyrics(videoId)
+        // Title alone (essential when artist is a record label like T-Series or Zee Music)
+        if (cleanTitle.isNotBlank()) {
+            variants.add(cleanTitle to "")
+        }
+
+        val distinctVariants = variants.distinct()
+        var bestCandidate: LyricsResult? = null
+
+        // Pass 1: Seek true Synced (.lrc) lyrics across all variants
+        for ((title, artist) in distinctVariants) {
+            val effectiveArtist = if (isGenericOrLabel(artist)) "" else artist
+
+            // 1a. Direct LRCLib GET (exact track & artist)
+            if (effectiveArtist.isNotBlank()) {
+                val direct = tryGetLrc(title, effectiveArtist, durationSeconds)
+                if (direct != null && direct.isSynced) {
+                    memoryCache[cacheKey] = direct
+                    return@withContext direct
+                } else if (direct != null && bestCandidate == null) {
+                    bestCandidate = direct
+                }
+            }
+
+            // 1b. LRCLib Search: query = title + artist
+            val qWithArtist = if (effectiveArtist.isNotBlank()) "$title $effectiveArtist".trim() else title
+            val searched = trySearchLrc(qWithArtist, title, effectiveArtist, durationSeconds)
+            if (searched != null && searched.isSynced) {
+                memoryCache[cacheKey] = searched
+                return@withContext searched
+            } else if (searched != null && bestCandidate == null) {
+                bestCandidate = searched
+            }
+
+            // 1c. LRCLib Search: query = title alone (high hit rate for songs with record labels or feature artists)
+            if (effectiveArtist.isNotBlank()) {
+                val searchTitleOnly = trySearchLrc(title, title, "", durationSeconds)
+                if (searchTitleOnly != null && searchTitleOnly.isSynced) {
+                    memoryCache[cacheKey] = searchTitleOnly
+                    return@withContext searchTitleOnly
+                } else if (searchTitleOnly != null && bestCandidate == null) {
+                    bestCandidate = searchTitleOnly
+                }
+            }
+        }
+
+        // Pass 2: Fallback to Official YouTube Music Native Lyrics
+        if (videoId.isNotBlank()) {
+            val ytmLyrics = fetchYouTubeMusicOfficialLyrics(videoId, durationSeconds)
             if (ytmLyrics != null) {
-                result = ytmLyrics
+                memoryCache[cacheKey] = ytmLyrics
+                return@withContext ytmLyrics
             }
         }
 
-        memoryCache[cacheKey] = result
-        return@withContext result
+        // Pass 3: If only plain lyrics were found, auto-sync them against the song duration
+        if (bestCandidate != null) {
+            val autoSynced = autoSyncPlainLyrics(bestCandidate.plainLyrics, durationSeconds)
+            memoryCache[cacheKey] = autoSynced
+            return@withContext autoSynced
+        }
+
+        memoryCache[cacheKey] = null
+        return@withContext null
     }
 
     private fun tryGetLrc(title: String, artist: String, duration: Int): LyricsResult? {
@@ -97,7 +161,7 @@ object LyricsEngine {
             val jsonStr = httpGet(urlStr)
             if (jsonStr.isNotBlank() && jsonStr.startsWith("{")) {
                 val json = JSONObject(jsonStr)
-                parseLrcResponse(json)
+                parseLrcResponse(json, duration)
             } else null
         } catch (e: Exception) {
             null
@@ -111,11 +175,12 @@ object LyricsEngine {
             val jsonStr = httpGet(searchUrl)
             if (jsonStr.isNotBlank() && jsonStr.startsWith("[")) {
                 val arr = JSONArray(jsonStr)
-                var bestCandidate: JSONObject? = null
+                var bestCandidateJson: JSONObject? = null
                 var bestScore = -1
 
                 val expTitleClean = expectedTitle.lowercase().trim()
                 val expArtistClean = expectedArtist.lowercase().trim()
+                val isGeneric = isGenericOrLabel(expArtistClean)
 
                 for (i in 0 until arr.length()) {
                     val obj = arr.optJSONObject(i) ?: continue
@@ -128,16 +193,14 @@ object LyricsEngine {
 
                     if (!titleMatches) continue
 
-                    // Artist validation: if we have an expected artist, ensure results do NOT belong to an unrelated artist
-                    val isGenericArtist = expArtistClean.isBlank() || expArtistClean.contains("topic") || expArtistClean.contains("vevo")
+                    // Artist validation: if artist is not generic, ensure it doesn't match a completely different artist
                     var artistMatches = true
-                    if (!isGenericArtist) {
+                    if (!isGeneric && expArtistClean.isNotBlank()) {
                         artistMatches = resArtist.contains(expArtistClean) || expArtistClean.contains(resArtist) ||
                                 shareSignificantWord(resArtist, expArtistClean)
                     }
 
                     if (!artistMatches) {
-                        // Do NOT use lyrics from a completely different artist!
                         continue
                     }
 
@@ -146,12 +209,12 @@ object LyricsEngine {
                     if (!hasSynced && !hasPlain) continue
 
                     var score = 0
-                    if (hasSynced) score += 30
+                    if (hasSynced) score += 60 // Heavily favor synced lyrics
                     if (hasPlain) score += 5
-                    if (resArtist == expArtistClean) score += 30
+                    if (resArtist == expArtistClean && !isGeneric) score += 30
                     if (resTrack == expTitleClean) score += 30
 
-                    // DURATION MATCHING: Ensures lyrics match the exact edition / cut of the song
+                    // DURATION MATCHING: Ensures lyrics match the exact cut/mix of the song
                     val candidateDur = obj.optDouble("duration", 0.0).toInt()
                     if (durationSeconds > 0 && candidateDur > 0) {
                         val diff = kotlin.math.abs(candidateDur - durationSeconds)
@@ -160,18 +223,18 @@ object LyricsEngine {
                         } else if (diff <= 8) {
                             score += 25
                         } else if (diff > 30) {
-                            score -= 35 // Different mix or version length
+                            score -= 35
                         }
                     }
 
                     if (score > bestScore) {
                         bestScore = score
-                        bestCandidate = obj
+                        bestCandidateJson = obj
                     }
                 }
 
-                if (bestCandidate != null) {
-                    return parseLrcResponse(bestCandidate)
+                if (bestCandidateJson != null) {
+                    return parseLrcResponse(bestCandidateJson, durationSeconds)
                 }
             }
             null
@@ -187,6 +250,52 @@ object LyricsEngine {
         return w1.any { it in w2 }
     }
 
+    /**
+     * Converts plain lyrics text into accurately-spaced auto-synchronized karaoke lyrics
+     * based on natural vocal phrasing, syllable weight, and total track duration.
+     */
+    fun autoSyncPlainLyrics(plain: String, durationSeconds: Int): LyricsResult {
+        val rawLines = plain.lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() && !it.startsWith("[") && !it.startsWith("Source:") && !it.contains("Lyrics") }
+
+        if (rawLines.isEmpty()) {
+            return LyricsResult(lines = emptyList(), plainLyrics = plain, isSynced = false)
+        }
+
+        val totalMs = (if (durationSeconds > 0) durationSeconds else 210) * 1000L
+        val introMs = (totalMs * 0.08f).toLong().coerceIn(4000L, 16000L)
+        val outroMs = (totalMs * 0.08f).toLong().coerceIn(4000L, 16000L)
+        val singingSpanMs = (totalMs - introMs - outroMs).coerceAtLeast(10000L)
+
+        val weights = rawLines.map { line ->
+            val charWeight = line.length.coerceIn(8, 60).toFloat()
+            val wordWeight = line.split(Regex("\\s+")).size.toFloat() * 2.5f
+            charWeight + wordWeight
+        }
+        val totalWeight = weights.sum().coerceAtLeast(1f)
+
+        var currentMs = introMs
+        val resultLines = mutableListOf<LyricLine>()
+
+        for (i in rawLines.indices) {
+            val lineText = rawLines[i]
+            val lineDurationMs = ((weights[i] / totalWeight) * singingSpanMs).toLong().coerceIn(2000L, 8500L)
+            val roman = if (TransliterationEngine.canRomanize(lineText)) TransliterationEngine.romanize(lineText) else ""
+
+            resultLines.add(
+                LyricLine(
+                    timestampMs = currentMs,
+                    text = lineText,
+                    romanizedText = roman
+                )
+            )
+            currentMs += lineDurationMs
+        }
+
+        return LyricsResult(lines = resultLines, plainLyrics = plain, isSynced = true)
+    }
+
     fun parseCustomLrc(synced: String, plain: String): LyricsResult {
         if (synced.isNotBlank()) {
             val lines = parseLrcText(synced)
@@ -194,15 +303,10 @@ object LyricsEngine {
                 return LyricsResult(lines = lines, plainLyrics = plain, isSynced = true)
             }
         }
-        val plainLines = plain.lines().mapIndexed { idx, line ->
-            val trimmed = line.trim()
-            val roman = if (TransliterationEngine.canRomanize(trimmed)) TransliterationEngine.romanize(trimmed) else ""
-            LyricLine(timestampMs = idx * 3000L, text = trimmed, romanizedText = roman)
-        }.filter { it.text.isNotBlank() }
-        return LyricsResult(lines = plainLines, plainLyrics = plain, isSynced = false)
+        return autoSyncPlainLyrics(plain, 0)
     }
 
-    private fun parseLrcResponse(json: JSONObject): LyricsResult? {
+    private fun parseLrcResponse(json: JSONObject, durationSeconds: Int = 0): LyricsResult? {
         val synced = json.optString("syncedLyrics", "")
         val plain = json.optString("plainLyrics", "")
 
@@ -214,12 +318,7 @@ object LyricsEngine {
         }
 
         if (plain.isNotBlank()) {
-            val plainLines = plain.lines().mapIndexed { idx, line ->
-                val trimmed = line.trim()
-                val roman = if (TransliterationEngine.canRomanize(trimmed)) TransliterationEngine.romanize(trimmed) else ""
-                LyricLine(timestampMs = idx * 3000L, text = trimmed, romanizedText = roman)
-            }.filter { it.text.isNotBlank() }
-            return LyricsResult(lines = plainLines, plainLyrics = plain, isSynced = false)
+            return autoSyncPlainLyrics(plain, durationSeconds)
         }
 
         return null
@@ -243,30 +342,27 @@ object LyricsEngine {
         return list.sortedBy { it.timestampMs }
     }
 
-    private fun cleanTrackName(name: String): String {
-        var res = name
+    fun cleanTrackNameRaw(name: String): String {
+        return name
             .replace(Regex("(?i)\\[.*?\\]|\\(.*?\\)"), "") // remove bracketed text
             .replace(Regex("(?i)\\b(official music video|official video|music video|lyric video|lyrical video|visualizer|official audio|audio|video|4k|hd|1080p|remastered|lyrics|prod\\. by.*|full song|full video)\\b"), "")
             .replace(Regex("(?i)\\b(ft\\.?|feat\\.?|featuring)\\s+[^|\\-]+"), "")
             .replace(Regex("\\|.*$"), "")
             .trim()
-        if (res.contains(" - ")) {
-            val parts = res.split(" - ")
-            if (parts.size >= 2) {
-                res = parts[1].trim()
-            }
-        }
-        return res.trim().removeSurrounding("\"").removeSurrounding("'")
+            .removeSurrounding("\"")
+            .removeSurrounding("'")
     }
 
-    private fun cleanArtistName(name: String): String {
+    fun cleanArtistRaw(name: String): String {
         return name
             .replace(Regex("(?i) - Topic|Official|VEVO"), "")
             .replace(Regex("(?i)\\[.*?\\]|\\(.*?\\)"), "")
             .trim()
+            .removeSurrounding("\"")
+            .removeSurrounding("'")
     }
 
-    private fun fetchYouTubeMusicOfficialLyrics(videoId: String): LyricsResult? {
+    private fun fetchYouTubeMusicOfficialLyrics(videoId: String, durationSeconds: Int = 0): LyricsResult? {
         if (videoId.isBlank()) return null
         return try {
             val nextPayload = JSONObject().apply {
@@ -345,10 +441,7 @@ object LyricsEngine {
                 }
                 val lyricsText = sb.toString().trim()
                 if (lyricsText.isNotBlank()) {
-                    val lines = lyricsText.lines().mapIndexed { idx, line ->
-                        LyricLine(timestampMs = idx * 3000L, text = line.trim())
-                    }.filter { it.text.isNotBlank() }
-                    return LyricsResult(lines = lines, plainLyrics = lyricsText, isSynced = false)
+                    return autoSyncPlainLyrics(lyricsText, durationSeconds)
                 }
             }
             null
