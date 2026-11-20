@@ -151,8 +151,8 @@ fun YouTubeVideoPlayer(
                     setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                     webChromeClient = WebChromeClient()
 
-                    val desktopUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-                    settings.userAgentString = desktopUserAgent
+                    val chromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+                    settings.userAgentString = chromeUserAgent
                     webViewClient = WebViewClient()
 
                     val bridge = YouTubeBridge(
@@ -206,7 +206,7 @@ fun YouTubeVideoPlayer(
                     addJavascriptInterface(bridge, "AndroidBridge")
 
                     val htmlData = getYouTubePlayerHtml(videoId)
-                    loadDataWithBaseURL("https://www.youtube.com", htmlData, "text/html", "UTF-8", null)
+                    loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlData, "text/html", "UTF-8", null)
 
                     webViewRef = this
                 }
@@ -222,7 +222,7 @@ fun YouTubeVideoPlayer(
                     webView.translationX = 0f
                     webView.translationY = 0f
                     if (wasHidden) {
-                        webView.evaluateJavascript("if (window.targetQuality) { setPlaybackQuality(window.targetQuality, false); }", null)
+                        webView.evaluateJavascript("if (typeof updatePlayerResolution === 'function') { updatePlayerResolution(); }", null)
                     }
                 }
             }
@@ -237,6 +237,18 @@ private fun getYouTubePlayerHtml(videoId: String): String {
         com.videoguard.app.service.PlaybackController.playbackQuality.value.contains("360") -> "medium"
         else -> "hd1080"
     }
+    val initialW = when (qualityCode) {
+        "hd720" -> 1280
+        "large" -> 854
+        "medium" -> 640
+        else -> 1920
+    }
+    val initialH = when (qualityCode) {
+        "hd720" -> 720
+        "large" -> 480
+        "medium" -> 360
+        else -> 1080
+    }
     return """
         <!DOCTYPE html>
         <html>
@@ -246,6 +258,15 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body, html { width: 100%; height: 100%; background-color: #000; overflow: hidden; pointer-events: none; user-select: none; }
             #player-wrapper { width: 100%; height: 100%; position: relative; overflow: hidden; background-color: #000; }
+            #player-scaler {
+              position: absolute;
+              top: 50%;
+              left: 50%;
+              transform-origin: center center;
+              width: ${initialW}px;
+              height: ${initialH}px;
+              transform: translate(-50%, -50%) scale(1);
+            }
             #player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }
             .ytPlayerControlsContainerHost,
             .ytPlayerControlsContainerRendered,
@@ -466,7 +487,41 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               }
             }
 
-            function setPlaybackQuality(quality, forceReload) {
+            function updatePlayerResolution() {
+              var targetW = 1920;
+              var targetH = 1080;
+              var q = window.targetQuality || '$qualityCode';
+              if (q === 'hd720') {
+                targetW = 1280;
+                targetH = 720;
+              } else if (q === 'large') {
+                targetW = 854;
+                targetH = 480;
+              } else if (q === 'medium') {
+                targetW = 640;
+                targetH = 360;
+              } else {
+                targetW = 1920;
+                targetH = 1080;
+              }
+
+              var scaler = document.getElementById('player-scaler');
+              if (scaler) {
+                scaler.style.width = targetW + 'px';
+                scaler.style.height = targetH + 'px';
+                var curW = window.innerWidth || document.documentElement.clientWidth || screen.width;
+                var curH = window.innerHeight || document.documentElement.clientHeight || screen.height;
+                if (curW > 0 && curH > 0) {
+                  var sX = curW / targetW;
+                  var sY = curH / targetH;
+                  var scale = Math.max(sX, sY);
+                  scaler.style.transform = 'translate(-50%, -50%) scale(' + scale + ')';
+                }
+              }
+            }
+            window.addEventListener('resize', updatePlayerResolution);
+
+            function setPlaybackQuality(quality) {
               window.targetQuality = quality;
               try {
                 var exp = Date.now() + 31536000000;
@@ -477,17 +532,6 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               if (window.ytPlayer) {
                 try { if (typeof window.ytPlayer.setPlaybackQuality === 'function') window.ytPlayer.setPlaybackQuality(quality); } catch(e) {}
                 try { if (typeof window.ytPlayer.setPlaybackQualityRange === 'function') window.ytPlayer.setPlaybackQualityRange(quality, quality); } catch(e) {}
-                if (forceReload && window.ytPlayer.loadVideoById && window.currentVideoId) {
-                  try {
-                    var curTime = window.ytPlayer.getCurrentTime ? window.ytPlayer.getCurrentTime() : 0;
-                    window.ytPlayer.loadVideoById({
-                      'videoId': window.currentVideoId,
-                      'startSeconds': curTime,
-                      'suggestedQuality': quality
-                    });
-                    window.ytPlayer.playVideo();
-                  } catch(e) {}
-                }
               }
               var iframe = document.querySelector('iframe') || document.getElementById('player');
               if (iframe && iframe.contentWindow) {
@@ -503,6 +547,9 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                     "args": [quality, quality]
                   }), '*');
                 } catch(e) {}
+              }
+              if (typeof updatePlayerResolution === 'function') {
+                updatePlayerResolution();
               }
             }
 
@@ -668,7 +715,9 @@ private fun getYouTubePlayerHtml(videoId: String): String {
         </head>
         <body>
           <div id="player-wrapper">
-            <div id="player"></div>
+            <div id="player-scaler">
+              <div id="player"></div>
+            </div>
           </div>
           <script>
             var tag = document.createElement('script');
@@ -680,7 +729,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             function onYouTubeIframeAPIReady() {
               ytPlayer = new YT.Player('player', {
                 videoId: '$videoId',
-                host: 'https://www.youtube.com',
+                host: 'https://www.youtube-nocookie.com',
                 suggestedQuality: '$qualityCode',
                 playerVars: {
                   'autoplay': 1,
@@ -695,7 +744,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                   'showinfo': 0,
                   'autohide': 1,
                   'vq': '$qualityCode',
-                  'origin': 'https://www.youtube.com'
+                  'origin': 'https://www.youtube-nocookie.com'
                 },
                 events: {
                   'onReady': onPlayerReady,
@@ -703,12 +752,18 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                 }
               });
               window.ytPlayer = ytPlayer;
+              if (typeof updatePlayerResolution === 'function') {
+                updatePlayerResolution();
+              }
             }
 
             function onPlayerReady(event) {
               window.ytPlayer = event.target;
               if (window.targetQuality) {
                 setPlaybackQuality(window.targetQuality);
+              }
+              if (typeof updatePlayerResolution === 'function') {
+                updatePlayerResolution();
               }
               if (window.currentVideoId && window.currentVideoId !== '$videoId') {
                 try {

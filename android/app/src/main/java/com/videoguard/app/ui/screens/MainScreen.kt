@@ -290,7 +290,8 @@ fun MainScreen() {
                         clip = true
                     }
                 else -> Modifier
-                    .size(1.dp)
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
                     .offset(x = (-5000).dp, y = (-5000).dp)
                     .alpha(0f)
                     .zIndex(-100f)

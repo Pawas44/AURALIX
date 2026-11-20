@@ -135,7 +135,7 @@ object PlaybackController {
             quality.contains("360") -> "medium"
             else -> "hd1080"
         }
-        sendCommand("setPlaybackQuality('$ytQuality', true)")
+        sendCommand("setPlaybackQuality('$ytQuality')")
     }
 
     private var _currentVolumeMultiplier = 1.0f
