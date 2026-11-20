@@ -137,6 +137,7 @@ fun YouTubeVideoPlayer(
                         javaScriptEnabled = true
                         mediaPlaybackRequiresUserGesture = false
                         domStorageEnabled = true
+                        databaseEnabled = true
                         cacheMode = WebSettings.LOAD_DEFAULT
                         allowContentAccess = true
                         allowFileAccess = true
@@ -144,12 +145,14 @@ fun YouTubeVideoPlayer(
                         allowUniversalAccessFromFileURLs = true
                         useWideViewPort = true
                         loadWithOverviewMode = true
+                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                     }
 
+                    setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                     webChromeClient = WebChromeClient()
 
-                    val chromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
-                    settings.userAgentString = chromeUserAgent
+                    val desktopUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+                    settings.userAgentString = desktopUserAgent
                     webViewClient = WebViewClient()
 
                     val bridge = YouTubeBridge(
@@ -203,13 +206,14 @@ fun YouTubeVideoPlayer(
                     addJavascriptInterface(bridge, "AndroidBridge")
 
                     val htmlData = getYouTubePlayerHtml(videoId)
-                    loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlData, "text/html", "UTF-8", null)
+                    loadDataWithBaseURL("https://www.youtube.com", htmlData, "text/html", "UTF-8", null)
 
                     webViewRef = this
                 }
             },
             update = { webView ->
                 webViewRef = webView
+                val wasHidden = webView.alpha == 0f || webView.translationX != 0f
                 webView.alpha = if (isVisible) 1f else 0f
                 if (!isVisible) {
                     webView.translationX = -50000f
@@ -217,6 +221,9 @@ fun YouTubeVideoPlayer(
                 } else {
                     webView.translationX = 0f
                     webView.translationY = 0f
+                    if (wasHidden) {
+                        webView.evaluateJavascript("if (window.targetQuality) { setPlaybackQuality(window.targetQuality, false); }", null)
+                    }
                 }
             }
         )
@@ -286,6 +293,13 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             }
           </style>
           <script>
+            try {
+              var exp = Date.now() + 31536000000;
+              localStorage.setItem('yt-player-quality', JSON.stringify({ data: '$qualityCode', expiration: exp, creation: Date.now() }));
+              localStorage.setItem('yt-player-bandwidth', JSON.stringify({ data: 50000000, expiration: exp, creation: Date.now() }));
+              localStorage.setItem('yt-player-av1-pref', JSON.stringify({ data: 1, expiration: exp, creation: Date.now() }));
+            } catch(e) {}
+
             window.userWantsPlay = true;
             window.isLoadingNewVideo = false;
             window.currentVideoId = '$videoId';
@@ -452,13 +466,30 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               }
             }
 
-            function setPlaybackQuality(quality) {
+            function setPlaybackQuality(quality, forceReload) {
               window.targetQuality = quality;
+              try {
+                var exp = Date.now() + 31536000000;
+                localStorage.setItem('yt-player-quality', JSON.stringify({ data: quality, expiration: exp, creation: Date.now() }));
+                localStorage.setItem('yt-player-bandwidth', JSON.stringify({ data: 50000000, expiration: exp, creation: Date.now() }));
+              } catch(e) {}
+
               if (window.ytPlayer) {
                 try { if (typeof window.ytPlayer.setPlaybackQuality === 'function') window.ytPlayer.setPlaybackQuality(quality); } catch(e) {}
                 try { if (typeof window.ytPlayer.setPlaybackQualityRange === 'function') window.ytPlayer.setPlaybackQualityRange(quality, quality); } catch(e) {}
+                if (forceReload && window.ytPlayer.loadVideoById && window.currentVideoId) {
+                  try {
+                    var curTime = window.ytPlayer.getCurrentTime ? window.ytPlayer.getCurrentTime() : 0;
+                    window.ytPlayer.loadVideoById({
+                      'videoId': window.currentVideoId,
+                      'startSeconds': curTime,
+                      'suggestedQuality': quality
+                    });
+                    window.ytPlayer.playVideo();
+                  } catch(e) {}
+                }
               }
-              var iframe = document.getElementById('player');
+              var iframe = document.querySelector('iframe') || document.getElementById('player');
               if (iframe && iframe.contentWindow) {
                 try {
                   iframe.contentWindow.postMessage(JSON.stringify({
@@ -649,7 +680,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             function onYouTubeIframeAPIReady() {
               ytPlayer = new YT.Player('player', {
                 videoId: '$videoId',
-                host: 'https://www.youtube-nocookie.com',
+                host: 'https://www.youtube.com',
                 suggestedQuality: '$qualityCode',
                 playerVars: {
                   'autoplay': 1,
@@ -664,7 +695,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                   'showinfo': 0,
                   'autohide': 1,
                   'vq': '$qualityCode',
-                  'origin': 'https://www.youtube-nocookie.com'
+                  'origin': 'https://www.youtube.com'
                 },
                 events: {
                   'onReady': onPlayerReady,
