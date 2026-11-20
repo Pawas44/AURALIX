@@ -351,6 +351,11 @@ object PlaybackController {
     }
 
     fun playTrack(track: VideoItem, queue: List<VideoItem> = emptyList()) {
+        val ctx = appContext
+        if (ctx != null && !com.videoguard.app.data.AuthManager.verifySessionToken(ctx)) {
+            com.videoguard.app.data.AuthManager.logout(ctx)
+            return
+        }
         val resolvedId = getResolvedSpotifyId(track.id)
         val isOffline = com.videoguard.app.data.UserDataRepository.isDownloaded(track.id) ||
                 (resolvedId != null && com.videoguard.app.data.UserDataRepository.isDownloaded(resolvedId))
@@ -682,6 +687,11 @@ object PlaybackController {
     }
 
     fun play() {
+        val ctx = appContext
+        if (ctx != null && !com.videoguard.app.data.AuthManager.verifySessionToken(ctx)) {
+            com.videoguard.app.data.AuthManager.logout(ctx)
+            return
+        }
         _isPlaying.value = true
         if (isOfflineModeActive) {
             try { offlineMediaPlayer?.start() } catch (e: Exception) {}

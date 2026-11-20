@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
         com.videoguard.app.data.GoogleDriveBackupEngine.init(this)
         com.videoguard.app.data.ListenTogetherEngine.init(this)
 
-        if (com.videoguard.app.data.AuthManager.isLoggedIn.value) {
+        if (com.videoguard.app.data.AuthManager.verifySessionToken(this)) {
             CoroutineScope(Dispatchers.IO).launch {
                 com.videoguard.app.data.GoogleDriveBackupEngine.checkAndAutoRestoreOnInstall(this@MainActivity)
                 com.videoguard.app.data.YouTubeSyncEngine.syncAllUserData()
@@ -72,7 +72,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             VideoGuardTheme {
                 val isLoggedIn by com.videoguard.app.data.AuthManager.isLoggedIn.collectAsState()
-                if (isLoggedIn) {
+                val isSessionValid = com.videoguard.app.data.AuthManager.verifySessionToken(this@MainActivity)
+                if (isLoggedIn && isSessionValid) {
                     MainScreen()
                     com.videoguard.app.ui.components.AppUpdateDialog()
                 } else {
@@ -84,13 +85,15 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (com.videoguard.app.data.AuthManager.isLoggedIn.value) {
+        if (com.videoguard.app.data.AuthManager.verifySessionToken(this)) {
             if (com.videoguard.app.data.YouTubeSyncEngine.hasAuthCookies()) {
                 CoroutineScope(Dispatchers.IO).launch {
                     com.videoguard.app.data.YouTubeSyncEngine.syncAllUserData()
                 }
             }
             com.videoguard.app.data.AppUpdateManager.checkForUpdates(this)
+        } else if (com.videoguard.app.data.AuthManager.isLoggedIn.value) {
+            com.videoguard.app.data.AuthManager.logout(this)
         }
     }
 }

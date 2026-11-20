@@ -27,6 +27,7 @@ object AuthManager {
     private const val KEY_USERNAME = "key_username"
     private const val KEY_EXPIRY = "key_expiry"
     private const val KEY_PACKAGE = "key_package"
+    private const val KEY_SESSION_HMAC = "key_session_hmac"
 
     private const val AUTH_URL = "https://backend-alpha-topaz-68.vercel.app/api/auth/"
 
@@ -42,21 +43,77 @@ object AuthManager {
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage = _errorMessage.asStateFlow()
 
+    fun getDeviceHwid(context: Context): String {
+        return try {
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+                ?: "AURALIX_DEV_${Build.MODEL}"
+        } catch (_: Exception) {
+            "AURALIX_DEV_${Build.MODEL}"
+        }
+    }
+
+    private fun isExpired(expiryDateIso: String): Boolean {
+        if (expiryDateIso.isBlank()) return false
+        return try {
+            val date = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                java.time.Instant.parse(expiryDateIso).toEpochMilli()
+            } else {
+                java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US).parse(expiryDateIso)?.time ?: 0L
+            }
+            date > 0 && date < System.currentTimeMillis()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     /**
-     * Initializes AuthManager from persistent SharedPreferences on app launch.
-     * If user previously logged in, isLoggedIn will immediately be true.
+     * Cryptographically verifies the stored session token HMAC against device HWID.
+     * Prevents SharedPreferences XML tampering, smali forcing, and expired subscriptions.
      */
-    fun init(context: Context) {
+    fun verifySessionToken(context: Context): Boolean {
+        if (SecurityEngine.isTampered) return false
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val savedLoggedIn = prefs.getBoolean(KEY_IS_LOGGED_IN, false)
-        if (savedLoggedIn) {
+        if (!savedLoggedIn) return false
+
+        val username = prefs.getString(KEY_USERNAME, "") ?: ""
+        val expiry = prefs.getString(KEY_EXPIRY, "") ?: ""
+        val pkg = prefs.getString(KEY_PACKAGE, "Basic") ?: "Basic"
+        val savedHmac = prefs.getString(KEY_SESSION_HMAC, "") ?: ""
+        val hwid = getDeviceHwid(context)
+
+        if (username.isBlank() || savedHmac.isBlank()) return false
+
+        val calculatedHmac = SecurityEngine.computeSessionHmac(username, expiry, pkg, hwid)
+        if (savedHmac != calculatedHmac) {
+            return false
+        }
+        if (isExpired(expiry)) {
+            return false
+        }
+        return true
+    }
+
+    /**
+     * Initializes AuthManager from persistent SharedPreferences on app launch.
+     * Validates anti-tampering, signing certificate, and HMAC token.
+     */
+    fun init(context: Context) {
+        if (!SecurityEngine.verifyAppIntegrity(context)) {
+            logout(context)
+            _errorMessage.value = "Security integrity violation: App package or runtime environment has been modified."
+            return
+        }
+
+        if (verifySessionToken(context)) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val username = prefs.getString(KEY_USERNAME, "") ?: ""
             val expiry = prefs.getString(KEY_EXPIRY, "") ?: ""
             val pkg = prefs.getString(KEY_PACKAGE, "Basic") ?: "Basic"
             _currentUser.value = AuthUser(username, expiry, pkg)
             _isLoggedIn.value = true
         } else {
-            _isLoggedIn.value = false
+            logout(context)
         }
     }
 
@@ -161,14 +218,17 @@ object AuthManager {
                     val dataObj = json.optJSONObject("data")
                     val expiry = dataObj?.optString("expiry_date", "") ?: ""
                     val pkg = dataObj?.optString("package", "Basic") ?: "Basic"
+                    val hwid = getDeviceHwid(context)
+                    val sessionHmac = SecurityEngine.computeSessionHmac(username, expiry, pkg, hwid)
 
-                    // Persist session locally so user NEVER has to log in again on future launches
+                    // Persist session locally with tamper-proof cryptographic HMAC
                     val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     prefs.edit()
                         .putBoolean(KEY_IS_LOGGED_IN, true)
                         .putString(KEY_USERNAME, username)
                         .putString(KEY_EXPIRY, expiry)
                         .putString(KEY_PACKAGE, pkg)
+                        .putString(KEY_SESSION_HMAC, sessionHmac)
                         .apply()
 
                     val user = AuthUser(username, expiry, pkg)
