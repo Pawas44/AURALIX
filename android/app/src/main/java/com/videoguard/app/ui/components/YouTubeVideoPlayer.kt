@@ -123,6 +123,13 @@ fun YouTubeVideoPlayer(
         modifier = modifier.background(Color.Black),
         contentAlignment = androidx.compose.ui.Alignment.Center
     ) {
+        val initialYtQuality = when {
+            PlaybackController.playbackQuality.value.contains("720") -> "hd720"
+            PlaybackController.playbackQuality.value.contains("480") -> "large"
+            PlaybackController.playbackQuality.value.contains("360") -> "medium"
+            else -> "hd1080"
+        }
+
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { context ->
@@ -132,6 +139,7 @@ fun YouTubeVideoPlayer(
                         ViewGroup.LayoutParams.MATCH_PARENT
                     )
                     setBackgroundColor(AndroidColor.BLACK)
+                    setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
                     settings.apply {
                         javaScriptEnabled = true
@@ -161,6 +169,7 @@ fun YouTubeVideoPlayer(
                                 }
                                 currentLoadedId = videoId
                                 evaluateJavascript("setPlaybackState($isPlaying);", null)
+                                evaluateJavascript("setPlaybackQuality('$initialYtQuality');", null)
                                 if (PlaybackController.isCaptionsEnabled.value) {
                                     evaluateJavascript("setCaptions(true);", null)
                                 }
@@ -202,7 +211,7 @@ fun YouTubeVideoPlayer(
                     )
                     addJavascriptInterface(bridge, "AndroidBridge")
 
-                    val htmlData = getYouTubePlayerHtml(videoId)
+                    val htmlData = getYouTubePlayerHtml(videoId, initialYtQuality)
                     loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlData, "text/html", "UTF-8", null)
 
                     webViewRef = this
@@ -223,7 +232,7 @@ fun YouTubeVideoPlayer(
     }
 }
 
-private fun getYouTubePlayerHtml(videoId: String): String {
+private fun getYouTubePlayerHtml(videoId: String, quality: String = "hd1080"): String {
     return """
         <!DOCTYPE html>
         <html>
@@ -285,6 +294,17 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             window.currentVideoId = '$videoId';
             window.pendingSeekTime = null;
             window.lastSeekTimestamp = 0;
+            window.targetQuality = '$quality';
+
+            try {
+              localStorage.setItem('yt-player-quality', JSON.stringify({
+                data: JSON.stringify({ quality: 1080, previousQuality: 1080 }),
+                expiration: Date.now() + 31536000000,
+                creation: Date.now()
+              }));
+              localStorage.setItem('yt-player-sticky-quality', '$quality');
+              sessionStorage.setItem('yt-player-quality', '$quality');
+            } catch(e) {}
 
             try {
               Object.defineProperty(document, 'hidden', { get: function() { return false; } });
@@ -380,6 +400,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               window.currentVideoId = id;
               window.userWantsPlay = true;
               window.isLoadingNewVideo = true;
+              enforceVideoQuality(window.targetQuality);
               setTimeout(function() {
                 if (window.currentVideoId === id) {
                   window.isLoadingNewVideo = false;
@@ -414,6 +435,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                   }), '*');
                 }
               }
+              enforceVideoQuality(window.targetQuality);
             }
 
             function seekTo(seconds) {
@@ -440,19 +462,97 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               }
             }
 
+            function enforceVideoQuality(quality) {
+              var q = quality || window.targetQuality || '$quality';
+              if (q === 'default' || q === 'auto' || q.indexOf('1080') !== -1) {
+                q = 'hd1080';
+              } else if (q.indexOf('720') !== -1) {
+                q = 'hd720';
+              } else if (q.indexOf('480') !== -1) {
+                q = 'large';
+              } else if (q.indexOf('360') !== -1) {
+                q = 'medium';
+              }
+              window.targetQuality = q;
+
+              // 1. YouTube IFrame API YT.Player instance
+              try {
+                if (window.ytPlayer) {
+                  if (typeof window.ytPlayer.setPlaybackQualityRange === 'function') {
+                    window.ytPlayer.setPlaybackQualityRange(q, q);
+                  }
+                  if (typeof window.ytPlayer.setPlaybackQuality === 'function') {
+                    window.ytPlayer.setPlaybackQuality(q);
+                  }
+                  if (typeof window.ytPlayer.setSuggestedQuality === 'function') {
+                    window.ytPlayer.setSuggestedQuality(q);
+                  }
+                }
+              } catch(e) {}
+
+              // 2. Direct DOM access to internal HTML5 movie_player inside same-origin iframe
+              try {
+                var iframe = document.getElementById('player');
+                if (iframe) {
+                  var doc = iframe.contentDocument || (iframe.contentWindow ? iframe.contentWindow.document : null);
+                  if (doc) {
+                    var mp = doc.getElementById('movie_player') || (doc.querySelector && doc.querySelector('.html5-video-player'));
+                    if (mp) {
+                      var chosen = q;
+                      if (typeof mp.getAvailableQualityLevels === 'function') {
+                        var levels = mp.getAvailableQualityLevels();
+                        if (levels && levels.length > 0 && levels.indexOf(chosen) === -1) {
+                          if (q === 'hd1080') {
+                            for (var i = 0; i < levels.length; i++) {
+                              if (levels[i] === 'hd1080' || levels[i] === 'hd720' || levels[i] === 'large') {
+                                chosen = levels[i];
+                                break;
+                              }
+                            }
+                          } else if (q === 'hd720') {
+                            for (var i = 0; i < levels.length; i++) {
+                              if (levels[i] === 'hd720' || levels[i] === 'large' || levels[i] === 'medium') {
+                                chosen = levels[i];
+                                break;
+                              }
+                            }
+                          }
+                          if (!chosen || levels.indexOf(chosen) === -1) {
+                            chosen = levels[0];
+                          }
+                        }
+                      }
+                      if (typeof mp.setPlaybackQualityRange === 'function') {
+                        mp.setPlaybackQualityRange(chosen, chosen);
+                      }
+                      if (typeof mp.setPlaybackQuality === 'function') {
+                        mp.setPlaybackQuality(chosen);
+                      }
+                      if (typeof mp.setSuggestedQuality === 'function') {
+                        mp.setSuggestedQuality(chosen);
+                      }
+                    }
+                  }
+
+                  // 3. PostMessage to embed iframe
+                  if (iframe.contentWindow) {
+                    iframe.contentWindow.postMessage(JSON.stringify({
+                      "event": "command",
+                      "func": "setPlaybackQualityRange",
+                      "args": [q, q]
+                    }), '*');
+                    iframe.contentWindow.postMessage(JSON.stringify({
+                      "event": "command",
+                      "func": "setPlaybackQuality",
+                      "args": [q]
+                    }), '*');
+                  }
+                }
+              } catch(e) {}
+            }
+
             function setPlaybackQuality(quality) {
-              if (window.ytPlayer && typeof window.ytPlayer.setPlaybackQuality === 'function') {
-                try { window.ytPlayer.setPlaybackQuality(quality); } catch(e) {}
-                try { if (window.ytPlayer.setPlaybackQualityRange) window.ytPlayer.setPlaybackQualityRange(quality, quality); } catch(e) {}
-              }
-              var iframe = document.getElementById('player');
-              if (iframe && iframe.contentWindow) {
-                iframe.contentWindow.postMessage(JSON.stringify({
-                  "event": "command",
-                  "func": "setPlaybackQuality",
-                  "args": [quality]
-                }), '*');
-              }
+              enforceVideoQuality(quality);
             }
 
             function setVolume(vol) {
@@ -586,7 +686,15 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                 }
               } catch(e) {}
             }
-            setInterval(cleanEmbedDOM, 50);
+
+            var qualityTickCounter = 0;
+            setInterval(function() {
+              cleanEmbedDOM();
+              qualityTickCounter++;
+              if (qualityTickCounter % 20 === 0 && window.userWantsPlay) {
+                enforceVideoQuality(window.targetQuality);
+              }
+            }, 50);
 
             setInterval(function() {
               if (window.isLoadingNewVideo) return;
@@ -642,6 +750,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                   'iv_load_policy': 3,
                   'showinfo': 0,
                   'autohide': 1,
+                  'vq': '$quality',
                   'origin': 'https://www.youtube-nocookie.com'
                 },
                 events: {
@@ -654,6 +763,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
 
             function onPlayerReady(event) {
               window.ytPlayer = event.target;
+              enforceVideoQuality(window.targetQuality);
               if (window.currentVideoId && window.currentVideoId !== '$videoId') {
                 try {
                   event.target.loadVideoById({
@@ -665,6 +775,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               if (window.userWantsPlay) {
                 event.target.playVideo();
               }
+              enforceVideoQuality(window.targetQuality);
               if (window.AndroidBridge && window.AndroidBridge.onReady) {
                 window.AndroidBridge.onReady();
               }
@@ -677,9 +788,12 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               if (state === 1) { // PLAYING
                 window.isLoadingNewVideo = false;
                 window.userWantsPlay = true;
+                enforceVideoQuality(window.targetQuality);
                 if (window.AndroidBridge && window.AndroidBridge.onStateChange) {
                   window.AndroidBridge.onStateChange(1);
                 }
+              } else if (state === 3) { // BUFFERING
+                enforceVideoQuality(window.targetQuality);
               } else if (state === 2) { // PAUSED
                 // If a new track was loaded or user requested playback,
                 // ignore transient unload pause and ensure playVideo is called!

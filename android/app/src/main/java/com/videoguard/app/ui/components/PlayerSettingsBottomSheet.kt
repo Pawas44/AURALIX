@@ -562,8 +562,9 @@ fun PlayerSettingsBottomSheet(
                     Text("Title: ${currentTrack?.title ?: "N/A"}", color = Color.White, fontSize = 13.sp)
                     Text("Channel: ${currentTrack?.channelName ?: "N/A"}", color = Color(0xFFAAAAAA), fontSize = 13.sp)
                     Text("Video ID: ${currentTrack?.id ?: "N/A"}", color = Color(0xFFAAAAAA), fontSize = 13.sp)
-                    Text("Quality: ${AppSettingsRepository.streamingQuality.value}", color = Color(0xFFAAAAAA), fontSize = 13.sp)
-                    Text("Audio: High Bitrate WebM/Opus", color = Color(0xFFAAAAAA), fontSize = 13.sp)
+                    Text("Video Resolution: $currentQuality", color = Color(0xFF38BDF8), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Audio Streaming: ${AppSettingsRepository.streamingQuality.value}", color = Color(0xFFAAAAAA), fontSize = 13.sp)
+                    Text("Audio Codec: High Bitrate WebM/Opus", color = Color(0xFFAAAAAA), fontSize = 13.sp)
                     Text("Background Play: ${if (isBackgroundPlay) "Active" else "Disabled"}", color = Color(0xFFAAAAAA), fontSize = 13.sp)
                 }
             },
