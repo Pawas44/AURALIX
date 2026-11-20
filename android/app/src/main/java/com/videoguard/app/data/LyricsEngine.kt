@@ -196,7 +196,7 @@ object LyricsEngine {
         }
         val plainLines = plain.lines().mapIndexed { idx, line ->
             val trimmed = line.trim()
-            val roman = if (TransliterationEngine.isDevanagari(trimmed)) TransliterationEngine.romanize(trimmed) else ""
+            val roman = if (TransliterationEngine.canRomanize(trimmed)) TransliterationEngine.romanize(trimmed) else ""
             LyricLine(timestampMs = idx * 3000L, text = trimmed, romanizedText = roman)
         }.filter { it.text.isNotBlank() }
         return LyricsResult(lines = plainLines, plainLyrics = plain, isSynced = false)
@@ -216,7 +216,7 @@ object LyricsEngine {
         if (plain.isNotBlank()) {
             val plainLines = plain.lines().mapIndexed { idx, line ->
                 val trimmed = line.trim()
-                val roman = if (TransliterationEngine.isDevanagari(trimmed)) TransliterationEngine.romanize(trimmed) else ""
+                val roman = if (TransliterationEngine.canRomanize(trimmed)) TransliterationEngine.romanize(trimmed) else ""
                 LyricLine(timestampMs = idx * 3000L, text = trimmed, romanizedText = roman)
             }.filter { it.text.isNotBlank() }
             return LyricsResult(lines = plainLines, plainLyrics = plain, isSynced = false)
@@ -236,7 +236,7 @@ object LyricsEngine {
                 val secFloat = secStr.toFloatOrNull() ?: 0f
                 val ms = (min * 60 * 1000L) + (secFloat * 1000).toLong()
                 val text = matcher.group(3)?.trim() ?: ""
-                val roman = if (TransliterationEngine.isDevanagari(text)) TransliterationEngine.romanize(text) else ""
+                val roman = if (TransliterationEngine.canRomanize(text)) TransliterationEngine.romanize(text) else ""
                 list.add(LyricLine(timestampMs = ms, text = text, romanizedText = roman))
             }
         }

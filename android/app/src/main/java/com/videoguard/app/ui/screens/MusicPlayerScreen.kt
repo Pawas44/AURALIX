@@ -809,26 +809,15 @@ fun MusicPlayerScreen(
                         currentSeconds = currentSeconds,
                         lyricsOffsetMs = lyricsOffsetMs,
                         romanizeMode = romanizeMode,
-                        onAdjustOffset = { delta ->
-                            lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, delta)
-                        },
-                        onResetOffset = {
-                            com.videoguard.app.data.LyricsOffsetManager.resetOffset(track.id)
-                            lyricsOffsetMs = 0L
-                        },
                         onCycleRomanizeMode = onCycleRomanizeMode,
-                        onWrongLyricsClicked = {
-                            customLyricsQuery = "${track.title} ${track.artist}".trim()
-                            showWrongLyricsDialog = true
-                        },
                         onSeekTo = { posSec ->
                             com.videoguard.app.service.PlaybackController.seekTo(posSec)
                         },
-                        isHeroCard = true,
-                        onCloseHeroCard = { showInPlayerLyrics = false },
+                        onClose = { showInPlayerLyrics = false },
+                        showBackgroundPoster = true,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 24.dp)
+                            .padding(horizontal = 34.dp)
                             .aspectRatio(1f)
                     )
                 }
@@ -1528,22 +1517,12 @@ fun MusicPlayerScreen(
                                 currentSeconds = currentSeconds,
                                 lyricsOffsetMs = lyricsOffsetMs,
                                 romanizeMode = romanizeMode,
-                                onAdjustOffset = { delta ->
-                                    lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, delta)
-                                },
-                                onResetOffset = {
-                                    com.videoguard.app.data.LyricsOffsetManager.resetOffset(track.id)
-                                    lyricsOffsetMs = 0L
-                                },
                                 onCycleRomanizeMode = onCycleRomanizeMode,
-                                onWrongLyricsClicked = {
-                                    customLyricsQuery = "${track.title} ${track.artist}".trim()
-                                    showWrongLyricsDialog = true
-                                },
                                 onSeekTo = { posSec ->
                                     com.videoguard.app.service.PlaybackController.seekTo(posSec)
                                 },
-                                isHeroCard = false,
+                                onClose = null,
+                                showBackgroundPoster = true,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(bottom = navBarBottom + 8.dp)
