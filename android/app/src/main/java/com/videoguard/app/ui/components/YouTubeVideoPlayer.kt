@@ -224,6 +224,12 @@ fun YouTubeVideoPlayer(
 }
 
 private fun getYouTubePlayerHtml(videoId: String): String {
+    val qualityCode = when {
+        com.videoguard.app.service.PlaybackController.playbackQuality.value.contains("720") -> "hd720"
+        com.videoguard.app.service.PlaybackController.playbackQuality.value.contains("480") -> "large"
+        com.videoguard.app.service.PlaybackController.playbackQuality.value.contains("360") -> "medium"
+        else -> "hd1080"
+    }
     return """
         <!DOCTYPE html>
         <html>
@@ -283,6 +289,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             window.userWantsPlay = true;
             window.isLoadingNewVideo = false;
             window.currentVideoId = '$videoId';
+            window.targetQuality = '$qualityCode';
             window.pendingSeekTime = null;
             window.lastSeekTimestamp = 0;
 
@@ -386,17 +393,21 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                 }
               }, 2500);
 
+              var targetQ = window.targetQuality || '$qualityCode';
               if (window.ytPlayer && typeof window.ytPlayer.loadVideoById === 'function') {
                 try {
                   window.ytPlayer.loadVideoById({
                     'videoId': id,
-                    'startSeconds': 0
+                    'startSeconds': 0,
+                    'suggestedQuality': targetQ
                   });
                   window.ytPlayer.playVideo();
+                  setPlaybackQuality(targetQ);
                 } catch(e) {
                   try {
-                    window.ytPlayer.loadVideoById(id, 0);
+                    window.ytPlayer.loadVideoById(id, 0, targetQ);
                     window.ytPlayer.playVideo();
+                    setPlaybackQuality(targetQ);
                   } catch(e2) {}
                 }
               } else {
@@ -405,13 +416,14 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                   iframe.contentWindow.postMessage(JSON.stringify({
                     "event": "command",
                     "func": "loadVideoById",
-                    "args": [id, 0]
+                    "args": [id, 0, targetQ]
                   }), '*');
                   iframe.contentWindow.postMessage(JSON.stringify({
                     "event": "command",
                     "func": "playVideo",
                     "args": ""
                   }), '*');
+                  setPlaybackQuality(targetQ);
                 }
               }
             }
@@ -441,17 +453,25 @@ private fun getYouTubePlayerHtml(videoId: String): String {
             }
 
             function setPlaybackQuality(quality) {
-              if (window.ytPlayer && typeof window.ytPlayer.setPlaybackQuality === 'function') {
-                try { window.ytPlayer.setPlaybackQuality(quality); } catch(e) {}
-                try { if (window.ytPlayer.setPlaybackQualityRange) window.ytPlayer.setPlaybackQualityRange(quality, quality); } catch(e) {}
+              window.targetQuality = quality;
+              if (window.ytPlayer) {
+                try { if (typeof window.ytPlayer.setPlaybackQuality === 'function') window.ytPlayer.setPlaybackQuality(quality); } catch(e) {}
+                try { if (typeof window.ytPlayer.setPlaybackQualityRange === 'function') window.ytPlayer.setPlaybackQualityRange(quality, quality); } catch(e) {}
               }
               var iframe = document.getElementById('player');
               if (iframe && iframe.contentWindow) {
-                iframe.contentWindow.postMessage(JSON.stringify({
-                  "event": "command",
-                  "func": "setPlaybackQuality",
-                  "args": [quality]
-                }), '*');
+                try {
+                  iframe.contentWindow.postMessage(JSON.stringify({
+                    "event": "command",
+                    "func": "setPlaybackQuality",
+                    "args": [quality]
+                  }), '*');
+                  iframe.contentWindow.postMessage(JSON.stringify({
+                    "event": "command",
+                    "func": "setPlaybackQualityRange",
+                    "args": [quality, quality]
+                  }), '*');
+                } catch(e) {}
               }
             }
 
@@ -630,6 +650,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               ytPlayer = new YT.Player('player', {
                 videoId: '$videoId',
                 host: 'https://www.youtube-nocookie.com',
+                suggestedQuality: '$qualityCode',
                 playerVars: {
                   'autoplay': 1,
                   'playsinline': 1,
@@ -642,6 +663,7 @@ private fun getYouTubePlayerHtml(videoId: String): String {
                   'iv_load_policy': 3,
                   'showinfo': 0,
                   'autohide': 1,
+                  'vq': '$qualityCode',
                   'origin': 'https://www.youtube-nocookie.com'
                 },
                 events: {
@@ -654,11 +676,15 @@ private fun getYouTubePlayerHtml(videoId: String): String {
 
             function onPlayerReady(event) {
               window.ytPlayer = event.target;
+              if (window.targetQuality) {
+                setPlaybackQuality(window.targetQuality);
+              }
               if (window.currentVideoId && window.currentVideoId !== '$videoId') {
                 try {
                   event.target.loadVideoById({
                     'videoId': window.currentVideoId,
-                    'startSeconds': 0
+                    'startSeconds': 0,
+                    'suggestedQuality': window.targetQuality || '$qualityCode'
                   });
                 } catch(e) {}
               }
@@ -677,6 +703,9 @@ private fun getYouTubePlayerHtml(videoId: String): String {
               if (state === 1) { // PLAYING
                 window.isLoadingNewVideo = false;
                 window.userWantsPlay = true;
+                if (window.targetQuality) {
+                  setPlaybackQuality(window.targetQuality);
+                }
                 if (window.AndroidBridge && window.AndroidBridge.onStateChange) {
                   window.AndroidBridge.onStateChange(1);
                 }

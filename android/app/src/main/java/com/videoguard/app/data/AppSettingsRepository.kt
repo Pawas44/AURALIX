@@ -41,6 +41,8 @@ object AppSettingsRepository {
         _streamingQuality.value = sp.getString(KEY_STREAMING_QUALITY, "Lossless") ?: "Lossless"
         _downloadQuality.value = sp.getString(KEY_DOWNLOAD_QUALITY, "High") ?: "High"
         _volumeLeveling.value = sp.getString(KEY_VOLUME_LEVELING, "Normal") ?: "Normal"
+        val savedVideoQuality = sp.getString("playback_video_quality", "Auto (1080p)") ?: "Auto (1080p)"
+        PlaybackController.setPlaybackQuality(savedVideoQuality)
         applyStreamingQuality(_streamingQuality.value)
         applyVolumeLeveling(_volumeLeveling.value)
     }
@@ -68,6 +70,11 @@ object AppSettingsRepository {
             "high" -> PlaybackController.setPlaybackQuality("720p")
             else -> PlaybackController.setPlaybackQuality("Auto (1080p)")
         }
+    }
+
+    fun setVideoResolutionQuality(quality: String) {
+        prefs?.edit()?.putString("playback_video_quality", quality)?.apply()
+        PlaybackController.setPlaybackQuality(quality)
     }
 
     fun setDownloadQuality(quality: String) {

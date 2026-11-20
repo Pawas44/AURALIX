@@ -778,42 +778,10 @@ fun MusicPlayerScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 38.dp)
+                                .padding(horizontal = 24.dp)
                                 .aspectRatio(1f)
-                                .shadow(
-                                    elevation = 20.dp,
-                                    shape = RoundedCornerShape(18.dp),
-                                    spotColor = Color(0xFF3EA6FF).copy(alpha = 0.35f)
-                                )
-                                .clip(RoundedCornerShape(18.dp))
                         ) {
-                            // Softly blurred poster artwork inside the exact poster footprint
-                            AsyncImage(
-                                model = track.thumbnailUrl,
-                                contentDescription = track.title,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .blur(16.dp)
-                                    .graphicsLayer { alpha = 0.45f }
-                            )
-
-                            // Subtle tint overlay for crystal clear readability
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            listOf(
-                                                Color.Black.copy(alpha = 0.45f),
-                                                Color.Black.copy(alpha = 0.25f),
-                                                Color.Black.copy(alpha = 0.45f)
-                                            )
-                                        )
-                                    )
-                            )
-
-                            // 100% Transparent Synchronized Karaoke Lyrics
+                            // 100% Transparent Synchronized Karaoke Lyrics (No square box, floating directly over player backdrop)
                             com.videoguard.app.ui.components.KaraokeLyricsView(
                                 lyrics = lyricsResult,
                                 isLoading = isLoadingLyrics,
@@ -836,7 +804,7 @@ fun MusicPlayerScreen(
                             Box(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
-                                    .padding(end = 12.dp, top = 10.dp)
+                                    .padding(end = 6.dp, top = 6.dp)
                                     .clip(RoundedCornerShape(12.dp))
                                     .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.85f) else Color.White.copy(alpha = 0.14f))
                                     .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.18f), RoundedCornerShape(12.dp))

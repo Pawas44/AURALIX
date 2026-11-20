@@ -290,7 +290,7 @@ fun PlayerSettingsBottomSheet(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .clickable {
-                                    PlaybackController.setPlaybackQuality(qKey)
+                                    AppSettingsRepository.setVideoResolutionQuality(qKey)
                                     showQualityDialog = false
                                 }
                                 .padding(vertical = 12.dp, horizontal = 8.dp),
