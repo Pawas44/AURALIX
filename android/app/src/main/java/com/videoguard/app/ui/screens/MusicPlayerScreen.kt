@@ -389,6 +389,10 @@ fun MusicPlayerScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
+            .clickable(
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            ) {}
             .background(Color(0xFF050608))
             .drawBehind {
                 // 1. Base deep ambient gradient
@@ -944,6 +948,10 @@ fun MusicPlayerScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {}
                 .padding(horizontal = 28.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
@@ -1016,6 +1024,10 @@ fun MusicPlayerScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {}
                 .pointerInput(Unit) {
                     detectVerticalDragGestures(
                         onVerticalDrag = { change, dragAmount ->
@@ -1146,6 +1158,10 @@ fun MusicPlayerScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {}
                 .padding(horizontal = 22.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween

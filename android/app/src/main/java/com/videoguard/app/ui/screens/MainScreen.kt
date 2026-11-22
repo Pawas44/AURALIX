@@ -686,6 +686,10 @@ fun MainScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .zIndex(10f)
+                .clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) {}
                 .offset { IntOffset(0, playerDragOffsetY.roundToInt().coerceAtLeast(0)) }
                 .graphicsLayer {
                     val progress = (playerDragOffsetY / 700f).coerceIn(0f, 1f)
