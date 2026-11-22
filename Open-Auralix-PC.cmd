@@ -1,4 +1,5 @@
 @echo off
+set ELECTRON_RUN_AS_NODE=
 echo ========================================
 echo     Starting Auralix Desktop (PC)
 echo ========================================

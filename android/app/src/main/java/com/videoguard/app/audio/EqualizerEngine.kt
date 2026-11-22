@@ -3,17 +3,27 @@ package com.videoguard.app.audio
 import android.content.Context
 import android.content.SharedPreferences
 import android.media.audiofx.BassBoost
+import android.media.audiofx.DynamicsProcessing
 import android.media.audiofx.Equalizer
 import android.media.audiofx.Virtualizer
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.ln
 
 /**
- * Tunex-inspired Equalizer & Audio FX Engine.
- * Modifies ONLY this application's sound by binding to the app's specific audioSessionId.
- * Never affects other applications or system audio globally.
+ * LastWave-Native Audiophile 15-Band ISO Equalizer & Audio FX Engine.
+ * 
+ * Features:
+ * - 15 ISO 2/3-octave center bands (25 Hz to 16 kHz)
+ * - Gain range: -8.0 dB to +8.0 dB (0.1 dB resolution) to preserve headroom
+ * - Category classifications: SUB, BASS, LOW-MID, MID, HIGH-MID, PRES, AIR
+ * - Dual-tier DSP: Native DynamicsProcessing (15 bands + -1 dBFS peak limiter) on Android 9+ (API 28+),
+ *   with logarithmic curve interpolation fallback on legacy Equalizer hardware.
+ * - Bound exclusively to the app's audio session (0 for online streaming mix, >0 for offline MediaPlayer).
+ * - Real-time zero-latency response.
  */
 object EqualizerEngine {
     private const val TAG = "EqualizerEngine"
@@ -22,32 +32,54 @@ object EqualizerEngine {
     private const val KEY_PRESET = "eq_preset"
     private const val KEY_BASS = "eq_bass"
     private const val KEY_VIRTUALIZER = "eq_virtualizer"
-    private const val KEY_BAND_PREFIX = "eq_band_"
+    private const val KEY_BAND_PREFIX = "eq_band_15_"
 
-    // Preset definitions: 5 bands in dB (-12 dB to +12 dB)
-    val PRESETS = linkedMapOf(
-        "Flat" to listOf(0, 0, 0, 0, 0),
-        "Bass Boost" to listOf(7, 5, 1, 0, -1),
-        "Rock" to listOf(5, 3, -1, 3, 5),
-        "Pop" to listOf(-1, 2, 5, 2, -1),
-        "Hip Hop" to listOf(6, 4, 0, 2, 3),
-        "Electronic" to listOf(5, 4, -1, 2, 4),
-        "Jazz" to listOf(4, 2, -2, 2, 4),
-        "Classical" to listOf(5, 3, -2, 3, 4),
-        "Vocal Boost" to listOf(-2, -1, 5, 3, 0),
-        "Custom" to listOf(0, 0, 0, 0, 0)
+    const val EQ_MAX_GAIN_DB = 8.0f
+
+    // 15 ISO 2/3-octave center frequencies (Hz)
+    val EQ_BAND_FREQS_HZ = intArrayOf(25, 40, 63, 100, 160, 250, 400, 630, 1000, 1600, 2500, 4000, 6300, 10000, 16000)
+
+    val FREQUENCY_LABELS = listOf(
+        "25 Hz", "40 Hz", "63 Hz", "100 Hz", "160 Hz",
+        "250 Hz", "400 Hz", "630 Hz", "1 kHz", "1.6 kHz",
+        "2.5 kHz", "4 kHz", "6.3 kHz", "10 kHz", "16 kHz"
     )
 
-    val FREQUENCY_LABELS = listOf("60 Hz", "230 Hz", "910 Hz", "3.6 kHz", "14 kHz")
+    // Curated Audiophile Presets inspired by LastWave-Native
+    val PRESETS: LinkedHashMap<String, List<Float>> = linkedMapOf(
+        "Studio Master" to listOf(3.0f, 2.5f, 1.5f, 0.5f, -0.5f, -1.0f, -0.5f, 0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.5f),
+        "Acoustic" to listOf(1.0f, 1.5f, 1.0f, 0.5f, 0.5f, 1.0f, 1.5f, 1.5f, 1.0f, 1.5f, 2.0f, 2.5f, 2.0f, 1.5f, 1.0f),
+        "Vocal Clarity" to listOf(-1.5f, -1.0f, -0.5f, 0.0f, 0.5f, 1.0f, 2.0f, 3.0f, 3.5f, 3.0f, 2.0f, 1.5f, 1.0f, 0.5f, 0.0f),
+        "Classical" to listOf(2.5f, 2.0f, 1.5f, 1.0f, 0.0f, -0.5f, 0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 2.5f, 2.5f, 2.0f, 1.5f),
+        "Jazz" to listOf(1.5f, 2.0f, 1.5f, 1.0f, 0.5f, 0.5f, 0.5f, 1.0f, 1.5f, 1.5f, 1.0f, 1.0f, 1.5f, 2.0f, 2.0f),
+        "Rock" to listOf(3.5f, 3.0f, 2.0f, 1.0f, -0.5f, -1.0f, 0.0f, 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.5f, 3.5f, 3.0f),
+        "Pop" to listOf(2.0f, 2.5f, 2.0f, 1.0f, 0.0f, 0.5f, 1.5f, 2.0f, 2.0f, 1.5f, 1.0f, 1.5f, 2.0f, 2.5f, 2.0f),
+        "Treble Air" to listOf(-1.0f, -1.0f, -0.5f, 0.0f, 0.0f, 0.5f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 6.5f),
+        "Deep Bass Clean" to listOf(6.0f, 5.5f, 4.0f, 2.5f, 0.5f, -1.0f, -1.5f, -1.0f, 0.0f, 0.5f, 0.5f, 1.0f, 1.0f, 1.5f, 1.5f),
+        "Electronic" to listOf(4.5f, 4.0f, 2.5f, 1.0f, -0.5f, 0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 2.5f, 3.0f, 3.5f, 4.0f, 4.0f),
+        "R&B" to listOf(4.0f, 3.5f, 2.5f, 1.5f, 0.5f, -0.5f, 0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 2.5f, 2.5f, 3.0f, 3.0f),
+        "Default (Flat)" to List(15) { 0.0f },
+        "Custom" to List(15) { 0.0f }
+    )
+
+    fun getCategoryForBand(freqHz: Int): String = when {
+        freqHz <= 40 -> "SUB"
+        freqHz <= 100 -> "BASS"
+        freqHz <= 250 -> "LOW-MID"
+        freqHz <= 1000 -> "MID"
+        freqHz <= 2500 -> "HIGH-MID"
+        freqHz <= 6300 -> "PRES"
+        else -> "AIR"
+    }
 
     private val _isEnabled = MutableStateFlow(true)
     val isEnabled: StateFlow<Boolean> = _isEnabled.asStateFlow()
 
-    private val _currentPreset = MutableStateFlow("Flat")
+    private val _currentPreset = MutableStateFlow("Studio Master")
     val currentPreset: StateFlow<String> = _currentPreset.asStateFlow()
 
-    private val _bandLevels = MutableStateFlow(listOf(0, 0, 0, 0, 0))
-    val bandLevels: StateFlow<List<Int>> = _bandLevels.asStateFlow()
+    private val _bandLevels = MutableStateFlow(PRESETS["Studio Master"] ?: List(15) { 0.0f })
+    val bandLevels: StateFlow<List<Float>> = _bandLevels.asStateFlow()
 
     private val _bassBoostPercent = MutableStateFlow(25)
     val bassBoostPercent: StateFlow<Int> = _bassBoostPercent.asStateFlow()
@@ -56,7 +88,8 @@ object EqualizerEngine {
     val virtualizerPercent: StateFlow<Int> = _virtualizerPercent.asStateFlow()
 
     private var activeAudioSessionId: Int = -1
-    private var equalizer: Equalizer? = null
+    private var dynamicsProcessing: DynamicsProcessing? = null
+    private var legacyEqualizer: Equalizer? = null
     private var bassBoost: BassBoost? = null
     private var virtualizer: Virtualizer? = null
     private var prefs: SharedPreferences? = null
@@ -70,14 +103,16 @@ object EqualizerEngine {
         prefs = sp
 
         val savedEnabled = sp.getBoolean(KEY_ENABLED, true)
-        val savedPreset = sp.getString(KEY_PRESET, "Flat") ?: "Flat"
+        val savedPreset = sp.getString(KEY_PRESET, "Studio Master") ?: "Studio Master"
         val savedBass = sp.getInt(KEY_BASS, 25)
         val savedVirt = sp.getInt(KEY_VIRTUALIZER, 15)
 
-        val savedBands = mutableListOf<Int>()
-        for (i in 0 until 5) {
-            val defaultVal = PRESETS[savedPreset]?.getOrNull(i) ?: 0
-            savedBands.add(sp.getInt("$KEY_BAND_PREFIX$i", defaultVal))
+        val defaultPresetList = PRESETS[savedPreset] ?: PRESETS["Studio Master"] ?: List(15) { 0.0f }
+        val savedBands = mutableListOf<Float>()
+        for (i in 0 until 15) {
+            val defVal = defaultPresetList.getOrElse(i) { 0.0f }
+            val stored = sp.getFloat("$KEY_BAND_PREFIX$i", defVal)
+            savedBands.add(stored.coerceIn(-EQ_MAX_GAIN_DB, EQ_MAX_GAIN_DB))
         }
 
         _isEnabled.value = savedEnabled
@@ -86,32 +121,59 @@ object EqualizerEngine {
         _virtualizerPercent.value = savedVirt.coerceIn(0, 100)
         _bandLevels.value = savedBands
 
-        // Pre-bind to session 0 so online playback (YouTube/streaming) is immediately equalized
         try {
             bindAudioSession(0)
         } catch (e: Exception) {
-            Log.w(TAG, "Default audio session 0 init: ${e.message}")
+            Log.w(TAG, "Audio session 0 init: ${e.message}")
         }
     }
 
-    /**
-     * Binds audio effects to the application's audio session.
-     * Uses session ID 0 for global media mix (online streaming) or specific session ID for MediaPlayer.
-     */
     fun bindAudioSession(sessionId: Int = 0) {
         if (sessionId < 0) return
-        if (sessionId == activeAudioSessionId && equalizer != null) return
+        if (sessionId == activeAudioSessionId && (dynamicsProcessing != null || legacyEqualizer != null)) return
 
         releaseEffects()
         activeAudioSessionId = sessionId
 
         try {
-            // Equalizer attached to audio session (0 for media mix, >0 for offline MediaPlayer)
-            equalizer = Equalizer(0, sessionId).apply {
-                enabled = _isEnabled.value
+            // Priority 1: Modern DynamicsProcessing (Android 9+ / API 28+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                try {
+                    val builder = DynamicsProcessing.Config.Builder(
+                        DynamicsProcessing.VARIANT_FAVOR_FREQUENCY_RESOLUTION,
+                        1, // channelCount
+                        true, // preEqInUse
+                        15, // preEqBandCount
+                        false, // mbcInUse
+                        0,
+                        false, // postEqInUse
+                        0,
+                        true // limiterInUse
+                    )
+                    // Audiophile peak limiter: -1.0 dBFS threshold prevents digital distortion
+                    val limiter = DynamicsProcessing.Limiter(
+                        true, true, 0, 1.0f, 120.0f, 12.0f, -1.0f, 0.0f
+                    )
+                    builder.setLimiterAllChannelsTo(limiter)
+                    val config = builder.build()
+                    dynamicsProcessing = DynamicsProcessing(0, sessionId, config).apply {
+                        enabled = _isEnabled.value
+                    }
+                    Log.d(TAG, "Initialized DynamicsProcessing 15-band engine on session $sessionId")
+                } catch (e: Exception) {
+                    Log.w(TAG, "DynamicsProcessing initialization fallback: ${e.message}")
+                }
             }
 
-            // Bass Boost attached to audio session
+            // Priority 2: Fallback Legacy Equalizer
+            if (dynamicsProcessing == null) {
+                legacyEqualizer = Equalizer(0, sessionId).apply {
+                    enabled = _isEnabled.value
+                }
+                Log.d(TAG, "Initialized Legacy Equalizer fallback on session $sessionId")
+            }
+
+            // Bass Boost
             bassBoost = BassBoost(0, sessionId).apply {
                 if (strengthSupported) {
                     setStrength(((_bassBoostPercent.value / 100f) * 1000).toInt().toShort())
@@ -119,7 +181,7 @@ object EqualizerEngine {
                 enabled = _isEnabled.value
             }
 
-            // Virtualizer (3D Surround) attached to audio session
+            // Virtualizer (3D Surround)
             virtualizer = Virtualizer(0, sessionId).apply {
                 if (strengthSupported) {
                     setStrength(((_virtualizerPercent.value / 100f) * 1000).toInt().toShort())
@@ -128,9 +190,8 @@ object EqualizerEngine {
             }
 
             applyCurrentBandLevelsToHardware()
-            Log.d(TAG, "Successfully bound Equalizer & FX to audio session ID $sessionId (enabled=${_isEnabled.value})")
         } catch (e: Exception) {
-            Log.w(TAG, "Audio effect initialization on session $sessionId: ${e.message}")
+            Log.w(TAG, "Audio effect binding on session $sessionId: ${e.message}")
         }
     }
 
@@ -140,10 +201,12 @@ object EqualizerEngine {
     }
 
     private fun releaseEffects() {
-        try { equalizer?.release() } catch (ignored: Exception) {}
+        try { dynamicsProcessing?.release() } catch (ignored: Exception) {}
+        try { legacyEqualizer?.release() } catch (ignored: Exception) {}
         try { bassBoost?.release() } catch (ignored: Exception) {}
         try { virtualizer?.release() } catch (ignored: Exception) {}
-        equalizer = null
+        dynamicsProcessing = null
+        legacyEqualizer = null
         bassBoost = null
         virtualizer = null
     }
@@ -156,15 +219,16 @@ object EqualizerEngine {
         _isEnabled.value = enabled
         prefs?.edit()?.putBoolean(KEY_ENABLED, enabled)?.apply()
 
-        if (enabled && equalizer == null) {
+        if (enabled && dynamicsProcessing == null && legacyEqualizer == null) {
             bindAudioSession(0)
         }
 
         try {
-            equalizer?.enabled = enabled
+            dynamicsProcessing?.enabled = enabled
+            legacyEqualizer?.enabled = enabled
             bassBoost?.enabled = enabled
             virtualizer?.enabled = enabled
-        } catch (e: Exception) {}
+        } catch (ignored: Exception) {}
     }
 
     fun setPreset(name: String) {
@@ -172,7 +236,7 @@ object EqualizerEngine {
         _currentPreset.value = name
         _bandLevels.value = presetValues
 
-        if (equalizer == null) {
+        if (dynamicsProcessing == null && legacyEqualizer == null) {
             bindAudioSession(0)
         } else {
             applyCurrentBandLevelsToHardware()
@@ -181,20 +245,20 @@ object EqualizerEngine {
         prefs?.edit()?.apply {
             putString(KEY_PRESET, name)
             for (i in presetValues.indices) {
-                putInt("$KEY_BAND_PREFIX$i", presetValues[i])
+                putFloat("$KEY_BAND_PREFIX$i", presetValues[i])
             }
             apply()
         }
     }
 
-    fun setBandLevel(bandIndex: Int, levelDb: Int) {
-        if (bandIndex !in 0 until 5) return
+    fun setBandLevel(bandIndex: Int, levelDb: Float) {
+        if (bandIndex !in 0 until 15) return
         val current = _bandLevels.value.toMutableList()
-        current[bandIndex] = levelDb.coerceIn(-12, 12)
+        current[bandIndex] = levelDb.coerceIn(-EQ_MAX_GAIN_DB, EQ_MAX_GAIN_DB)
         _bandLevels.value = current
         _currentPreset.value = "Custom"
 
-        if (equalizer == null) {
+        if (dynamicsProcessing == null && legacyEqualizer == null) {
             bindAudioSession(0)
         } else {
             applyCurrentBandLevelsToHardware()
@@ -202,9 +266,13 @@ object EqualizerEngine {
 
         prefs?.edit()?.apply {
             putString(KEY_PRESET, "Custom")
-            putInt("$KEY_BAND_PREFIX$bandIndex", current[bandIndex])
+            putFloat("$KEY_BAND_PREFIX$bandIndex", current[bandIndex])
             apply()
         }
+    }
+
+    fun resetToFlat() {
+        setPreset("Default (Flat)")
     }
 
     fun setBassBoost(percent: Int) {
@@ -221,7 +289,7 @@ object EqualizerEngine {
                     it.setStrength(((clamped / 100f) * 1000).toInt().toShort())
                 }
             }
-        } catch (e: Exception) {}
+        } catch (ignored: Exception) {}
 
         prefs?.edit()?.putInt(KEY_BASS, clamped)?.apply()
     }
@@ -240,26 +308,67 @@ object EqualizerEngine {
                     it.setStrength(((clamped / 100f) * 1000).toInt().toShort())
                 }
             }
-        } catch (e: Exception) {}
+        } catch (ignored: Exception) {}
 
         prefs?.edit()?.putInt(KEY_VIRTUALIZER, clamped)?.apply()
     }
 
     private fun applyCurrentBandLevelsToHardware() {
-        val eq = equalizer ?: return
+        val levels = _bandLevels.value
+
+        // Tier 1: DynamicsProcessing 15-band PreEq
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && dynamicsProcessing != null) {
+            try {
+                for (i in 0 until 15) {
+                    val freqHz = EQ_BAND_FREQS_HZ[i].toFloat()
+                    val gainDb = levels.getOrElse(i) { 0.0f }.coerceIn(-EQ_MAX_GAIN_DB, EQ_MAX_GAIN_DB)
+                    val eqBand = DynamicsProcessing.EqBand(true, freqHz, gainDb)
+                    dynamicsProcessing?.setPreEqBandAllChannelsTo(i, eqBand)
+                }
+                return
+            } catch (e: Exception) {
+                Log.w(TAG, "Error applying band to DynamicsProcessing: ${e.message}")
+            }
+        }
+
+        // Tier 2: Legacy Equalizer with Logarithmic Curve Interpolation
+        val eq = legacyEqualizer ?: return
         try {
             val numBands = eq.numberOfBands.toInt()
-            val minEq = eq.bandLevelRange[0] // e.g. -1500 or -1000 mB
-            val maxEq = eq.bandLevelRange[1] // e.g. +1500 or +1000 mB
+            val minEq = eq.bandLevelRange[0]
+            val maxEq = eq.bandLevelRange[1]
 
-            val levels = _bandLevels.value
-            for (i in 0 until minOf(5, numBands)) {
-                val db = levels.getOrElse(i) { 0 }
-                val millibels = (db * 100).coerceIn(minEq.toInt(), maxEq.toInt()).toShort()
+            val hwFreqs = (0 until numBands).map { eq.getCenterFreq(it.toShort()) / 1000f }
+            for (i in 0 until numBands) {
+                val hwCenterFreq = hwFreqs[i]
+                val interpolatedGainDb = interpolateGain(hwCenterFreq, EQ_BAND_FREQS_HZ.toList(), levels)
+                val millibels = (interpolatedGainDb * 100).toInt().coerceIn(minEq.toInt(), maxEq.toInt()).toShort()
                 eq.setBandLevel(i.toShort(), millibels)
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Error applying band levels to hardware: ${e.message}")
+            Log.w(TAG, "Error applying band to legacy equalizer: ${e.message}")
         }
+    }
+
+    /**
+     * Logarithmic curve interpolation to project 15-band curve to hardware bands accurately.
+     */
+    private fun interpolateGain(freqHz: Float, bands: List<Int>, gains: List<Float>): Float {
+        if (bands.isEmpty() || gains.isEmpty()) return 0.0f
+        if (freqHz <= bands.first()) return gains.first()
+        if (freqHz >= bands.last()) return gains.last()
+
+        for (i in 0 until bands.size - 1) {
+            val f0 = bands[i].toFloat()
+            val f1 = bands[i + 1].toFloat()
+            if (freqHz in f0..f1) {
+                val logF0 = ln(f0)
+                val logF1 = ln(f1)
+                val logF = ln(freqHz)
+                val t = ((logF - logF0) / (logF1 - logF0))
+                return gains[i] + t * (gains[i + 1] - gains[i])
+            }
+        }
+        return 0.0f
     }
 }
