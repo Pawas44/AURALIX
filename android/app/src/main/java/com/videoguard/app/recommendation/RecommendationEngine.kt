@@ -64,9 +64,45 @@ object RecommendationEngine {
             val filterRecentHistory = com.videoguard.app.data.AppSettingsRepository.dontRepeatSuggestions.value
             val recentPlayedIds = if (filterRecentHistory) userHistory.take(40).map { it.id }.toSet() else emptySet()
 
-            // 1. Collect candidate pool
+            // 1. Dynamically explore and fetch NEW songs matching user taste from YouTube Music
+            val dynamicDiscoveryTracks = mutableListOf<VideoItem>()
+            val topArtists: List<String> = profile.getTopArtists(limit = 4).map { it.artistName }.filter { it.isNotBlank() }
+            val seedTracks = (likedPlaylist + userHistory).filter { it.id.length == 11 }.take(3)
+
+            // A. Algorithmic Song Radio for top tracks (brings 20+ fresh songs with similar acoustic vibe)
+            for (st in seedTracks) {
+                try {
+                    val radioTracks = YouTubeSearchEngine.getSongRadio(st.id)
+                    if (radioTracks.isNotEmpty()) {
+                        dynamicDiscoveryTracks.addAll(radioTracks)
+                    }
+                } catch (e: Exception) {}
+            }
+
+            // B. Fetch fresh songs for user's favorite artists & styles
+            for (artist in topArtists) {
+                try {
+                    val freshArtistTracks = YouTubeSyncEngine.searchMusicVideosInnerTube("$artist songs")
+                    if (freshArtistTracks.isNotEmpty()) {
+                        dynamicDiscoveryTracks.addAll(freshArtistTracks.take(8))
+                    }
+                } catch (e: Exception) {}
+            }
+
+            // C. If selectedMood is present, fetch fresh songs for that mood!
+            if (!selectedMood.isNullOrBlank()) {
+                try {
+                    val moodTracks = YouTubeSyncEngine.searchMusicVideosInnerTube("$selectedMood music")
+                    if (moodTracks.isNotEmpty()) {
+                        dynamicDiscoveryTracks.addAll(moodTracks.take(12))
+                    }
+                } catch (e: Exception) {}
+            }
+
+            // Collect candidate pool with dynamic discovery songs included
             val syncFeed = YouTubeSyncEngine.musicFeed.value
             val candidatePool = (
+                dynamicDiscoveryTracks +
                 spotifyTaste +
                 syncFeed.quickPicks +
                 syncFeed.listenAgain +
@@ -81,7 +117,7 @@ object RecommendationEngine {
             // Deduplication tracker across all smart sections
             val placedTrackIds = mutableSetOf<String>()
 
-            // 1. Made For You / Selected Mood Mix
+            // 1. Made For You / Selected Mood Mix (Blend familiar favorites + new exploration gems)
             val scoredMadeForYou = if (!selectedMood.isNullOrBlank()) {
                 val moodCandidates = candidatePool.filter {
                     it.mood.equals(selectedMood, ignoreCase = true) ||
@@ -89,16 +125,16 @@ object RecommendationEngine {
                 }
                 val candidatesToUse = if (moodCandidates.isNotEmpty()) moodCandidates else candidatePool
                 val pool = if (forceRefresh) candidatesToUse.shuffled() else candidatesToUse
-                pool.filter { it.id !in placedTrackIds }.take(12)
+                pool.filter { it.id !in placedTrackIds }.take(16)
             } else {
                 val pool = if (forceRefresh) candidatePool.shuffled() else candidatePool
                 RecommendationRanker.rank(
                     candidates = pool,
                     recentHistory = userHistory.take(15),
                     likedTracks = likedPlaylist,
-                    discoveryFactor = if (forceRefresh) 0.40 else 0.15,
+                    discoveryFactor = if (forceRefresh) 0.55 else 0.40,
                     maxPerArtist = 2
-                ).map { it.track }.filter { it.id !in placedTrackIds }.take(10)
+                ).map { it.track }.filter { it.id !in placedTrackIds }.take(16)
             }
             placedTrackIds.addAll(scoredMadeForYou.map { it.id })
 
