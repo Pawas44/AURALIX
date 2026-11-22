@@ -113,6 +113,7 @@ fun MusicPlayerScreen(
     val isAutoplay by com.videoguard.app.service.PlaybackController.isAutoplayEnabled.collectAsState()
     var sliderPosition by remember { mutableFloatStateOf(0.35f) }
     var showSettingsSheet by remember { mutableStateOf(false) }
+    var showEqualizerSheet by remember { mutableStateOf(false) }
     var showAddToPlaylistSheet by remember { mutableStateOf(false) }
     var showListenTogetherSheet by remember { mutableStateOf(false) }
     val isJamActive by com.videoguard.app.data.ListenTogetherEngine.isInRoom.collectAsState()
@@ -736,22 +737,53 @@ fun MusicPlayerScreen(
                 }
             }
 
-            IconButton(
-                onClick = { showSettingsSheet = true },
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .size(38.dp)
-                    .shadow(elevation = 6.dp, shape = CircleShape)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.12f))
-                    .border(1.dp, LiquidGlassDefaults.BorderSpecular, CircleShape)
+            Row(
+                modifier = Modifier.align(Alignment.CenterEnd),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.MoreVert,
-                    contentDescription = "Options",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
+                val isEqActive by com.videoguard.app.audio.EqualizerEngine.isEnabled.collectAsState()
+                IconButton(
+                    onClick = { showEqualizerSheet = true },
+                    modifier = Modifier
+                        .size(38.dp)
+                        .shadow(elevation = 6.dp, shape = CircleShape)
+                        .clip(CircleShape)
+                        .background(
+                            if (isEqActive) Color(0xFF8B5CF6).copy(alpha = 0.28f)
+                            else Color.White.copy(alpha = 0.12f)
+                        )
+                        .border(
+                            1.dp,
+                            if (isEqActive) androidx.compose.ui.graphics.SolidColor(Color(0xFF8B5CF6).copy(alpha = 0.7f))
+                            else LiquidGlassDefaults.BorderSpecular,
+                            CircleShape
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = "Equalizer",
+                        tint = if (isEqActive) Color(0xFFC084FC) else Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                IconButton(
+                    onClick = { showSettingsSheet = true },
+                    modifier = Modifier
+                        .size(38.dp)
+                        .shadow(elevation = 6.dp, shape = CircleShape)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.12f))
+                        .border(1.dp, LiquidGlassDefaults.BorderSpecular, CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MoreVert,
+                        contentDescription = "Options",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
 
@@ -1614,6 +1646,10 @@ fun MusicPlayerScreen(
 
     if (showListenTogetherSheet) {
         com.videoguard.app.ui.components.ListenTogetherSheet(onDismiss = { showListenTogetherSheet = false })
+    }
+
+    if (showEqualizerSheet) {
+        com.videoguard.app.ui.components.EqualizerBottomSheet(onDismiss = { showEqualizerSheet = false })
     }
 
     if (showWrongLyricsDialog) {
