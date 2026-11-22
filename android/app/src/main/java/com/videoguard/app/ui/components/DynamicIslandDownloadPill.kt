@@ -6,6 +6,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,6 +47,15 @@ fun DynamicIslandDownloadPill(
     var lastCompletedTitle by remember { mutableStateOf("") }
     var lastCompletedArtist by remember { mutableStateOf("") }
     var lastCompletedThumb by remember { mutableStateOf("") }
+    var isDismissedByUser by remember { mutableStateOf(false) }
+
+    // When active download changes or a new download starts, reset user dismissal
+    val activeTrackKey = currentDownload?.videoId ?: batchDownload?.playlistTitle
+    LaunchedEffect(activeTrackKey) {
+        if (activeTrackKey != null) {
+            isDismissedByUser = false
+        }
+    }
 
     // Completion state handling: show success animation, then auto-hide or transition
     LaunchedEffect(currentDownload?.isComplete, batchDownload?.isComplete) {
@@ -56,14 +67,14 @@ fun DynamicIslandDownloadPill(
             lastCompletedArtist = currentDownload?.artist ?: ""
             lastCompletedThumb = currentDownload?.thumbnailUrl ?: ""
 
-            kotlinx.coroutines.delay(1800)
+            kotlinx.coroutines.delay(700)
             showCompletedSuccess = false
         }
     }
 
     val hasActiveDownload = (currentDownload != null && !currentDownload!!.isComplete) ||
             (batchDownload != null && !batchDownload!!.isComplete)
-    val isVisible = hasActiveDownload || showCompletedSuccess
+    val isVisible = (hasActiveDownload || showCompletedSuccess) && !isDismissedByUser
 
     AnimatedVisibility(
         visible = isVisible,
@@ -155,6 +166,14 @@ fun DynamicIslandDownloadPill(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp)
+                .pointerInput(Unit) {
+                    detectVerticalDragGestures { change, dragAmount ->
+                        if (dragAmount < -8f) {
+                            change.consume()
+                            isDismissedByUser = true
+                        }
+                    }
+                }
                 .shadow(
                     elevation = 14.dp,
                     shape = RoundedCornerShape(26.dp),

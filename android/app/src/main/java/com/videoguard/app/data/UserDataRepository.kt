@@ -99,6 +99,21 @@ object UserDataRepository {
         _batchDownload.value = null
     }
 
+    fun playDownloadSuccessSound(context: Context) {
+        try {
+            val mp = android.media.MediaPlayer.create(context.applicationContext, com.videoguard.app.R.raw.download_success)
+            mp?.setOnCompletionListener { player ->
+                try {
+                    player.stop()
+                    player.release()
+                } catch (e: Exception) {}
+            }
+            mp?.start()
+        } catch (e: Exception) {
+            android.util.Log.e("UserDataRepository", "Failed to play download sound: ${e.message}")
+        }
+    }
+
     private val repoScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 
     fun init(context: Context) {
@@ -407,6 +422,7 @@ object UserDataRepository {
             }
             val ok = downloadSingleTrackDirect(context, video)
             if (ok) {
+                playDownloadSuccessSound(context)
                 withContext(Dispatchers.Main) {
                     android.widget.Toast.makeText(
                         context,
@@ -425,12 +441,12 @@ object UserDataRepository {
             }
 
             if (downloadQueue.isNotEmpty()) {
-                kotlinx.coroutines.delay(800)
+                kotlinx.coroutines.delay(400)
                 val next = downloadQueue.removeAt(0)
                 _queuedDownloadsCount.value = downloadQueue.size
                 startDownloadExecution(next.first, next.second)
             } else {
-                kotlinx.coroutines.delay(1800)
+                kotlinx.coroutines.delay(700)
                 _currentDownload.value = null
             }
         }
@@ -502,6 +518,10 @@ object UserDataRepository {
                 isComplete = true
             )
 
+            if (completedCount > 0) {
+                playDownloadSuccessSound(context)
+            }
+
             _currentDownload.value = null
             withContext(Dispatchers.Main) {
                 android.widget.Toast.makeText(
@@ -511,7 +531,7 @@ object UserDataRepository {
                 ).show()
             }
 
-            kotlinx.coroutines.delay(3500)
+            kotlinx.coroutines.delay(1000)
             _batchDownload.value = null
         }
     }

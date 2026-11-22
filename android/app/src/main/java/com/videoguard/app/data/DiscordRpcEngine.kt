@@ -1,8 +1,7 @@
 package com.videoguard.app.data
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
+import android.os.Process
 import android.util.Log
 import com.videoguard.app.model.VideoItem
 import com.videoguard.app.service.PlaybackController
@@ -14,53 +13,54 @@ import okhttp3.*
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
+/**
+ * Tokenless Discord Rich Presence (RPC) Engine.
+ * Uses Discord PC RPC Protocol (Localhost WebSocket ports 6463-6472)
+ * without requiring any user account token.
+ * Default is ON with no off option, and links to Telegram: https://t.me/auralix_music
+ */
 object DiscordRpcEngine {
     private const val TAG = "DiscordRpcEngine"
-    private const val PREFS_NAME = "auralix_discord_prefs"
-    private const val KEY_ENABLED = "discord_enabled"
-    private const val KEY_TOKEN = "discord_token"
-
-    private const val GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json"
+    const val CLIENT_ID = "1309855598687780905"
+    const val TELEGRAM_URL = "https://t.me/auralix_music"
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val mainHandler = Handler(Looper.getMainLooper())
 
-    private val _isEnabled = MutableStateFlow(false)
+    // RPC is ON by default with no off option
+    private val _isEnabled = MutableStateFlow(true)
     val isEnabled: StateFlow<Boolean> = _isEnabled.asStateFlow()
 
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
+    // Compatibility stub for any legacy references
     private val _userToken = MutableStateFlow("")
     val userToken: StateFlow<String> = _userToken.asStateFlow()
 
     private var okHttpClient: OkHttpClient? = null
-    private var webSocket: WebSocket? = null
-    private var heartbeatJob: Job? = null
-    private var lastSequenceNumber: Int? = null
+    private var activeWebSocket: WebSocket? = null
+    private var connectionLoopJob: Job? = null
+    private val nonceCounter = AtomicInteger(1)
     private var isInitialized = false
 
     fun init(context: Context) {
         if (isInitialized) return
         isInitialized = true
 
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val savedEnabled = prefs.getBoolean(KEY_ENABLED, false)
-        val savedToken = prefs.getString(KEY_TOKEN, "") ?: ""
-
-        _userToken.value = savedToken
-        _isEnabled.value = savedEnabled
+        _isEnabled.value = true
 
         okHttpClient = OkHttpClient.Builder()
             .readTimeout(0, TimeUnit.MILLISECONDS)
-            .pingInterval(20, TimeUnit.SECONDS)
+            .connectTimeout(2, TimeUnit.SECONDS)
+            .pingInterval(15, TimeUnit.SECONDS)
             .build()
 
-        // Observe playback state changes and push rich presence
+        // Observe playback state changes and immediately push rich presence
         scope.launch {
             PlaybackController.currentTrack.collect { track ->
-                if (_isEnabled.value && _isConnected.value) {
+                if (_isConnected.value) {
                     updatePresence(track, PlaybackController.isPlaying.value)
                 }
             }
@@ -68,226 +68,163 @@ object DiscordRpcEngine {
 
         scope.launch {
             PlaybackController.isPlaying.collect { isPlaying ->
-                if (_isEnabled.value && _isConnected.value) {
+                if (_isConnected.value) {
                     updatePresence(PlaybackController.currentTrack.value, isPlaying)
                 }
             }
         }
 
-        if (savedEnabled && savedToken.isNotBlank()) {
-            connectGateway()
-        }
+        startRpcConnectionLoop()
     }
 
+    // Compatibility stubs
     fun setEnabled(context: Context, enabled: Boolean) {
-        _isEnabled.value = enabled
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(KEY_ENABLED, enabled)
-            .apply()
-
-        if (enabled) {
-            connectGateway()
-        } else {
-            disconnectGateway()
-        }
+        _isEnabled.value = true // Always remains enabled
     }
 
     fun setToken(context: Context, token: String) {
-        val clean = token.trim()
-        _userToken.value = clean
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_TOKEN, clean)
-            .apply()
-
-        if (_isEnabled.value) {
-            disconnectGateway()
-            if (clean.isNotBlank()) {
-                connectGateway()
-            }
-        }
+        // No token required for PC Discord RPC
     }
 
-    private fun connectGateway() {
-        val token = _userToken.value
-        if (token.isBlank()) {
-            _isConnected.value = false
-            return
-        }
-
-        disconnectGateway()
-
-        val client = okHttpClient ?: OkHttpClient()
-        val request = Request.Builder()
-            .url(GATEWAY_URL)
-            .build()
-
-        webSocket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(ws: WebSocket, response: Response) {
-                Log.d(TAG, "Discord Gateway WebSocket connection established")
-            }
-
-            override fun onMessage(ws: WebSocket, text: String) {
-                handleGatewayMessage(ws, text)
-            }
-
-            override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-                Log.d(TAG, "Discord Gateway closed: $code / $reason")
-                _isConnected.value = false
-                heartbeatJob?.cancel()
-            }
-
-            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-                Log.w(TAG, "Discord Gateway error: ${t.message}")
-                _isConnected.value = false
-                heartbeatJob?.cancel()
-
-                // Auto-reconnect if enabled after brief backoff
-                scope.launch {
-                    delay(5000L)
-                    if (_isEnabled.value && _userToken.value.isNotBlank() && !_isConnected.value) {
-                        connectGateway()
-                    }
-                }
-            }
-        })
-    }
-
-    private fun disconnectGateway() {
-        heartbeatJob?.cancel()
-        heartbeatJob = null
-        try {
-            webSocket?.close(1000, "Normal Closure")
-        } catch (e: Exception) {}
-        webSocket = null
-        _isConnected.value = false
-    }
-
-    private fun handleGatewayMessage(ws: WebSocket, raw: String) {
-        try {
-            val json = JSONObject(raw)
-            val op = json.optInt("op", -1)
-            val s = if (json.has("s") && !json.isNull("s")) json.optInt("s") else null
-            if (s != null) lastSequenceNumber = s
-
-            when (op) {
-                10 -> { // Hello -> extract heartbeat interval and start heartbeats + identify
-                    val d = json.optJSONObject("d")
-                    val interval = d?.optLong("heartbeat_interval", 41250L) ?: 41250L
-                    startHeartbeat(ws, interval)
-                    sendIdentify(ws)
-                }
-                1 -> { // Server requested immediate heartbeat
-                    sendHeartbeat(ws)
-                }
-                0 -> { // Dispatch
-                    val t = json.optString("t", "")
-                    if (t == "READY") {
-                        _isConnected.value = true
-                        Log.d(TAG, "Discord Gateway Identified and Ready! User connected.")
-                        updatePresence(PlaybackController.currentTrack.value, PlaybackController.isPlaying.value)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error handling gateway message", e)
-        }
-    }
-
-    private fun startHeartbeat(ws: WebSocket, intervalMs: Long) {
-        heartbeatJob?.cancel()
-        heartbeatJob = scope.launch {
+    private fun startRpcConnectionLoop() {
+        connectionLoopJob?.cancel()
+        connectionLoopJob = scope.launch {
             while (isActive) {
-                delay(intervalMs)
-                sendHeartbeat(ws)
+                if (!_isConnected.value || activeWebSocket == null) {
+                    connectLocalRpc()
+                }
+                delay(8000L)
             }
         }
     }
 
-    private fun sendHeartbeat(ws: WebSocket) {
+    private fun connectLocalRpc() {
+        val client = okHttpClient ?: return
+        // Discord RPC listens on local ports 6463 to 6472
+        for (port in 6463..6472) {
+            if (_isConnected.value) break
+            try {
+                val url = "ws://127.0.0.1:$port/?v=1&client_id=$CLIENT_ID&encoding=json"
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Origin", "https://discord.com")
+                    .build()
+
+                val latch = java.util.concurrent.CountDownLatch(1)
+                var connectedOnPort = false
+
+                val ws = client.newWebSocket(request, object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) {
+                        Log.d(TAG, "Connected to Discord RPC on port $port")
+                    }
+
+                    override fun onMessage(webSocket: WebSocket, text: String) {
+                        try {
+                            val json = JSONObject(text)
+                            val cmd = json.optString("cmd", "")
+                            val evt = json.optString("evt", "")
+                            if (cmd == "DISPATCH" && evt == "READY") {
+                                Log.d(TAG, "Discord RPC Handshake successful on port $port!")
+                                activeWebSocket = webSocket
+                                _isConnected.value = true
+                                connectedOnPort = true
+                                latch.countDown()
+                                updatePresence(PlaybackController.currentTrack.value, PlaybackController.isPlaying.value)
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error parsing RPC message: ${e.message}")
+                        }
+                    }
+
+                    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                        if (activeWebSocket == webSocket) {
+                            activeWebSocket = null
+                            _isConnected.value = false
+                        }
+                        latch.countDown()
+                    }
+
+                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                        if (activeWebSocket == webSocket) {
+                            activeWebSocket = null
+                            _isConnected.value = false
+                        }
+                        latch.countDown()
+                    }
+                })
+
+                // Wait up to 1.5 seconds for response on this port
+                latch.await(1500, TimeUnit.MILLISECONDS)
+                if (connectedOnPort) {
+                    break
+                } else {
+                    try { ws.cancel() } catch (e: Exception) {}
+                }
+            } catch (e: Exception) {
+                // Try next port
+            }
+        }
+    }
+
+    fun updatePresence(track: VideoItem?, isPlaying: Boolean) {
+        val ws = activeWebSocket ?: return
         try {
+            val nonce = nonceCounter.incrementAndGet().toString()
             val payload = JSONObject().apply {
-                put("op", 1)
-                put("d", if (lastSequenceNumber != null) lastSequenceNumber else JSONObject.NULL)
+                put("cmd", "SET_ACTIVITY")
+                val args = JSONObject().apply {
+                    put("pid", Process.myPid())
+                    if (track != null && isPlaying) {
+                        val activity = JSONObject().apply {
+                            put("type", 2) // Listening to
+                            put("details", track.title.take(128))
+                            put("state", "by " + track.artist.ifBlank { track.channelName }.take(128))
+
+                            val curSec = PlaybackController.currentTimeSeconds.value
+                            val startMs = System.currentTimeMillis() - (curSec * 1000).toLong()
+                            put("timestamps", JSONObject().apply {
+                                put("start", startMs)
+                            })
+
+                            val thumb = if (track.thumbnailUrl.isNotBlank() && !track.thumbnailUrl.contains("default")) {
+                                track.thumbnailUrl
+                            } else {
+                                "https://img.youtube.com/vi/${track.id}/hqdefault.jpg"
+                            }
+
+                            put("assets", JSONObject().apply {
+                                put("large_image", thumb)
+                                put("large_text", "AURALIX Music")
+                                put("small_image", "play")
+                                put("small_text", "Listening on AURALIX")
+                            })
+
+                            // Telegram link button as requested
+                            val buttons = JSONArray().apply {
+                                put(JSONObject().apply {
+                                    put("label", "Join Telegram")
+                                    put("url", TELEGRAM_URL)
+                                })
+                                put(JSONObject().apply {
+                                    put("label", "Listen on AURALIX")
+                                    put("url", TELEGRAM_URL)
+                                })
+                            }
+                            put("buttons", buttons)
+                        }
+                        put("activity", activity)
+                    } else {
+                        put("activity", JSONObject.NULL)
+                    }
+                }
+                put("args", args)
+                put("nonce", nonce)
             }
+
             ws.send(payload.toString())
-        } catch (e: Exception) {}
-    }
-
-    private fun sendIdentify(ws: WebSocket) {
-        try {
-            val token = _userToken.value
-            val identify = JSONObject().apply {
-                put("op", 2)
-                put("d", JSONObject().apply {
-                    put("token", token)
-                    put("capabilities", 16381)
-                    put("properties", JSONObject().apply {
-                        put("os", "Android")
-                        put("browser", "AURALIX Music")
-                        put("device", "AURALIX App")
-                    })
-                    put("presence", buildPresenceData(
-                        PlaybackController.currentTrack.value,
-                        PlaybackController.isPlaying.value
-                    ))
-                })
-            }
-            ws.send(identify.toString())
+            Log.d(TAG, "Sent SET_ACTIVITY for ${track?.title}")
         } catch (e: Exception) {
-            Log.e(TAG, "Error sending identify to Discord", e)
-        }
-    }
-
-    private fun buildPresenceData(track: VideoItem?, isPlaying: Boolean): JSONObject {
-        val root = JSONObject().apply {
-            put("status", "online")
-            put("afk", false)
-            put("since", JSONObject.NULL)
-        }
-
-        if (track != null && isPlaying) {
-            val activities = JSONArray()
-            val activity = JSONObject().apply {
-                put("name", "AURALIX")
-                put("type", 2) // 2 = Listening to
-                put("details", track.title)
-                put("state", "by " + track.artist.ifBlank { track.channelName })
-
-                val curSec = PlaybackController.currentTimeSeconds.value
-                val startMs = System.currentTimeMillis() - (curSec * 1000).toLong()
-                put("timestamps", JSONObject().apply {
-                    put("start", startMs)
-                })
-
-                val thumb = track.thumbnailUrl.ifBlank { "https://img.youtube.com/vi/${track.id}/hqdefault.jpg" }
-                put("assets", JSONObject().apply {
-                    put("large_image", thumb)
-                    put("large_text", "AURALIX Full HD")
-                })
-            }
-            activities.put(activity)
-            root.put("activities", activities)
-        } else {
-            root.put("activities", JSONArray())
-        }
-
-        return root
-    }
-
-    private fun updatePresence(track: VideoItem?, isPlaying: Boolean) {
-        val ws = webSocket ?: return
-        if (!_isConnected.value) return
-
-        try {
-            val presenceUpdate = JSONObject().apply {
-                put("op", 3)
-                put("d", buildPresenceData(track, isPlaying))
-            }
-            ws.send(presenceUpdate.toString())
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating Discord presence", e)
+            Log.e(TAG, "Error updating Discord RPC activity: ${e.message}")
         }
     }
 }
