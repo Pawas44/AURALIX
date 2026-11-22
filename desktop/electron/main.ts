@@ -15,7 +15,7 @@ function createWindow() {
     backgroundColor: '#0B0C10',
     show: false,
     webPreferences: {
-      preload: join(__dirname, 'preload.js'),
+      preload: join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false // Enable seamless streaming without CORS blocks

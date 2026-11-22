@@ -3,20 +3,20 @@
   "productName": "Auralix",
   "version": "1.0.0",
   "description": "Auralix — Premium Modern Desktop Music Player for PC",
-  "type": "module",
-  "main": "dist-electron/main.js",
+  "main": "dist-electron/main.cjs",
   "private": true,
   "scripts": {
     "dev": "concurrently -k -s first \"npm:dev:renderer\" \"npm:dev:app\"",
     "dev:renderer": "vite",
     "dev:app": "wait-on tcp:127.0.0.1:5173 && npm run build:electron && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
-    "build:electron": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --outdir=dist-electron --external:electron --external:discord-rpc",
+    "build:electron": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --outdir=dist-electron --out-extension:.js=.cjs --external:electron --external:discord-rpc",
     "build": "npm run build:electron && vite build",
     "dist": "npm run build && electron-builder"
   },
   "build": {
     "appId": "com.auralix.desktop",
     "productName": "Auralix",
+    "forceCodeSigning": false,
     "directories": {
       "output": "release"
     },
@@ -25,14 +25,8 @@
       "dist-electron/**/*"
     ],
     "win": {
-      "target": "nsis",
-      "artifactName": "Auralix-Setup-${version}.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "deleteAppDataOnUninstall": false,
-      "shortcutName": "Auralix"
+      "target": "dir",
+      "signAndEditExecutable": false
     }
   },
   "dependencies": {
