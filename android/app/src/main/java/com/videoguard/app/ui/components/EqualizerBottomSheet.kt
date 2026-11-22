@@ -7,7 +7,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -22,35 +21,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.videoguard.app.audio.EqualizerEngine
-import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * LastWave-Native Inspired Audiophile 15-Band Equalizer Sheet.
+ * Butter-Smooth Pro Studio Graphic Equalizer.
+ * Designed with native Material 3 Slider components for instant, zero-lag touch response.
  * Features:
- * - 15 ISO 2/3-Octave center frequencies (25 Hz to 16 kHz)
- * - Gain range: -8 dB to +8 dB (0.1 dB resolution)
- * - Interactive Dynamic Bézier Spline Curve Visualizer with dashed 0 dB baseline & ±8 dB grids
- * - Tactile Hardware Capsule Sliders with double-grip ridges & dynamic baseline fill
- * - Band categories: SUB, BASS, LOW-MID, MID, HIGH-MID, PRES, AIR
- * - LastWave Curated Audiophile Presets (Studio Master, Deep Bass Clean, Vocal Clarity, etc.)
- * - Bass Boost & 3D Spatial Virtualizer enhancers
+ * - 10 ISO Octave Bands (31 Hz to 16 kHz) with sound description tags
+ * - 12 Curated Presets (Bass Boost, Vocal Clarity, Rock, EDM, etc.)
+ * - Live Bézier Spline Graphic Visualizer
+ * - Deep Bass Boost & 3D Spatial Virtualizer enhancers
+ * - 1-Tap Reset button
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,70 +56,71 @@ fun EqualizerBottomSheet(
     val bandLevels by EqualizerEngine.bandLevels.collectAsState()
     val bassBoost by EqualizerEngine.bassBoostPercent.collectAsState()
     val virtualizer by EqualizerEngine.virtualizerPercent.collectAsState()
+    val view = LocalView.current
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = Color(0xF20F0F16), // Dark obsidian
+        containerColor = Color(0xF20F1018), // Obsidian glass
         dragHandle = { BottomSheetDefaults.DragHandle(color = Color.White.copy(alpha = 0.35f)) },
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 36.dp)
+                .padding(bottom = 32.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Header: Title, Reset Button, Master Switch, Close Button
+            // Header Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                    .padding(horizontal = 20.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
+                            .size(40.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFF22173B))
-                            .border(BorderStroke(1.dp, Color(0xFFC084FC).copy(alpha = 0.5f)), CircleShape),
+                            .background(Color(0xFF2E1955))
+                            .border(BorderStroke(1.dp, Color(0xFFC084FC).copy(alpha = 0.6f)), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.GraphicEq,
                             contentDescription = null,
                             tint = Color(0xFFC084FC),
-                            modifier = Modifier.size(20.dp)
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "EQUALIZER",
+                                text = "STUDIO EQUALIZER",
                                 color = Color.White,
-                                fontSize = 17.sp,
+                                fontSize = 16.5.sp,
                                 fontWeight = FontWeight.Black,
-                                letterSpacing = 1.2.sp
+                                letterSpacing = 1.sp
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = Color(0xFF8B5CF6).copy(alpha = 0.2f),
-                                border = BorderStroke(0.5.dp, Color(0xFFC084FC).copy(alpha = 0.4f))
+                                color = Color(0xFF8B5CF6).copy(alpha = 0.25f),
+                                border = BorderStroke(0.5.dp, Color(0xFFC084FC).copy(alpha = 0.5f))
                             ) {
                                 Text(
-                                    text = "15-BAND ISO",
+                                    text = "10-BAND ISO",
                                     color = Color(0xFFD8B4FE),
                                     fontSize = 9.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                 )
                             }
                         }
                         Text(
-                            text = "Audiophile DSP • LastWave Native Engine",
+                            text = "Real-time DSP • App Audio Only",
                             color = Color(0xFF9E9EAF),
                             fontSize = 11.5.sp
                         )
@@ -134,24 +129,33 @@ fun EqualizerBottomSheet(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     // Reset to Flat button
-                    IconButton(
-                        onClick = { EqualizerEngine.resetToFlat() },
+                    FilledTonalIconButton(
+                        onClick = {
+                            view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                            EqualizerEngine.resetToFlat()
+                        },
                         enabled = isEnabled,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(34.dp),
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = Color(0xFF1F202E),
+                            contentColor = Color(0xFFD1D5DB)
+                        )
                     ) {
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Reset EQ",
-                            tint = if (isEnabled) Color(0xFFA5ABC0) else Color(0xFF555566),
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(17.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
 
                     Switch(
                         checked = isEnabled,
-                        onCheckedChange = { EqualizerEngine.setEnabled(it) },
+                        onCheckedChange = {
+                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                            EqualizerEngine.setEnabled(it)
+                        },
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White,
                             checkedTrackColor = Color(0xFF8B5CF6),
@@ -162,48 +166,65 @@ fun EqualizerBottomSheet(
 
                     Spacer(modifier = Modifier.width(6.dp))
 
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(30.dp)) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                     }
                 }
             }
 
-            HorizontalDivider(color = Color(0xFF222230), thickness = 0.8.dp, modifier = Modifier.padding(vertical = 8.dp))
+            HorizontalDivider(
+                color = Color(0xFF222230),
+                thickness = 0.8.dp,
+                modifier = Modifier.padding(vertical = 10.dp)
+            )
 
-            // Interactive Dynamic Bézier Frequency Spline Curve Visualizer
+            // Live Graphic Bézier Spline Curve Visualizer
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-                    .height(130.dp)
+                    .padding(horizontal = 18.dp, vertical = 4.dp)
+                    .height(110.dp)
                     .clip(RoundedCornerShape(18.dp))
-                    .background(Color(0xFF13131F))
+                    .background(Color(0xFF13141F))
                     .border(BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.35f)), RoundedCornerShape(18.dp))
             ) {
-                EqualizerCurveGraph(
+                LiveSplineCurveGraph(
                     bandLevels = bandLevels,
                     isEnabled = isEnabled,
                     modifier = Modifier.fillMaxSize()
                 )
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Presets Horizontal Chips Row
-            Text(
-                text = "AUDIOPHILE PRESETS",
-                color = Color(0xFFA5ABC0),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp)
-            )
+            // Presets Horizontal Row
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "PRESETS",
+                    color = Color(0xFFA5ABC0),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = "Active: $currentPreset",
+                    color = Color(0xFFC084FC),
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 EqualizerEngine.PRESETS.keys.forEach { presetName ->
@@ -211,11 +232,12 @@ fun EqualizerBottomSheet(
                     Surface(
                         onClick = {
                             if (isEnabled) {
+                                view.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
                                 EqualizerEngine.setPreset(presetName)
                             }
                         },
                         shape = RoundedCornerShape(20.dp),
-                        color = if (isSelected) Color(0xFF381F68) else Color(0xFF1B1B28),
+                        color = if (isSelected) Color(0xFF451A7A) else Color(0xFF191A28),
                         border = BorderStroke(
                             1.dp,
                             if (isSelected) Color(0xFFC084FC) else Color.White.copy(alpha = 0.08f)
@@ -228,8 +250,8 @@ fun EqualizerBottomSheet(
                     ) {
                         Text(
                             text = presetName,
-                            color = if (isSelected) Color(0xFFF3E8FF) else Color(0xFFC2C4D6),
-                            fontSize = 12.5.sp,
+                            color = if (isSelected) Color(0xFFF5F3FF) else Color(0xFFC0C2D4),
+                            fontSize = 12.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                         )
@@ -237,64 +259,109 @@ fun EqualizerBottomSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // 15-Band Hardware Capsule Tactile Slider Rack
+            // 10-Band Sliders with Butter-Smooth Material 3 Sliders
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = Color(0xFF151522),
+                color = Color(0xFF141522),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
             ) {
-                Column(modifier = Modifier.padding(top = 16.dp, bottom = 16.dp)) {
+                Column(modifier = Modifier.padding(16.dp)) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "15-BAND ISO CAPSULE CONSOLE",
+                            text = "FREQUENCY BANDS",
                             color = Color(0xFFA5ABC0),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp
                         )
                         Text(
-                            text = "-8 dB  to  +8 dB",
+                            text = "-10 dB  to  +10 dB",
                             color = Color(0xFF717188),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    // Horizontal scrollable rack of 15 vertical capsule sliders
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        EqualizerEngine.EQ_BAND_FREQS_HZ.forEachIndexed { index, freqHz ->
-                            val level = bandLevels.getOrElse(index) { 0.0f }
-                            val category = EqualizerEngine.getCategoryForBand(freqHz)
-                            val label = EqualizerEngine.FREQUENCY_LABELS[index]
+                    EqualizerEngine.FREQUENCIES.forEachIndexed { index, _ ->
+                        val label = EqualizerEngine.FREQUENCY_LABELS[index]
+                        val desc = EqualizerEngine.FREQUENCY_DESCRIPTIONS[index]
+                        val level = bandLevels.getOrElse(index) { 0f }
+                        val formattedDb = if (level > 0) "+${level.roundToInt()} dB" else "${level.roundToInt()} dB"
 
-                            CapsuleBandSlider(
-                                index = index,
-                                label = label,
-                                category = category,
-                                gainDb = level,
-                                isEnabled = isEnabled,
-                                onGainChange = { newDb ->
-                                    EqualizerEngine.setBandLevel(index, newDb)
+                        Column(modifier = Modifier.padding(vertical = 5.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = label,
+                                        color = Color.White,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "• $desc",
+                                        color = Color(0xFF94A3B8),
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Normal
+                                    )
                                 }
+
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (level != 0f && isEnabled) Color(0xFF8B5CF6).copy(alpha = 0.25f) else Color(0xFF222230),
+                                    border = BorderStroke(0.5.dp, if (level != 0f && isEnabled) Color(0xFFC084FC).copy(alpha = 0.5f) else Color.White.copy(alpha = 0.08f))
+                                ) {
+                                    Text(
+                                        text = formattedDb,
+                                        color = if (level != 0f && isEnabled) Color(0xFFD8B4FE) else Color(0xFF78788C),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            // Native Material 3 Slider (Butter smooth, zero touch conflict)
+                            Slider(
+                                value = level,
+                                onValueChange = { newGain ->
+                                    if (isEnabled) {
+                                        val rounded = newGain.roundToInt().toFloat()
+                                        if (rounded != level) {
+                                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                                        }
+                                        EqualizerEngine.setBandLevel(index, rounded)
+                                    }
+                                },
+                                valueRange = -10f..10f,
+                                steps = 19, // 1 dB per step
+                                enabled = isEnabled,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color(0xFFC084FC),
+                                    activeTrackColor = Color(0xFF8B5CF6),
+                                    inactiveTrackColor = Color(0xFF272738),
+                                    disabledThumbColor = Color(0xFF4B4B58),
+                                    disabledActiveTrackColor = Color(0xFF323242)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(34.dp)
                             )
                         }
                     }
@@ -303,10 +370,10 @@ fun EqualizerBottomSheet(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Audio FX Section: Bass Boost & 3D Spatial Virtualizer
+            // Enhancers: Deep Bass Boost & 3D Spatial Virtualizer
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = Color(0xFF151522),
+                color = Color(0xFF141522),
                 border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -340,20 +407,21 @@ fun EqualizerBottomSheet(
                     Slider(
                         value = bassBoost.toFloat(),
                         onValueChange = {
-                            if (isEnabled) EqualizerEngine.setBassBoost(it.toInt())
+                            if (isEnabled) EqualizerEngine.setBassBoost(it.roundToInt())
                         },
                         valueRange = 0f..100f,
                         enabled = isEnabled,
                         colors = SliderDefaults.colors(
                             thumbColor = Color(0xFFC084FC),
                             activeTrackColor = Color(0xFF8B5CF6),
-                            inactiveTrackColor = Color(0xFF282838)
-                        )
+                            inactiveTrackColor = Color(0xFF272738)
+                        ),
+                        modifier = Modifier.fillMaxWidth().height(36.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                    // 3D Virtualizer (Surround Sound) Slider
+                    // 3D Spatial Virtualizer Slider
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -362,7 +430,7 @@ fun EqualizerBottomSheet(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.SurroundSound, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("3D Spatial Virtualizer", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text("3D Spatial Soundstage", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                         }
                         Text("$virtualizer%", color = if (isEnabled) Color(0xFF38BDF8) else Color(0xFF888899), fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
@@ -370,15 +438,16 @@ fun EqualizerBottomSheet(
                     Slider(
                         value = virtualizer.toFloat(),
                         onValueChange = {
-                            if (isEnabled) EqualizerEngine.setVirtualizer(it.toInt())
+                            if (isEnabled) EqualizerEngine.setVirtualizer(it.roundToInt())
                         },
                         valueRange = 0f..100f,
                         enabled = isEnabled,
                         colors = SliderDefaults.colors(
                             thumbColor = Color(0xFF38BDF8),
                             activeTrackColor = Color(0xFF0284C7),
-                            inactiveTrackColor = Color(0xFF282838)
-                        )
+                            inactiveTrackColor = Color(0xFF272738)
+                        ),
+                        modifier = Modifier.fillMaxWidth().height(36.dp)
                     )
                 }
             }
@@ -387,55 +456,30 @@ fun EqualizerBottomSheet(
 }
 
 /**
- * LastWave Bézier Spline Curve Canvas Visualizer.
- * Draws:
- * - Top +8 dB dashed grid line
- * - Center 0 dB dashed baseline
- * - Bottom -8 dB dashed grid line
- * - Smooth cubic Bézier spline across the 15 band points
- * - Vertical gradient area fill from curve down to center
- * - Highlight nodes for each band
+ * Live Continuous Spline Visualizer Canvas.
  */
 @Composable
-fun EqualizerCurveGraph(
+fun LiveSplineCurveGraph(
     bandLevels: List<Float>,
     isEnabled: Boolean,
     modifier: Modifier = Modifier
 ) {
     Canvas(
-        modifier = modifier.padding(horizontal = 20.dp, vertical = 14.dp)
+        modifier = modifier.padding(horizontal = 20.dp, vertical = 12.dp)
     ) {
         val w = size.width
         val h = size.height
         val centerY = h / 2f
-        val maxGain = EqualizerEngine.EQ_MAX_GAIN_DB
+        val maxGain = EqualizerEngine.MAX_GAIN_DB
         val stepX = w / (bandLevels.size - 1).coerceAtLeast(1)
 
-        val dashEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
-
-        // +8 dB Top Grid line
-        drawLine(
-            color = Color.White.copy(alpha = 0.08f),
-            start = Offset(0f, 6f),
-            end = Offset(w, 6f),
-            strokeWidth = 1.dp.toPx(),
-            pathEffect = dashEffect
-        )
+        val dashEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
 
         // Center 0 dB Baseline
         drawLine(
-            color = Color.White.copy(alpha = 0.20f),
+            color = Color.White.copy(alpha = 0.15f),
             start = Offset(0f, centerY),
             end = Offset(w, centerY),
-            strokeWidth = 1.2.dp.toPx(),
-            pathEffect = dashEffect
-        )
-
-        // -8 dB Bottom Grid line
-        drawLine(
-            color = Color.White.copy(alpha = 0.08f),
-            start = Offset(0f, h - 6f),
-            end = Offset(w, h - 6f),
             strokeWidth = 1.dp.toPx(),
             pathEffect = dashEffect
         )
@@ -445,7 +489,7 @@ fun EqualizerCurveGraph(
         val points = bandLevels.mapIndexed { i, db ->
             val x = i * stepX
             val normalized = (db / maxGain).coerceIn(-1f, 1f)
-            val y = centerY - (normalized * (centerY - 10f))
+            val y = centerY - (normalized * (centerY - 8f))
             Offset(x, y)
         }
 
@@ -458,7 +502,7 @@ fun EqualizerCurveGraph(
             splinePath.cubicTo(cpX, p0.y, cpX, p1.y, p1.x, p1.y)
         }
 
-        // Closed path for subtle gradient fill
+        // Fill below spline
         val fillPath = Path().apply {
             addPath(splinePath)
             lineTo(points.last().x, h)
@@ -471,7 +515,7 @@ fun EqualizerCurveGraph(
             brush = Brush.verticalGradient(
                 colors = listOf(
                     Color(0xFF8B5CF6).copy(alpha = 0.35f),
-                    Color(0xFF38BDF8).copy(alpha = 0.12f),
+                    Color(0xFF38BDF8).copy(alpha = 0.10f),
                     Color.Transparent
                 ),
                 startY = 0f,
@@ -479,7 +523,7 @@ fun EqualizerCurveGraph(
             )
         )
 
-        // Spline Curve Stroke
+        // Stroke line
         drawPath(
             path = splinePath,
             brush = Brush.horizontalGradient(
@@ -490,215 +534,21 @@ fun EqualizerCurveGraph(
                     Color(0xFF818CF8)
                 )
             ),
-            style = Stroke(width = 2.8.dp.toPx(), cap = StrokeCap.Round)
+            style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
         )
 
-        // Highlight Glowing Node Points
+        // Node dots
         points.forEach { pt ->
             drawCircle(
                 color = Color(0xFFC084FC),
-                radius = 3.5.dp.toPx(),
+                radius = 3.dp.toPx(),
                 center = pt
             )
             drawCircle(
                 color = Color.White,
-                radius = 1.8.dp.toPx(),
+                radius = 1.5.dp.toPx(),
                 center = pt
             )
         }
-    }
-}
-
-/**
- * Tactile Hardware Capsule Band Slider.
- * Emulates the tactile LastWave-Native mixer capsule thumb with double-grip ridges
- * and dynamic baseline fill.
- */
-@Composable
-fun CapsuleBandSlider(
-    index: Int,
-    label: String,
-    category: String,
-    gainDb: Float,
-    isEnabled: Boolean,
-    onGainChange: (Float) -> Unit
-) {
-    val view = LocalView.current
-    var wasZero by remember { mutableStateOf(gainDb == 0f) }
-
-    // Category badge color
-    val catColor = when (category) {
-        "SUB" -> Color(0xFFF43F5E)
-        "BASS" -> Color(0xFFFB923C)
-        "LOW-MID" -> Color(0xFFFBBF24)
-        "MID" -> Color(0xFF34D399)
-        "HIGH-MID" -> Color(0xFF38BDF8)
-        "PRES" -> Color(0xFF818CF8)
-        else -> Color(0xFFA855F7) // AIR
-    }
-
-    val formattedDb = if (gainDb > 0) "+%.1f".format(Locale.US, gainDb) else "%.1f".format(Locale.US, gainDb)
-
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .width(52.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFF1B1B29))
-            .padding(vertical = 10.dp, horizontal = 4.dp)
-    ) {
-        // Category Tag Badge
-        Surface(
-            shape = RoundedCornerShape(4.dp),
-            color = catColor.copy(alpha = 0.2f),
-            border = BorderStroke(0.5.dp, catColor.copy(alpha = 0.5f))
-        ) {
-            Text(
-                text = category,
-                color = catColor,
-                fontSize = 8.5.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // dB Readout
-        Text(
-            text = formattedDb,
-            color = if (gainDb != 0f && isEnabled) Color(0xFFE2E8F0) else Color(0xFF717188),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            fontFamily = FontFamily.Monospace
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Vertical Tactile Capsule Track & Thumb
-        val sliderHeight = 140.dp
-        Box(
-            modifier = Modifier
-                .width(32.dp)
-                .height(sliderHeight)
-                .pointerInput(isEnabled) {
-                    if (!isEnabled) return@pointerInput
-                    detectVerticalDragGestures { change, dragAmount ->
-                        change.consume()
-                        // 140dp total, -8 to +8 dB (16 dB span)
-                        val deltaDb = -(dragAmount / 140f.coerceAtLeast(1f)) * 16f
-                        val newDb = ((gainDb + deltaDb) * 10f).roundToInt() / 10f
-                        val clamped = newDb.coerceIn(-EqualizerEngine.EQ_MAX_GAIN_DB, EqualizerEngine.EQ_MAX_GAIN_DB)
-
-                        // Haptic feedback when crossing 0 dB baseline
-                        if ((gainDb > 0f && clamped <= 0f) || (gainDb < 0f && clamped >= 0f)) {
-                            if (!wasZero) {
-                                view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
-                                wasZero = true
-                            }
-                        } else {
-                            wasZero = false
-                        }
-
-                        onGainChange(clamped)
-                    }
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val trackWidth = 8.dp.toPx()
-                val trackHeight = size.height
-                val trackX = (size.width - trackWidth) / 2f
-                val centerY = trackHeight / 2f
-                val maxGain = EqualizerEngine.EQ_MAX_GAIN_DB
-
-                // Background capsule track
-                drawRoundRect(
-                    color = Color(0xFF26263A),
-                    topLeft = Offset(trackX, 0f),
-                    size = Size(trackWidth, trackHeight),
-                    cornerRadius = CornerRadius(trackWidth / 2f, trackWidth / 2f)
-                )
-
-                // 0 dB center tick mark
-                drawLine(
-                    color = Color.White.copy(alpha = 0.4f),
-                    start = Offset(trackX - 3.dp.toPx(), centerY),
-                    end = Offset(trackX + trackWidth + 3.dp.toPx(), centerY),
-                    strokeWidth = 1.5.dp.toPx()
-                )
-
-                // Dynamic baseline fill from 0 dB to thumb
-                val thumbY = centerY - (gainDb / maxGain) * (centerY - 12.dp.toPx())
-                if (gainDb != 0f && isEnabled) {
-                    val fillTop = minOf(centerY, thumbY)
-                    val fillHeight = kotlin.math.abs(centerY - thumbY)
-                    val fillColor = if (gainDb > 0) Color(0xFFC084FC) else Color(0xFF38BDF8)
-
-                    drawRoundRect(
-                        color = fillColor.copy(alpha = 0.85f),
-                        topLeft = Offset(trackX, fillTop),
-                        size = Size(trackWidth, fillHeight),
-                        cornerRadius = CornerRadius(trackWidth / 2f, trackWidth / 2f)
-                    )
-                }
-
-                // Hardware capsule thumb with double-grip ridges
-                val thumbWidth = 26.dp.toPx()
-                val thumbHeight = 36.dp.toPx()
-                val thumbLeft = (size.width - thumbWidth) / 2f
-                val thumbTop = thumbY - (thumbHeight / 2f)
-
-                // Thumb outer capsule
-                drawRoundRect(
-                    color = if (isEnabled) Color(0xFFE0E7FF) else Color(0xFF4B5563),
-                    topLeft = Offset(thumbLeft, thumbTop),
-                    size = Size(thumbWidth, thumbHeight),
-                    cornerRadius = CornerRadius(10.dp.toPx(), 10.dp.toPx())
-                )
-
-                // Thumb border
-                drawRoundRect(
-                    color = Color(0xFF1E1B4B),
-                    topLeft = Offset(thumbLeft, thumbTop),
-                    size = Size(thumbWidth, thumbHeight),
-                    cornerRadius = CornerRadius(10.dp.toPx(), 10.dp.toPx()),
-                    style = Stroke(width = 1.2.dp.toPx())
-                )
-
-                // Tactile hardware double horizontal grip ridges
-                val gripColor = Color(0xFF475569)
-                val gripWidth = 12.dp.toPx()
-                val gripLeft = (size.width - gripWidth) / 2f
-                val ridge1Y = thumbY - 3.5.dp.toPx()
-                val ridge2Y = thumbY + 3.5.dp.toPx()
-
-                drawLine(
-                    color = gripColor,
-                    start = Offset(gripLeft, ridge1Y),
-                    end = Offset(gripLeft + gripWidth, ridge1Y),
-                    strokeWidth = 1.6.dp.toPx(),
-                    cap = StrokeCap.Round
-                )
-                drawLine(
-                    color = gripColor,
-                    start = Offset(gripLeft, ridge2Y),
-                    end = Offset(gripLeft + gripWidth, ridge2Y),
-                    strokeWidth = 1.6.dp.toPx(),
-                    cap = StrokeCap.Round
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // Band Frequency Label (e.g. 25 Hz, 1 kHz, 16 kHz)
-        Text(
-            text = label,
-            color = Color.White,
-            fontSize = 10.5.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1
-        )
     }
 }

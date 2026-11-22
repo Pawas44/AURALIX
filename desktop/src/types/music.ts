@@ -27,24 +27,23 @@ export interface Playlist {
 }
 
 export type EqualizerPresetName =
-  | 'Studio Master'
-  | 'Acoustic'
+  | 'Flat'
+  | 'Bass Boost'
   | 'Vocal Clarity'
-  | 'Classical'
-  | 'Jazz'
   | 'Rock'
   | 'Pop'
-  | 'Treble Air'
-  | 'Deep Bass Clean'
-  | 'Electronic'
-  | 'R&B'
-  | 'Default (Flat)'
+  | 'Hip-Hop'
+  | 'Electronic / EDM'
+  | 'Jazz'
+  | 'Classical'
+  | 'Acoustic'
+  | 'Treble Boost'
   | 'Custom'
 
 export interface EqualizerState {
   enabled: boolean
   preset: EqualizerPresetName
-  bands: number[] // 15 ISO Bands: 25Hz to 16kHz (-8 to +8 dB)
+  bands: number[] // 10 ISO Bands: 31Hz to 16kHz (-10 to +10 dB)
   bassBoost: number // 0 to 100%
   virtualizer: number // 0 to 100%
 }

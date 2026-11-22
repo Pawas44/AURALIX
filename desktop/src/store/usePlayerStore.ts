@@ -48,10 +48,10 @@ interface PlayerStore {
 
 const defaultEq: EqualizerState = {
   enabled: true,
-  preset: 'Studio Master',
-  bands: EQUALIZER_PRESETS['Studio Master'],
-  bassBoost: 25,
-  virtualizer: 15
+  preset: 'Bass Boost',
+  bands: EQUALIZER_PRESETS['Bass Boost'],
+  bassBoost: 30,
+  virtualizer: 20
 }
 
 export const usePlayerStore = create<PlayerStore>((set, get) => {

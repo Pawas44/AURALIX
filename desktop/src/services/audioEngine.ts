@@ -1,37 +1,30 @@
 import { EqualizerPresetName, EqualizerState } from '../types/music'
 
-export const FREQUENCIES = [25, 40, 63, 100, 160, 250, 400, 630, 1000, 1600, 2500, 4000, 6300, 10000, 16000]
+export const FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
 
 export const FREQUENCY_LABELS = [
-  '25 Hz', '40 Hz', '63 Hz', '100 Hz', '160 Hz',
-  '250 Hz', '400 Hz', '630 Hz', '1 kHz', '1.6 kHz',
-  '2.5 kHz', '4 kHz', '6.3 kHz', '10 kHz', '16 kHz'
+  '31 Hz', '62 Hz', '125 Hz', '250 Hz', '500 Hz',
+  '1 kHz', '2 kHz', '4 kHz', '8 kHz', '16 kHz'
 ]
 
-export function getCategoryForFreq(freqHz: number): string {
-  if (freqHz <= 40) return 'SUB'
-  if (freqHz <= 100) return 'BASS'
-  if (freqHz <= 250) return 'LOW-MID'
-  if (freqHz <= 1000) return 'MID'
-  if (freqHz <= 2500) return 'HIGH-MID'
-  if (freqHz <= 6300) return 'PRES'
-  return 'AIR'
-}
+export const FREQUENCY_DESCRIPTIONS = [
+  'Sub-Bass', 'Bass Punch', 'Warmth', 'Low-Mid', 'Mids Body',
+  'Vocal Presence', 'Clarity', 'Treble Bite', 'Brilliance', 'Air'
+]
 
 export const EQUALIZER_PRESETS: Record<EqualizerPresetName, number[]> = {
-  'Studio Master': [3.0, 2.5, 1.5, 0.5, -0.5, -1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5],
-  'Acoustic': [1.0, 1.5, 1.0, 0.5, 0.5, 1.0, 1.5, 1.5, 1.0, 1.5, 2.0, 2.5, 2.0, 1.5, 1.0],
-  'Vocal Clarity': [-1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0, 3.0, 3.5, 3.0, 2.0, 1.5, 1.0, 0.5, 0.0],
-  'Classical': [2.5, 2.0, 1.5, 1.0, 0.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 2.5, 2.0, 1.5],
-  'Jazz': [1.5, 2.0, 1.5, 1.0, 0.5, 0.5, 0.5, 1.0, 1.5, 1.5, 1.0, 1.0, 1.5, 2.0, 2.0],
-  'Rock': [3.5, 3.0, 2.0, 1.0, -0.5, -1.0, 0.0, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 3.5, 3.0],
-  'Pop': [2.0, 2.5, 2.0, 1.0, 0.0, 0.5, 1.5, 2.0, 2.0, 1.5, 1.0, 1.5, 2.0, 2.5, 2.0],
-  'Treble Air': [-1.0, -1.0, -0.5, 0.0, 0.0, 0.5, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 6.5],
-  'Deep Bass Clean': [6.0, 5.5, 4.0, 2.5, 0.5, -1.0, -1.5, -1.0, 0.0, 0.5, 0.5, 1.0, 1.0, 1.5, 1.5],
-  'Electronic': [4.5, 4.0, 2.5, 1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.0],
-  'R&B': [4.0, 3.5, 2.5, 1.5, 0.5, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 2.5, 3.0, 3.0],
-  'Default (Flat)': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  'Custom': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  'Flat': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  'Bass Boost': [7, 6, 4, 2, 0, -1, 0, 1, 2, 2],
+  'Vocal Clarity': [-2, -1, 0, 1, 3, 5, 4, 2, 1, 0],
+  'Rock': [5, 4, 2, -1, -1, 1, 3, 4, 5, 5],
+  'Pop': [2, 3, 2, 1, 2, 3, 2, 1, 2, 3],
+  'Hip-Hop': [6, 5, 3, 1, 0, 1, 2, 1, 3, 3],
+  'Electronic / EDM': [6, 5, 3, 0, -1, 2, 3, 4, 5, 5],
+  'Jazz': [3, 2, 1, 2, -1, 1, 2, 3, 2, 2],
+  'Classical': [4, 3, 2, 0, 0, 1, 2, 3, 3, 2],
+  'Acoustic': [2, 2, 1, 2, 2, 2, 3, 3, 2, 2],
+  'Treble Boost': [-2, -1, 0, 0, 1, 2, 4, 6, 7, 8],
+  'Custom': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 }
 
 class AudioEngine {
@@ -61,7 +54,7 @@ class AudioEngine {
 
       this.sourceNode = this.audioCtx.createMediaElementSource(this.audioElement)
 
-      // Create 15-band Peaking Equalizer Filters
+      // Create 10-band Peaking Equalizer Filters
       this.bandFilters = FREQUENCIES.map((freq) => {
         const filter = this.audioCtx!.createBiquadFilter()
         filter.type = 'peaking'
@@ -77,7 +70,7 @@ class AudioEngine {
       this.bassBoostFilter.frequency.value = 80
       this.bassBoostFilter.gain.value = 0
 
-      // Studio Peak Limiter (-1 dBFS threshold to prevent digital clipping)
+      // Studio Peak Limiter
       this.limiterNode = this.audioCtx.createDynamicsCompressor()
       this.limiterNode.threshold.value = -1.0
       this.limiterNode.knee.value = 0.0
@@ -89,7 +82,7 @@ class AudioEngine {
       this.gainNode = this.audioCtx.createGain()
       this.gainNode.gain.value = 1.0
 
-      // Chain: Source -> BassBoost -> 15 Bands -> Limiter -> Gain -> Destination
+      // Chain: Source -> BassBoost -> 10 Bands -> Limiter -> Gain -> Destination
       let lastNode: AudioNode = this.sourceNode
       if (this.bassBoostFilter) {
         lastNode.connect(this.bassBoostFilter)
@@ -123,7 +116,7 @@ class AudioEngine {
 
     const isEnabled = state.enabled
 
-    // Apply 15 bands
+    // Apply 10 bands
     this.bandFilters.forEach((filter, index) => {
       const targetGain = isEnabled ? (state.bands[index] || 0) : 0
       filter.gain.setTargetAtTime(targetGain, this.audioCtx!.currentTime, 0.015)

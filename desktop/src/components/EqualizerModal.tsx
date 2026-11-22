@@ -1,7 +1,7 @@
 import React from 'react'
 import { X, Sliders, Volume2, Sparkles, RotateCcw } from 'lucide-react'
 import { usePlayerStore } from '../store/usePlayerStore'
-import { EQUALIZER_PRESETS, FREQUENCIES, FREQUENCY_LABELS, getCategoryForFreq } from '../services/audioEngine'
+import { EQUALIZER_PRESETS, FREQUENCIES, FREQUENCY_LABELS, FREQUENCY_DESCRIPTIONS } from '../services/audioEngine'
 import { EqualizerPresetName } from '../types/music'
 
 export const EqualizerModal: React.FC = () => {
@@ -19,14 +19,14 @@ export const EqualizerModal: React.FC = () => {
   if (!showEqualizer) return null
 
   const width = 560
-  const height = 110
-  const maxGain = 8 // LastWave ±8 dB
+  const height = 100
+  const maxGain = 10
   const bandCount = FREQUENCIES.length
 
-  // Calculate live Cubic Bezier SVG path across 15 band points
+  // Calculate live Cubic Bezier SVG path across 10 band points
   const points = (equalizer.bands || []).map((gain, i) => {
     const x = (i / (bandCount - 1)) * (width - 40) + 20
-    const y = height / 2 - (gain / maxGain) * (height / 2 - 14)
+    const y = height / 2 - (gain / maxGain) * (height / 2 - 12)
     return { x, y }
   })
 
@@ -47,21 +47,9 @@ export const EqualizerModal: React.FC = () => {
 
   const presetList = Object.keys(EQUALIZER_PRESETS) as EqualizerPresetName[]
 
-  const getCategoryColor = (cat: string) => {
-    switch (cat) {
-      case 'SUB': return 'text-rose-400 border-rose-500/30 bg-rose-500/10'
-      case 'BASS': return 'text-orange-400 border-orange-500/30 bg-orange-500/10'
-      case 'LOW-MID': return 'text-amber-400 border-amber-500/30 bg-amber-500/10'
-      case 'MID': return 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10'
-      case 'HIGH-MID': return 'text-sky-400 border-sky-500/30 bg-sky-500/10'
-      case 'PRES': return 'text-indigo-400 border-indigo-500/30 bg-indigo-500/10'
-      default: return 'text-purple-400 border-purple-500/30 bg-purple-500/10' // AIR
-    }
-  }
-
   return (
     <div className="fixed inset-0 bg-black/75 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fade-in select-none">
-      <div className="w-full max-w-4xl bg-[#0F1017] border border-white/[0.08] rounded-2xl p-6 shadow-2xl relative shadow-purple-900/30 flex flex-col max-h-[92vh] overflow-hidden">
+      <div className="w-full max-w-2xl bg-[#0F1018] border border-white/[0.08] rounded-2xl p-6 shadow-2xl relative shadow-purple-900/30 flex flex-col max-h-[92vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between pb-4 border-b border-white/[0.08]">
           <div className="flex items-center gap-3">
@@ -70,16 +58,16 @@ export const EqualizerModal: React.FC = () => {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-white tracking-wide">LastWave Equalizer</h3>
+                <h3 className="text-base font-bold text-white tracking-wide">Studio Equalizer</h3>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono font-bold border border-purple-500/30">
-                  15-BAND ISO
+                  10-BAND ISO
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 font-mono border border-sky-500/25">
-                  DSP Real-time
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-mono border border-emerald-500/25">
+                  DSP Active
                 </span>
               </div>
               <p className="text-xs text-gray-400">
-                Audiophile Studio Sound Tuning • ±8 dB Precision Range
+                Smooth precision sound tuning • -10 dB to +10 dB
               </p>
             </div>
           </div>
@@ -87,7 +75,7 @@ export const EqualizerModal: React.FC = () => {
           <div className="flex items-center gap-2.5">
             {/* Quick Reset */}
             <button
-              onClick={() => setEqualizerPreset('Default (Flat)')}
+              onClick={() => setEqualizerPreset('Flat')}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-medium text-gray-300 transition-colors border border-white/[0.06]"
               title="Reset to Flat"
             >
@@ -116,16 +104,16 @@ export const EqualizerModal: React.FC = () => {
           </div>
         </div>
 
-        <div className="overflow-y-auto space-y-4 py-4 pr-1 flex-1">
-          {/* Dynamic Bézier Spline Curve Visualizer */}
+        <div className="overflow-y-auto space-y-4 py-4 pr-1 flex-1 scrollbar-thin scrollbar-thumb-white/10">
+          {/* Live Continuous Bézier Spline Curve Visualizer */}
           <div className="bg-[#090A10] border border-white/[0.06] rounded-xl p-3 relative overflow-hidden">
             <div className="absolute top-2 left-3 flex items-center gap-3 text-[10px] text-gray-400 font-mono z-10 pointer-events-none">
-              <span className="text-purple-300 font-semibold">+8 dB</span>
+              <span className="text-purple-300 font-semibold">+10 dB</span>
               <span className="text-gray-500">0 dB Baseline</span>
-              <span className="text-sky-300 font-semibold">-8 dB</span>
+              <span className="text-sky-300 font-semibold">-10 dB</span>
             </div>
 
-            <svg className="w-full h-24 overflow-visible" viewBox={`0 0 ${width} ${height}`}>
+            <svg className="w-full h-20 overflow-visible" viewBox={`0 0 ${width} ${height}`}>
               <defs>
                 <linearGradient id="curveGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.45" />
@@ -140,33 +128,13 @@ export const EqualizerModal: React.FC = () => {
                 </linearGradient>
               </defs>
 
-              {/* +8 dB Top Guideline */}
-              <line
-                x1="10"
-                y1="10"
-                x2={width - 10}
-                y2="10"
-                stroke="rgba(255,255,255,0.06)"
-                strokeDasharray="4 4"
-              />
-
               {/* Zero dB Center Line */}
               <line
                 x1="10"
                 y1={height / 2}
                 x2={width - 10}
                 y2={height / 2}
-                stroke="rgba(255,255,255,0.2)"
-                strokeDasharray="4 4"
-              />
-
-              {/* -8 dB Bottom Guideline */}
-              <line
-                x1="10"
-                y1={height - 10}
-                x2={width - 10}
-                y2={height - 10}
-                stroke="rgba(255,255,255,0.06)"
+                stroke="rgba(255,255,255,0.18)"
                 strokeDasharray="4 4"
               />
 
@@ -197,14 +165,14 @@ export const EqualizerModal: React.FC = () => {
             </svg>
           </div>
 
-          {/* Audiophile Presets Horizontal Row */}
+          {/* Curated Presets Row */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-bold text-gray-400 tracking-wider">
-                AUDIOPHILE PRESETS
+              <span className="text-[11px] font-bold text-gray-400 tracking-wider uppercase">
+                Curated Presets
               </span>
               <span className="text-[11px] text-purple-400 font-medium">
-                Current: {equalizer.preset}
+                Active: {equalizer.preset}
               </span>
             </div>
             <div className="flex gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-white/10">
@@ -216,7 +184,7 @@ export const EqualizerModal: React.FC = () => {
                     onClick={() => setEqualizerPreset(preset)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all ${
                       isSelected
-                        ? 'bg-purple-600/30 text-purple-200 border border-purple-500 shadow-md shadow-purple-900/30 font-semibold'
+                        ? 'bg-purple-600/35 text-purple-200 border border-purple-500 shadow-md shadow-purple-900/40 font-semibold'
                         : 'bg-white/[0.04] text-gray-400 border border-white/[0.05] hover:bg-white/[0.08] hover:text-white'
                     }`}
                   >
@@ -227,61 +195,57 @@ export const EqualizerModal: React.FC = () => {
             </div>
           </div>
 
-          {/* 15-Band Tactile Hardware Capsule Sliders Rack */}
-          <div className="bg-[#12131D] border border-white/[0.06] rounded-xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] font-bold text-gray-400 tracking-wider">
-                15-BAND ISO CAPSULE CONSOLE
+          {/* 10-Band Butter-Smooth Horizontal Sliders */}
+          <div className="bg-[#12131D] border border-white/[0.06] rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-gray-400 tracking-wider uppercase">
+                10-Band Frequency Sliders
               </span>
-              <span className="text-[11px] font-mono text-gray-400">
-                Resolution: 0.1 dB
+              <span className="text-[11px] text-gray-500 font-mono">
+                Range: -10 dB to +10 dB
               </span>
             </div>
 
-            <div className="flex items-end justify-between gap-1 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-white/10">
+            <div className="space-y-2.5">
               {FREQUENCIES.map((freq, index) => {
                 const gain = equalizer.bands[index] ?? 0
-                const cat = getCategoryForFreq(freq)
-                const catStyle = getCategoryColor(cat)
-                const formattedGain = gain > 0 ? `+${gain.toFixed(1)}` : gain.toFixed(1)
+                const label = FREQUENCY_LABELS[index]
+                const desc = FREQUENCY_DESCRIPTIONS[index]
+                const formattedGain = gain > 0 ? `+${Math.round(gain)} dB` : `${Math.round(gain)} dB`
 
                 return (
                   <div
                     key={freq}
-                    className="flex flex-col items-center min-w-[48px] bg-white/[0.02] border border-white/[0.04] rounded-xl py-2 px-1 hover:bg-white/[0.04] transition-colors"
+                    className="bg-white/[0.02] border border-white/[0.04] rounded-xl px-3.5 py-2 hover:bg-white/[0.04] transition-colors"
                   >
-                    {/* Category Badge */}
-                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider mb-1 ${catStyle}`}>
-                      {cat}
-                    </span>
-
-                    {/* Gain dB value */}
-                    <span className="text-[10px] font-mono font-semibold text-gray-300 mb-2">
-                      {formattedGain}
-                    </span>
-
-                    {/* Vertical Slider */}
-                    <div className="h-32 flex items-center justify-center my-1 relative">
-                      <input
-                        type="range"
-                        min="-8"
-                        max="8"
-                        step="0.1"
-                        value={gain}
-                        disabled={!equalizer.enabled}
-                        onChange={(e) => setEqualizerBand(index, parseFloat(e.target.value))}
-                        className="h-28 w-2 appearance-none bg-[#242538] rounded-full outline-none cursor-pointer disabled:cursor-not-allowed accent-purple-400"
-                        style={{
-                          writingMode: 'vertical-lr',
-                          direction: 'rtl'
-                        }}
-                      />
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-white tracking-wide">
+                          {label}
+                        </span>
+                        <span className="text-[11px] text-gray-400">
+                          • {desc}
+                        </span>
+                      </div>
+                      <span className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded ${
+                        gain !== 0 && equalizer.enabled
+                          ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30'
+                          : 'bg-white/[0.04] text-gray-400'
+                      }`}>
+                        {formattedGain}
+                      </span>
                     </div>
 
-                    {/* Frequency label */}
-                    <span className="text-[10px] font-bold text-gray-200 mt-2 text-center whitespace-nowrap">
-                      {FREQUENCY_LABELS[index]}
-                    </span>
+                    <input
+                      type="range"
+                      min="-10"
+                      max="10"
+                      step="1"
+                      value={gain}
+                      disabled={!equalizer.enabled}
+                      onChange={(e) => setEqualizerBand(index, parseInt(e.target.value))}
+                      className="w-full h-1.5 bg-[#25273A] rounded-full appearance-none cursor-pointer accent-purple-400 disabled:opacity-40"
+                    />
                   </div>
                 )
               })}
