@@ -274,6 +274,19 @@ object UserDataRepository {
         }
     }
 
+    fun clearAllDownloads(context: Context) {
+        _offlineTracks.value = emptyList()
+        saveOfflineTracks()
+        try {
+            val dlDir = File(context.filesDir, "downloads")
+            if (dlDir.exists()) dlDir.deleteRecursively()
+            val lrcDir = File(context.filesDir, "lyrics_cache")
+            if (lrcDir.exists()) lrcDir.deleteRecursively()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     fun fetchRealVideoMeta(videoId: String): Triple<String, String, String>? {
         if (videoId.isBlank()) return null
         return try {

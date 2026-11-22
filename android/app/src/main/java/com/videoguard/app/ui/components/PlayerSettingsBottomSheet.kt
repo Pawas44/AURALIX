@@ -16,10 +16,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.videoguard.app.data.AppSettingsRepository
+import com.videoguard.app.data.DiscordRpcEngine
 import com.videoguard.app.service.PlaybackController
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -42,6 +44,12 @@ fun PlayerSettingsBottomSheet(
     val sleepTimerRemaining by PlaybackController.sleepTimerRemainingSeconds.collectAsState()
     val sleepTimerEndOnTrackFinish by PlaybackController.sleepTimerEndOnTrackFinish.collectAsState()
     val currentTrack by PlaybackController.currentTrack.collectAsState()
+    val isSleepTimerFadeOut by AppSettingsRepository.isSleepTimerFadeOut.collectAsState()
+
+    val context = LocalContext.current
+    val isDiscordRpcEnabled by DiscordRpcEngine.isEnabled.collectAsState()
+    val isDiscordConnected by DiscordRpcEngine.isConnected.collectAsState()
+    val discordToken by DiscordRpcEngine.userToken.collectAsState()
 
     var showQualityDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
@@ -49,6 +57,8 @@ fun PlayerSettingsBottomSheet(
     var customSleepMinutes by remember { mutableIntStateOf(20) }
     var showStatsDialog by remember { mutableStateOf(false) }
     var showJamSheet by remember { mutableStateOf(false) }
+    var showDiscordTokenDialog by remember { mutableStateOf(false) }
+    var tempDiscordToken by remember(discordToken) { mutableStateOf(discordToken) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -247,6 +257,42 @@ fun PlayerSettingsBottomSheet(
                     subtitle = "Resolution, ID, codec & channel",
                     onClick = { showStatsDialog = true }
                 )
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+            SettingsSectionHeader("Discord Rich Presence")
+            SettingsGroupCard {
+                SettingsCardSwitchRow(
+                    icon = Icons.Default.SportsEsports,
+                    title = "Discord Rich Presence",
+                    subtitle = if (isDiscordConnected) {
+                        "🟢 Connected: Showing track on Discord profile"
+                    } else if (isDiscordRpcEnabled) {
+                        "🟡 Connecting to Discord..."
+                    } else {
+                        "Show what song you're listening to on Discord"
+                    },
+                    checked = isDiscordRpcEnabled,
+                    onCheckedChange = { enabled ->
+                        if (enabled && discordToken.isBlank()) {
+                            showDiscordTokenDialog = true
+                        } else {
+                            DiscordRpcEngine.setEnabled(context, enabled)
+                        }
+                    }
+                )
+                if (isDiscordRpcEnabled) {
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.06f), thickness = 0.8.dp, modifier = Modifier.padding(vertical = 4.dp))
+                    SettingsRow(
+                        icon = Icons.Default.Key,
+                        title = "Discord User Token",
+                        subtitle = if (discordToken.isNotBlank()) "Token saved (tap to edit)" else "Tap to enter Discord token",
+                        onClick = {
+                            tempDiscordToken = discordToken
+                            showDiscordTokenDialog = true
+                        }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(14.dp))
@@ -474,7 +520,34 @@ fun PlayerSettingsBottomSheet(
                         }
                     }
 
-                    HorizontalDivider(color = Color(0xFF383838), thickness = 1.dp, modifier = Modifier.padding(vertical = 10.dp))
+                    HorizontalDivider(color = Color(0xFF383838), thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
+
+                    // Smart Sleep Timer Fade-Out Switch
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { AppSettingsRepository.setSleepTimerFadeOut(!isSleepTimerFadeOut) }
+                            .padding(vertical = 6.dp, horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Smart Volume Fade-Out", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Smoothly lowers volume over final 30s so sleep isn't disturbed", color = Color(0xFFAAAAAA), fontSize = 11.sp)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Switch(
+                            checked = isSleepTimerFadeOut,
+                            onCheckedChange = { AppSettingsRepository.setSleepTimerFadeOut(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFFB39DDB)
+                            )
+                        )
+                    }
+
+                    HorizontalDivider(color = Color(0xFF383838), thickness = 1.dp, modifier = Modifier.padding(vertical = 8.dp))
 
                     Text("Custom Duration", color = Color(0xFFAAAAAA), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(8.dp))
@@ -580,6 +653,77 @@ fun PlayerSettingsBottomSheet(
 
     if (showJamSheet) {
         ListenTogetherSheet(onDismiss = { showJamSheet = false })
+    }
+
+    // Discord User Token Dialog
+    if (showDiscordTokenDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscordTokenDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.SportsEsports,
+                        contentDescription = null,
+                        tint = Color(0xFF5865F2),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Discord Rich Presence", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Enter your Discord authorization token to display 'Listening to [Song] on AURALIX' across your Discord profiles.",
+                        color = Color(0xFFCCCCCC),
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = tempDiscordToken,
+                        onValueChange = { tempDiscordToken = it },
+                        label = { Text("Discord User Token", color = Color(0xFFAAAAAA), fontSize = 12.sp) },
+                        placeholder = { Text("Paste user token", color = Color(0xFF666666)) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF5865F2),
+                            unfocusedBorderColor = Color(0xFF444444)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Your token is saved privately on your device and connected directly to Discord Gateway wss://gateway.discord.gg.",
+                        color = Color(0xFF888888),
+                        fontSize = 11.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val clean = tempDiscordToken.trim()
+                        DiscordRpcEngine.setToken(context, clean)
+                        if (clean.isNotBlank()) {
+                            DiscordRpcEngine.setEnabled(context, true)
+                        }
+                        showDiscordTokenDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5865F2))
+                ) {
+                    Text("Save & Connect", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscordTokenDialog = false }) {
+                    Text("Cancel", color = Color(0xFFAAAAAA))
+                }
+            },
+            containerColor = Color(0xFF1E212B),
+            shape = RoundedCornerShape(16.dp)
+        )
     }
 }
 

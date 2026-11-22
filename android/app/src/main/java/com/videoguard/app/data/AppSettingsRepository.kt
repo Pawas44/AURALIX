@@ -14,6 +14,7 @@ object AppSettingsRepository {
     private const val KEY_STREAMING_QUALITY = "streaming_quality"
     private const val KEY_DOWNLOAD_QUALITY = "download_quality"
     private const val KEY_VOLUME_LEVELING = "volume_leveling"
+    private const val KEY_SLEEP_TIMER_FADE_OUT = "sleep_timer_fade_out"
 
     private var prefs: SharedPreferences? = null
 
@@ -31,6 +32,9 @@ object AppSettingsRepository {
     private val _volumeLeveling = MutableStateFlow("Normal")
     val volumeLeveling: StateFlow<String> = _volumeLeveling.asStateFlow()
 
+    private val _sleepTimerFadeOut = MutableStateFlow(true)
+    val isSleepTimerFadeOut: StateFlow<Boolean> = _sleepTimerFadeOut.asStateFlow()
+
     fun init(context: Context) {
         val sp = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs = sp
@@ -41,6 +45,7 @@ object AppSettingsRepository {
         _streamingQuality.value = sp.getString(KEY_STREAMING_QUALITY, "Lossless") ?: "Lossless"
         _downloadQuality.value = sp.getString(KEY_DOWNLOAD_QUALITY, "High") ?: "High"
         _volumeLeveling.value = sp.getString(KEY_VOLUME_LEVELING, "Normal") ?: "Normal"
+        _sleepTimerFadeOut.value = sp.getBoolean(KEY_SLEEP_TIMER_FADE_OUT, true)
         applyStreamingQuality(_streamingQuality.value)
         val savedVideoQuality = sp.getString("playback_video_quality", "Auto (1080p)") ?: "Auto (1080p)"
         PlaybackController.setPlaybackQuality(savedVideoQuality)
@@ -88,6 +93,11 @@ object AppSettingsRepository {
         _volumeLeveling.value = level
         prefs?.edit()?.putString(KEY_VOLUME_LEVELING, level)?.apply()
         applyVolumeLeveling(level)
+    }
+
+    fun setSleepTimerFadeOut(enabled: Boolean) {
+        _sleepTimerFadeOut.value = enabled
+        prefs?.edit()?.putBoolean(KEY_SLEEP_TIMER_FADE_OUT, enabled)?.apply()
     }
 
     private fun applyVolumeLeveling(level: String) {

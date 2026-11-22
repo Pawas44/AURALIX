@@ -85,6 +85,8 @@ fun PlaylistDetailScreen(
     var addSongSearchQuery by remember { mutableStateOf("") }
     var addSongResults by remember { mutableStateOf<List<VideoItem>>(emptyList()) }
     var isSearchingAddSong by remember { mutableStateOf(false) }
+    var songToDelete by remember { mutableStateOf<VideoItem?>(null) }
+    var showClearAllDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     suspend fun refreshVideos() {
@@ -377,6 +379,21 @@ fun PlaylistDetailScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
+                        } else if (currentVideos.isNotEmpty()) {
+                            IconButton(
+                                onClick = { showClearAllDialog = true },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(Color(0xFF3B1E1E))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteSweep,
+                                    contentDescription = "Delete All Downloads",
+                                    tint = Color(0xFFFF5252),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
 
@@ -434,10 +451,11 @@ fun PlaylistDetailScreen(
                     PlaylistItemRow(
                         index = index + 1,
                         video = video,
+                        isDownloads = isDownloads,
                         onClick = { onVideoSelected(video, currentVideos) },
                         onRemove = {
                             if (isDownloads) {
-                                UserDataRepository.deleteDownload(context, video.id)
+                                songToDelete = video
                             } else {
                                 UserDataRepository.removeVideoFromPlaylist(playlist.id, video.id)
                             }
@@ -551,12 +569,94 @@ fun PlaylistDetailScreen(
             }
         }
     }
+
+    if (songToDelete != null) {
+        val target = songToDelete!!
+        AlertDialog(
+            onDismissRequest = { songToDelete = null },
+            title = {
+                Text(
+                    text = "Delete Download",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to remove \"${target.title}\" from your offline storage?",
+                    color = Color(0xFFCCCCCC),
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        UserDataRepository.deleteDownload(context, target.id)
+                        songToDelete = null
+                        android.widget.Toast.makeText(context, "Removed from offline downloads", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252))
+                ) {
+                    Text("Delete", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { songToDelete = null }) {
+                    Text("Cancel", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF1E212B),
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    if (showClearAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearAllDialog = false },
+            title = {
+                Text(
+                    text = "Delete All Downloads",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to delete all ${currentVideos.size} downloaded songs? This will free up storage space on your device.",
+                    color = Color(0xFFCCCCCC),
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        UserDataRepository.clearAllDownloads(context)
+                        showClearAllDialog = false
+                        android.widget.Toast.makeText(context, "All downloaded songs cleared", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252))
+                ) {
+                    Text("Delete All", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearAllDialog = false }) {
+                    Text("Cancel", color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF1E212B),
+            shape = RoundedCornerShape(16.dp)
+        )
+    }
 }
 
 @Composable
 private fun PlaylistItemRow(
     index: Int,
     video: VideoItem,
+    isDownloads: Boolean = false,
     onClick: () -> Unit,
     onRemove: () -> Unit
 ) {
@@ -631,10 +731,10 @@ private fun PlaylistItemRow(
             modifier = Modifier.size(28.dp)
         ) {
             Icon(
-                imageVector = Icons.Default.Close,
-                contentDescription = "Remove",
-                tint = Color(0xFFAAAAAA),
-                modifier = Modifier.size(16.dp)
+                imageVector = if (isDownloads) Icons.Default.DeleteOutline else Icons.Default.Close,
+                contentDescription = if (isDownloads) "Delete Download" else "Remove",
+                tint = if (isDownloads) Color(0xFFFF5252) else Color(0xFFAAAAAA),
+                modifier = Modifier.size(if (isDownloads) 18.dp else 16.dp)
             )
         }
     }

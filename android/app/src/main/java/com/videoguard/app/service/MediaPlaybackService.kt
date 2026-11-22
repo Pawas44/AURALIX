@@ -16,11 +16,14 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.support.v4.media.MediaBrowserCompat
+import android.support.v4.media.MediaDescriptionCompat
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.media.MediaBrowserServiceCompat
 import coil.ImageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
@@ -32,11 +35,16 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class MediaPlaybackService : Service() {
+class MediaPlaybackService : MediaBrowserServiceCompat() {
 
     companion object {
         const val CHANNEL_ID = "videoguard_playback_v3"
         const val NOTIFICATION_ID = 1001
+
+        const val MEDIA_ROOT_ID = "auralix_media_root"
+        const val MEDIA_CATEGORY_DOWNLOADS = "category_downloads"
+        const val MEDIA_CATEGORY_QUEUE = "category_queue"
+        const val MEDIA_CATEGORY_LIKED = "category_liked"
 
         const val ACTION_UPDATE = "com.videoguard.app.ACTION_UPDATE"
         const val ACTION_PLAY_PAUSE = "com.videoguard.app.ACTION_PLAY_PAUSE"
@@ -176,6 +184,7 @@ class MediaPlaybackService : Service() {
         }
 
         initMediaSession()
+        sessionToken = mediaSession?.sessionToken
 
         // Real-time Lock Screen Sleep Timer Sync
         serviceScope.launch {
@@ -225,6 +234,12 @@ class MediaPlaybackService : Service() {
 
                 override fun onStop() {
                     PlaybackController.stop()
+                }
+
+                override fun onPlayFromMediaId(mediaId: String?, extras: android.os.Bundle?) {
+                    if (!mediaId.isNullOrBlank()) {
+                        PlaybackController.playTrackById(mediaId)
+                    }
                 }
             })
 
@@ -508,5 +523,114 @@ class MediaPlaybackService : Service() {
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(intent: Intent?): IBinder? {
+        if (SERVICE_INTERFACE == intent?.action) {
+            return super.onBind(intent)
+        }
+        return super.onBind(intent)
+    }
+
+    override fun onGetRoot(
+        clientPackageName: String,
+        clientUid: Int,
+        rootHints: android.os.Bundle?
+    ): BrowserRoot? {
+        return BrowserRoot(MEDIA_ROOT_ID, null)
+    }
+
+    override fun onLoadChildren(
+        parentId: String,
+        result: Result<MutableList<MediaBrowserCompat.MediaItem>>
+    ) {
+        val mediaItems = mutableListOf<MediaBrowserCompat.MediaItem>()
+        when (parentId) {
+            MEDIA_ROOT_ID -> {
+                mediaItems.add(
+                    createBrowsableItem(
+                        MEDIA_CATEGORY_DOWNLOADS,
+                        "Downloaded Songs",
+                        "Offline audio tracks on your device"
+                    )
+                )
+                mediaItems.add(
+                    createBrowsableItem(
+                        MEDIA_CATEGORY_QUEUE,
+                        "Current Queue",
+                        "Now playing playlist"
+                    )
+                )
+                mediaItems.add(
+                    createBrowsableItem(
+                        MEDIA_CATEGORY_LIKED,
+                        "Liked Songs",
+                        "Favorite tracks"
+                    )
+                )
+                result.sendResult(mediaItems)
+            }
+            MEDIA_CATEGORY_DOWNLOADS -> {
+                val downloads = com.videoguard.app.data.UserDataRepository.offlineTracks.value
+                val items = downloads.map { track ->
+                    createPlayableItem(
+                        id = track.id,
+                        title = track.title,
+                        artist = track.channelName,
+                        thumbnailUrl = track.thumbnailUrl
+                    )
+                }.toMutableList()
+                result.sendResult(items)
+            }
+            MEDIA_CATEGORY_QUEUE -> {
+                val queue = PlaybackController.playbackQueue.value
+                val items = queue.map { track ->
+                    createPlayableItem(
+                        id = track.id,
+                        title = track.title,
+                        artist = track.channelName,
+                        thumbnailUrl = track.thumbnailUrl
+                    )
+                }.toMutableList()
+                result.sendResult(items)
+            }
+            MEDIA_CATEGORY_LIKED -> {
+                val likedPlaylist = com.videoguard.app.data.UserDataRepository.playlists.value.find { it.id == "liked_songs" }
+                val tracks = likedPlaylist?.videos ?: emptyList()
+                val items = tracks.map { track ->
+                    createPlayableItem(
+                        id = track.id,
+                        title = track.title,
+                        artist = track.channelName,
+                        thumbnailUrl = track.thumbnailUrl
+                    )
+                }.toMutableList()
+                result.sendResult(items)
+            }
+            else -> {
+                result.sendResult(mediaItems)
+            }
+        }
+    }
+
+    private fun createBrowsableItem(id: String, title: String, subtitle: String): MediaBrowserCompat.MediaItem {
+        val description = MediaDescriptionCompat.Builder()
+            .setMediaId(id)
+            .setTitle(title)
+            .setSubtitle(subtitle)
+            .build()
+        return MediaBrowserCompat.MediaItem(description, MediaBrowserCompat.MediaItem.FLAG_BROWSABLE)
+    }
+
+    private fun createPlayableItem(id: String, title: String, artist: String, thumbnailUrl: String?): MediaBrowserCompat.MediaItem {
+        val description = MediaDescriptionCompat.Builder()
+            .setMediaId(id)
+            .setTitle(title)
+            .setSubtitle(artist)
+            .apply {
+                if (!thumbnailUrl.isNullOrBlank()) {
+                    setIconUri(android.net.Uri.parse(thumbnailUrl))
+                }
+            }
+            .build()
+        return MediaBrowserCompat.MediaItem(description, MediaBrowserCompat.MediaItem.FLAG_PLAYABLE)
+    }
 }

@@ -207,16 +207,28 @@ object PlaybackController {
             _sleepTimerMinutes.value = (remain + 59) / 60
             sleepTimerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
                 var currentSec = remain
-                while (isActive && currentSec > 0) {
-                    kotlinx.coroutines.delay(1000L)
-                    currentSec--
-                    _sleepTimerRemainingSeconds.value = currentSec
-                    _sleepTimerMinutes.value = (currentSec + 59) / 60
+                val originalVol = _currentVolumeMultiplier
+                val shouldFade = com.videoguard.app.data.AppSettingsRepository.isSleepTimerFadeOut.value
+                val fadeWindowSec = 30
+                try {
+                    while (isActive && currentSec > 0) {
+                        kotlinx.coroutines.delay(1000L)
+                        currentSec--
+                        _sleepTimerRemainingSeconds.value = currentSec
+                        _sleepTimerMinutes.value = (currentSec + 59) / 60
+
+                        if (shouldFade && currentSec <= fadeWindowSec) {
+                            val factor = (currentSec.toFloat() / fadeWindowSec).coerceIn(0f, 1f)
+                            setVolumeLevel(originalVol * factor)
+                        }
+                    }
+                    pause()
+                } finally {
+                    setVolumeLevel(originalVol)
+                    _sleepTimerRemainingSeconds.value = null
+                    _sleepTimerMinutes.value = null
+                    _sleepTimerEndOnTrackFinish.value = false
                 }
-                pause()
-                _sleepTimerRemainingSeconds.value = null
-                _sleepTimerMinutes.value = null
-                _sleepTimerEndOnTrackFinish.value = false
             }
             return
         }
@@ -227,19 +239,45 @@ object PlaybackController {
             _sleepTimerRemainingSeconds.value = totalSeconds
             sleepTimerJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
                 var currentSec = totalSeconds
-                while (isActive && currentSec > 0) {
-                    kotlinx.coroutines.delay(1000L)
-                    currentSec--
-                    _sleepTimerRemainingSeconds.value = currentSec
-                    _sleepTimerMinutes.value = (currentSec + 59) / 60
+                val originalVol = _currentVolumeMultiplier
+                val shouldFade = com.videoguard.app.data.AppSettingsRepository.isSleepTimerFadeOut.value
+                val fadeWindowSec = 30
+                try {
+                    while (isActive && currentSec > 0) {
+                        kotlinx.coroutines.delay(1000L)
+                        currentSec--
+                        _sleepTimerRemainingSeconds.value = currentSec
+                        _sleepTimerMinutes.value = (currentSec + 59) / 60
+
+                        if (shouldFade && currentSec <= fadeWindowSec) {
+                            val factor = (currentSec.toFloat() / fadeWindowSec).coerceIn(0f, 1f)
+                            setVolumeLevel(originalVol * factor)
+                        }
+                    }
+                    pause()
+                } finally {
+                    setVolumeLevel(originalVol)
+                    _sleepTimerRemainingSeconds.value = null
+                    _sleepTimerMinutes.value = null
                 }
-                pause()
-                _sleepTimerRemainingSeconds.value = null
-                _sleepTimerMinutes.value = null
             }
         } else {
             _sleepTimerRemainingSeconds.value = null
             _sleepTimerMinutes.value = null
+        }
+    }
+
+    fun playTrackById(id: String) {
+        val found = com.videoguard.app.data.UserDataRepository.offlineTracks.value.firstOrNull { it.id == id }
+            ?: VideoRepository.getMusicTracks().firstOrNull { it.id == id }
+            ?: _playbackQueue.value.firstOrNull { it.id == id }
+        if (found != null) {
+            val q = if (com.videoguard.app.data.UserDataRepository.isDownloaded(id)) {
+                com.videoguard.app.data.UserDataRepository.offlineTracks.value
+            } else {
+                _playbackQueue.value
+            }
+            playTrack(found, q)
         }
     }
 
