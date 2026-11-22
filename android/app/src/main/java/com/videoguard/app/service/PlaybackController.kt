@@ -508,6 +508,7 @@ object PlaybackController {
             if (isDownloaded) {
                 startOfflinePlayback(track, initialDurationSec)
             } else {
+                com.videoguard.app.audio.EqualizerEngine.bindAudioSession(0)
                 sendCommand("loadVideo('${track.id}')")
                 sendCommand("setPlaybackState(true)")
             }
@@ -687,7 +688,7 @@ object PlaybackController {
     fun stopOfflinePlayback() {
         synchronized(audioEngineLock) {
             isOfflineModeActive = false
-            com.videoguard.app.audio.EqualizerEngine.unbindAudioSession()
+            com.videoguard.app.audio.EqualizerEngine.bindAudioSession(0)
             offlineTickerJob?.cancel()
             offlineTickerJob = null
             try {

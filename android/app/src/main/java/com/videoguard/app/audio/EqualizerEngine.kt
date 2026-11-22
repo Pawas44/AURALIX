@@ -55,7 +55,7 @@ object EqualizerEngine {
     private val _virtualizerPercent = MutableStateFlow(15)
     val virtualizerPercent: StateFlow<Int> = _virtualizerPercent.asStateFlow()
 
-    private var activeAudioSessionId: Int = 0
+    private var activeAudioSessionId: Int = -1
     private var equalizer: Equalizer? = null
     private var bassBoost: BassBoost? = null
     private var virtualizer: Virtualizer? = null
@@ -85,26 +85,33 @@ object EqualizerEngine {
         _bassBoostPercent.value = savedBass.coerceIn(0, 100)
         _virtualizerPercent.value = savedVirt.coerceIn(0, 100)
         _bandLevels.value = savedBands
+
+        // Pre-bind to session 0 so online playback (YouTube/streaming) is immediately equalized
+        try {
+            bindAudioSession(0)
+        } catch (e: Exception) {
+            Log.w(TAG, "Default audio session 0 init: ${e.message}")
+        }
     }
 
     /**
-     * Binds audio effects specifically to the application's audio session ID.
-     * Ensures ONLY this app's sound is modified.
+     * Binds audio effects to the application's audio session.
+     * Uses session ID 0 for global media mix (online streaming) or specific session ID for MediaPlayer.
      */
-    fun bindAudioSession(sessionId: Int) {
-        if (sessionId <= 0) return
+    fun bindAudioSession(sessionId: Int = 0) {
+        if (sessionId < 0) return
         if (sessionId == activeAudioSessionId && equalizer != null) return
 
         releaseEffects()
         activeAudioSessionId = sessionId
 
         try {
-            // Equalizer attached strictly to this app's session ID (priority 0)
+            // Equalizer attached to audio session (0 for media mix, >0 for offline MediaPlayer)
             equalizer = Equalizer(0, sessionId).apply {
                 enabled = _isEnabled.value
             }
 
-            // Bass Boost attached strictly to this app's session ID
+            // Bass Boost attached to audio session
             bassBoost = BassBoost(0, sessionId).apply {
                 if (strengthSupported) {
                     setStrength(((_bassBoostPercent.value / 100f) * 1000).toInt().toShort())
@@ -112,7 +119,7 @@ object EqualizerEngine {
                 enabled = _isEnabled.value
             }
 
-            // Virtualizer (3D Surround) attached strictly to this app's session ID
+            // Virtualizer (3D Surround) attached to audio session
             virtualizer = Virtualizer(0, sessionId).apply {
                 if (strengthSupported) {
                     setStrength(((_virtualizerPercent.value / 100f) * 1000).toInt().toShort())
@@ -121,7 +128,7 @@ object EqualizerEngine {
             }
 
             applyCurrentBandLevelsToHardware()
-            Log.d(TAG, "Successfully bound Equalizer & FX to app session ID $sessionId")
+            Log.d(TAG, "Successfully bound Equalizer & FX to audio session ID $sessionId (enabled=${_isEnabled.value})")
         } catch (e: Exception) {
             Log.w(TAG, "Audio effect initialization on session $sessionId: ${e.message}")
         }
@@ -129,7 +136,7 @@ object EqualizerEngine {
 
     fun unbindAudioSession() {
         releaseEffects()
-        activeAudioSessionId = 0
+        activeAudioSessionId = -1
     }
 
     private fun releaseEffects() {
@@ -149,6 +156,10 @@ object EqualizerEngine {
         _isEnabled.value = enabled
         prefs?.edit()?.putBoolean(KEY_ENABLED, enabled)?.apply()
 
+        if (enabled && equalizer == null) {
+            bindAudioSession(0)
+        }
+
         try {
             equalizer?.enabled = enabled
             bassBoost?.enabled = enabled
@@ -160,7 +171,12 @@ object EqualizerEngine {
         val presetValues = PRESETS[name] ?: return
         _currentPreset.value = name
         _bandLevels.value = presetValues
-        applyCurrentBandLevelsToHardware()
+
+        if (equalizer == null) {
+            bindAudioSession(0)
+        } else {
+            applyCurrentBandLevelsToHardware()
+        }
 
         prefs?.edit()?.apply {
             putString(KEY_PRESET, name)
@@ -178,7 +194,11 @@ object EqualizerEngine {
         _bandLevels.value = current
         _currentPreset.value = "Custom"
 
-        applyCurrentBandLevelsToHardware()
+        if (equalizer == null) {
+            bindAudioSession(0)
+        } else {
+            applyCurrentBandLevelsToHardware()
+        }
 
         prefs?.edit()?.apply {
             putString(KEY_PRESET, "Custom")
@@ -190,6 +210,11 @@ object EqualizerEngine {
     fun setBassBoost(percent: Int) {
         val clamped = percent.coerceIn(0, 100)
         _bassBoostPercent.value = clamped
+
+        if (bassBoost == null) {
+            bindAudioSession(0)
+        }
+
         try {
             bassBoost?.let {
                 if (it.strengthSupported) {
@@ -204,6 +229,11 @@ object EqualizerEngine {
     fun setVirtualizer(percent: Int) {
         val clamped = percent.coerceIn(0, 100)
         _virtualizerPercent.value = clamped
+
+        if (virtualizer == null) {
+            bindAudioSession(0)
+        }
+
         try {
             virtualizer?.let {
                 if (it.strengthSupported) {
