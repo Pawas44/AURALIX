@@ -751,6 +751,10 @@ fun MainScreen() {
                             },
                             onSwipeDownDelta = onSwipeDownDelta,
                             onSwipeDownRelease = onSwipeDownRelease,
+                            onChannelClick = { chVideo ->
+                                activeChannelVideo = chVideo
+                                isPlayerExpanded = false
+                            },
                             modifier = Modifier.fillMaxSize()
                         )
                     }

@@ -53,6 +53,7 @@ fun PlayerSettingsBottomSheet(
     var customSleepMinutes by remember { mutableIntStateOf(20) }
     var showStatsDialog by remember { mutableStateOf(false) }
     var showJamSheet by remember { mutableStateOf(false) }
+    var showEqualizerSheet by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -190,6 +191,21 @@ fun PlayerSettingsBottomSheet(
                 selectedOption = volumeLeveling,
                 onOptionSelected = { AppSettingsRepository.setVolumeLeveling(it) }
             )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Equalizer Section (Tunex Engine - modifies only this app's audio)
+            val isEqEnabled by com.videoguard.app.audio.EqualizerEngine.isEnabled.collectAsState()
+            val activeEqPreset by com.videoguard.app.audio.EqualizerEngine.currentPreset.collectAsState()
+            SettingsSectionHeader("Equalizer & Sound Effects")
+            SettingsGroupCard {
+                SettingsRow(
+                    icon = Icons.Default.GraphicEq,
+                    title = "Equalizer (Tunex)",
+                    subtitle = if (isEqEnabled) "Active: $activeEqPreset • 5 Bands + Bass Boost & 3D" else "Disabled • Tap to open equalizer",
+                    onClick = { showEqualizerSheet = true }
+                )
+            }
 
             Spacer(modifier = Modifier.height(12.dp))
 
@@ -611,6 +627,10 @@ fun PlayerSettingsBottomSheet(
 
     if (showJamSheet) {
         ListenTogetherSheet(onDismiss = { showJamSheet = false })
+    }
+
+    if (showEqualizerSheet) {
+        EqualizerBottomSheet(onDismiss = { showEqualizerSheet = false })
     }
 }
 

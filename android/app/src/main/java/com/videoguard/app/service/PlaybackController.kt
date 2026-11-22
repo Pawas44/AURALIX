@@ -323,6 +323,7 @@ object PlaybackController {
         com.videoguard.app.data.AccountRepository.init(context)
         com.videoguard.app.data.SpotifyConnectEngine.init(context)
         com.videoguard.app.recommendation.RecommendationEngine.init(context)
+        com.videoguard.app.audio.EqualizerEngine.init(context)
         registerNoisyReceiver()
     }
 
@@ -575,6 +576,7 @@ object PlaybackController {
 
                         val mp = android.media.MediaPlayer()
                         offlineMediaPlayer = mp
+                        com.videoguard.app.audio.EqualizerEngine.bindAudioSession(mp.audioSessionId)
                         mp.setAudioAttributes(
                             android.media.AudioAttributes.Builder()
                                 .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
@@ -685,6 +687,7 @@ object PlaybackController {
     fun stopOfflinePlayback() {
         synchronized(audioEngineLock) {
             isOfflineModeActive = false
+            com.videoguard.app.audio.EqualizerEngine.unbindAudioSession()
             offlineTickerJob?.cancel()
             offlineTickerJob = null
             try {

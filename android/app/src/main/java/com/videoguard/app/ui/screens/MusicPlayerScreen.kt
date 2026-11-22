@@ -99,6 +99,7 @@ fun MusicPlayerScreen(
     onSwitchToVideoMode: () -> Unit = {},
     onSwipeDownDelta: (Float) -> Unit = {},
     onSwipeDownRelease: (Float) -> Unit = {},
+    onChannelClick: ((VideoItem) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var activeTab by remember { mutableStateOf(MusicSheetTab.UP_NEXT) }
@@ -1059,7 +1060,11 @@ fun MusicPlayerScreen(
                     color = Color(0xFFAAAAAA),
                     fontSize = 14.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable {
+                        val chVideo = if (track.channelName.isNotBlank()) track else track.copy(channelName = track.artist)
+                        onChannelClick?.invoke(chVideo)
+                    }
                 )
             }
 
@@ -1544,19 +1549,43 @@ fun MusicPlayerScreen(
                                     .verticalScroll(rememberScrollState())
                                     .padding(top = 6.dp, bottom = navBarBottom + 8.dp)
                             ) {
-                                Text(
-                                    text = "About the Artist",
-                                    color = Color.White,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "${track.artist.ifEmpty { track.channelName }} has over ${track.views} across YouTube and YouTube Music. Album: ${track.album.ifEmpty { "Single" }}.",
-                                    color = Color(0xFFCCCCCC),
-                                    fontSize = 12.sp,
-                                    lineHeight = 18.sp
-                                )
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.White.copy(alpha = 0.05f))
+                                        .clickable {
+                                            val chVideo = if (track.channelName.isNotBlank()) track else track.copy(channelName = track.artist)
+                                            onChannelClick?.invoke(chVideo)
+                                        }
+                                        .padding(12.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "About the Artist",
+                                            color = Color.White,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "View Channel ›",
+                                            color = Color(0xFFC084FC),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "${track.artist.ifEmpty { track.channelName }} has over ${track.views} across YouTube and YouTube Music. Album: ${track.album.ifEmpty { "Single" }}.",
+                                        color = Color(0xFFCCCCCC),
+                                        fontSize = 12.sp,
+                                        lineHeight = 18.sp
+                                    )
+                                }
                             }
                         }
                     }
