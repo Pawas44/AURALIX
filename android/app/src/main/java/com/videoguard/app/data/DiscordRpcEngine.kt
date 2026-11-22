@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 object DiscordRpcEngine {
     private const val TAG = "DiscordRpcEngine"
-    const val CLIENT_ID = "1309855598687780905"
+    const val CLIENT_ID = "1358372087017767073"
     const val TELEGRAM_URL = "https://t.me/auralix_music"
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
