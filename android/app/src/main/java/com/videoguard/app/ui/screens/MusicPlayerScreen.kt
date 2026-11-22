@@ -270,21 +270,19 @@ fun MusicPlayerScreen(
 
     LaunchedEffect(track.id) {
         lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.getOffsetMs(track.id)
-        if (!com.videoguard.app.service.PlaybackController.isOfflineModeActive) {
-            isLoadingLyrics = true
-            try {
-                lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
-                    trackTitle = track.title,
-                    artistName = track.artist.ifBlank { track.channelName },
-                    durationSeconds = duration.toInt(),
-                    videoId = track.id
-                )
-            } catch (e: Exception) {}
-            isLoadingLyrics = false
-        } else {
+        isLoadingLyrics = true
+        try {
+            lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
+                trackTitle = track.title,
+                artistName = track.artist.ifBlank { track.channelName },
+                durationSeconds = duration.toInt(),
+                videoId = track.id,
+                context = context
+            )
+        } catch (e: Exception) {
             lyricsResult = null
-            isLoadingLyrics = false
         }
+        isLoadingLyrics = false
     }
 
     val activeQueue = remember(liveQueue, track.id) {
@@ -1637,7 +1635,9 @@ fun MusicPlayerScreen(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(8.dp))
                                     .clickable {
-                                        lyricsResult = com.videoguard.app.data.LyricsEngine.parseCustomLrc(item.syncedLyrics, item.plainLyrics)
+                                        val parsed = com.videoguard.app.data.LyricsEngine.parseCustomLrc(item.syncedLyrics, item.plainLyrics)
+                                        lyricsResult = parsed
+                                        com.videoguard.app.data.LyricsEngine.saveLyricsToDisk(context, track.id, parsed)
                                         showWrongLyricsDialog = false
                                         android.widget.Toast.makeText(context, "Lyrics updated!", android.widget.Toast.LENGTH_SHORT).show()
                                     }

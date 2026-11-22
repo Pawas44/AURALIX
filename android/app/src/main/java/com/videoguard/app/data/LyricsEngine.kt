@@ -1,9 +1,11 @@
 package com.videoguard.app.data
 
+import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -39,18 +41,93 @@ object LyricsEngine {
         return RECORD_LABELS.any { lower.contains(it) }
     }
 
+    fun getLyricsFromDisk(context: Context, videoId: String): LyricsResult? {
+        if (videoId.isBlank()) return null
+        return try {
+            val dir = File(context.filesDir, "lyrics_cache")
+            val file = File(dir, "$videoId.json")
+            if (!file.exists()) return null
+            val raw = file.readText()
+            val json = JSONObject(raw)
+            val isSynced = json.optBoolean("isSynced", false)
+            val plainLyrics = json.optString("plainLyrics", "")
+            val linesArray = json.optJSONArray("lines") ?: JSONArray()
+            val lines = mutableListOf<LyricLine>()
+            for (i in 0 until linesArray.length()) {
+                val lineObj = linesArray.getJSONObject(i)
+                lines.add(
+                    LyricLine(
+                        timestampMs = lineObj.optLong("timestampMs", 0L),
+                        text = lineObj.optString("text", ""),
+                        romanizedText = lineObj.optString("romanizedText", "")
+                    )
+                )
+            }
+            if (lines.isNotEmpty() || plainLyrics.isNotBlank()) {
+                LyricsResult(lines = lines, plainLyrics = plainLyrics, isSynced = isSynced)
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun saveLyricsToDisk(context: Context, videoId: String, result: LyricsResult) {
+        if (videoId.isBlank()) return
+        try {
+            val dir = File(context.filesDir, "lyrics_cache")
+            if (!dir.exists()) dir.mkdirs()
+            val file = File(dir, "$videoId.json")
+            val json = JSONObject().apply {
+                put("isSynced", result.isSynced)
+                put("plainLyrics", result.plainLyrics)
+                val linesArray = JSONArray()
+                for (line in result.lines) {
+                    val lineObj = JSONObject().apply {
+                        put("timestampMs", line.timestampMs)
+                        put("text", line.text)
+                        put("romanizedText", line.romanizedText)
+                    }
+                    linesArray.put(lineObj)
+                }
+                put("lines", linesArray)
+            }
+            file.writeText(json.toString())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     suspend fun getLyrics(
         trackTitle: String,
         artistName: String,
         durationSeconds: Int = 0,
-        videoId: String = ""
+        videoId: String = "",
+        context: Context? = null
     ): LyricsResult? = withContext(Dispatchers.IO) {
         val cleanTitle = cleanTrackNameRaw(trackTitle)
         val cleanArtist = cleanArtistRaw(artistName)
         val cacheKey = "${cleanTitle.lowercase()}_${cleanArtist.lowercase()}_$videoId"
 
-        if (memoryCache.containsKey(cacheKey)) {
+        // 1. In-memory Cache check
+        if (memoryCache.containsKey(cacheKey) && memoryCache[cacheKey] != null) {
             return@withContext memoryCache[cacheKey]
+        }
+
+        // 2. Persistent Disk Cache check (Crucial for offline downloaded songs!)
+        if (context != null && videoId.isNotBlank()) {
+            val fromDisk = getLyricsFromDisk(context, videoId)
+            if (fromDisk != null) {
+                memoryCache[cacheKey] = fromDisk
+                return@withContext fromDisk
+            }
+        }
+
+        val cacheAndReturn: (LyricsResult) -> LyricsResult = { res ->
+            memoryCache[cacheKey] = res
+            if (context != null && videoId.isNotBlank()) {
+                saveLyricsToDisk(context, videoId, res)
+            }
+            res
         }
 
         // Build list of smart search pairs (Title to Artist)
@@ -100,8 +177,7 @@ object LyricsEngine {
             if (effectiveArtist.isNotBlank()) {
                 val direct = tryGetLrc(title, effectiveArtist, durationSeconds)
                 if (direct != null && direct.isSynced) {
-                    memoryCache[cacheKey] = direct
-                    return@withContext direct
+                    return@withContext cacheAndReturn(direct)
                 } else if (direct != null && bestCandidate == null) {
                     bestCandidate = direct
                 }
@@ -111,8 +187,7 @@ object LyricsEngine {
             val qWithArtist = if (effectiveArtist.isNotBlank()) "$title $effectiveArtist".trim() else title
             val searched = trySearchLrc(qWithArtist, title, effectiveArtist, durationSeconds)
             if (searched != null && searched.isSynced) {
-                memoryCache[cacheKey] = searched
-                return@withContext searched
+                return@withContext cacheAndReturn(searched)
             } else if (searched != null && bestCandidate == null) {
                 bestCandidate = searched
             }
@@ -121,8 +196,7 @@ object LyricsEngine {
             if (effectiveArtist.isNotBlank()) {
                 val searchTitleOnly = trySearchLrc(title, title, "", durationSeconds)
                 if (searchTitleOnly != null && searchTitleOnly.isSynced) {
-                    memoryCache[cacheKey] = searchTitleOnly
-                    return@withContext searchTitleOnly
+                    return@withContext cacheAndReturn(searchTitleOnly)
                 } else if (searchTitleOnly != null && bestCandidate == null) {
                     bestCandidate = searchTitleOnly
                 }
@@ -133,16 +207,14 @@ object LyricsEngine {
         if (videoId.isNotBlank()) {
             val ytmLyrics = fetchYouTubeMusicOfficialLyrics(videoId, durationSeconds)
             if (ytmLyrics != null) {
-                memoryCache[cacheKey] = ytmLyrics
-                return@withContext ytmLyrics
+                return@withContext cacheAndReturn(ytmLyrics)
             }
         }
 
         // Pass 3: If only plain lyrics were found, auto-sync them against the song duration
         if (bestCandidate != null) {
             val autoSynced = autoSyncPlainLyrics(bestCandidate.plainLyrics, durationSeconds)
-            memoryCache[cacheKey] = autoSynced
-            return@withContext autoSynced
+            return@withContext cacheAndReturn(autoSynced)
         }
 
         memoryCache[cacheKey] = null

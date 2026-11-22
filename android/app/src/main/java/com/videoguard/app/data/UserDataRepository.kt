@@ -266,6 +266,8 @@ object UserDataRepository {
             try {
                 val f = File(context.filesDir, "downloads/$videoId.m4a")
                 if (f.exists()) f.delete()
+                val lrcFile = File(context.filesDir, "lyrics_cache/$videoId.json")
+                if (lrcFile.exists()) lrcFile.delete()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -316,7 +318,8 @@ object UserDataRepository {
                         File(dir, "$cid.m4a"),
                         File(dir, "$cid.mp4"),
                         File(dir, "$cid.webm"),
-                        File(dir, "$cid.tmp")
+                        File(dir, "$cid.tmp"),
+                        File(context.filesDir, "lyrics_cache/$cid.json")
                     ).forEach { if (it.exists()) it.delete() }
                 }
             } catch (e: Exception) {}
@@ -586,6 +589,30 @@ object UserDataRepository {
         }
         _offlineTracks.value = current
         saveOfflineTracks()
+
+        // Proactively fetch and cache lyrics locally for offline playback
+        try {
+            val parts = targetVideo.duration.trim().split(":").mapNotNull { it.toIntOrNull() }
+            val durSec = when (parts.size) {
+                3 -> parts[0] * 3600 + parts[1] * 60 + parts[2]
+                2 -> parts[0] * 60 + parts[1]
+                1 -> parts[0]
+                else -> 0
+            }
+            val fetchedLyrics = LyricsEngine.getLyrics(
+                trackTitle = targetVideo.title,
+                artistName = targetVideo.artist.ifBlank { targetVideo.channelName },
+                durationSeconds = durSec,
+                videoId = targetVideo.id,
+                context = context
+            )
+            if (fetchedLyrics != null) {
+                LyricsEngine.saveLyricsToDisk(context, targetVideo.id, fetchedLyrics)
+                if (video.id != targetVideo.id) {
+                    LyricsEngine.saveLyricsToDisk(context, video.id, fetchedLyrics)
+                }
+            }
+        } catch (e: Exception) {}
 
         try {
             val completeNotif = androidx.core.app.NotificationCompat.Builder(context, channelId)
