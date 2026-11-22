@@ -19,7 +19,13 @@ import java.util.concurrent.atomic.AtomicInteger
  * Tokenless Discord Rich Presence (RPC) Engine.
  * Uses Discord PC RPC Protocol (Localhost WebSocket ports 6463-6472)
  * without requiring any user account token.
- * Default is ON with no off option, and links to Telegram: https://t.me/auralix_music
+ * Shows Spotify-style Rich Presence:
+ * - "Listening to AURALIX"
+ * - Live Song Title
+ * - Artist Name & Album
+ * - High-Resolution Song Cover Art
+ * - Live animated progress bar with start & end timestamps (e.g. 0:45 ───●───── 3:30)
+ * - Telegram channel buttons: https://t.me/auralix_music
  */
 object DiscordRpcEngine {
     private const val TAG = "DiscordRpcEngine"
@@ -57,7 +63,7 @@ object DiscordRpcEngine {
             .pingInterval(15, TimeUnit.SECONDS)
             .build()
 
-        // Observe playback state changes and immediately push rich presence
+        // 1. Observe track changes
         scope.launch {
             PlaybackController.currentTrack.collect { track ->
                 if (_isConnected.value) {
@@ -66,10 +72,52 @@ object DiscordRpcEngine {
             }
         }
 
+        // 2. Observe play/pause state
         scope.launch {
             PlaybackController.isPlaying.collect { isPlaying ->
                 if (_isConnected.value) {
                     updatePresence(PlaybackController.currentTrack.value, isPlaying)
+                }
+            }
+        }
+
+        // 3. Observe duration changes (when ExoPlayer resolves true audio duration)
+        scope.launch {
+            PlaybackController.durationSeconds.collect { dur ->
+                if (_isConnected.value && dur > 0f) {
+                    updatePresence(PlaybackController.currentTrack.value, PlaybackController.isPlaying.value)
+                }
+            }
+        }
+
+        // 4. Observe seek / position scrubbing jumps
+        scope.launch {
+            var lastTrackId = ""
+            var lastPos = 0f
+            var lastSysTime = System.currentTimeMillis()
+            PlaybackController.currentTimeSeconds.collect { pos ->
+                val track = PlaybackController.currentTrack.value
+                val trackId = track?.id ?: ""
+                val now = System.currentTimeMillis()
+                val isPlaying = PlaybackController.isPlaying.value
+
+                if (trackId != lastTrackId) {
+                    lastTrackId = trackId
+                    lastPos = pos
+                    lastSysTime = now
+                    return@collect
+                }
+
+                if (isPlaying) {
+                    val expectedPos = lastPos + (now - lastSysTime) / 1000f
+                    // If user seeked / jumped backward or forward by more than 2.5 seconds
+                    if (kotlin.math.abs(pos - expectedPos) > 2.5f) {
+                        lastPos = pos
+                        lastSysTime = now
+                        if (_isConnected.value) {
+                            updatePresence(track, true)
+                        }
+                    }
                 }
             }
         }
@@ -174,32 +222,53 @@ object DiscordRpcEngine {
                 put("cmd", "SET_ACTIVITY")
                 val args = JSONObject().apply {
                     put("pid", Process.myPid())
-                    if (track != null && isPlaying) {
+                    if (track != null) {
                         val activity = JSONObject().apply {
-                            put("type", 2) // Listening to
+                            put("type", 2) // 2 = Listening to
                             put("details", track.title.take(128))
-                            put("state", "by " + track.artist.ifBlank { track.channelName }.take(128))
 
+                            val artistName = track.artist.ifBlank { track.channelName }.take(120)
+                            put("state", if (isPlaying) "by $artistName" else "by $artistName (Paused)")
+
+                            // Spotify-style live scrubber timestamps (start and end)
                             val curSec = PlaybackController.currentTimeSeconds.value
-                            val startMs = System.currentTimeMillis() - (curSec * 1000).toLong()
-                            put("timestamps", JSONObject().apply {
-                                put("start", startMs)
-                            })
-
-                            val thumb = if (track.thumbnailUrl.isNotBlank() && !track.thumbnailUrl.contains("default")) {
-                                track.thumbnailUrl
-                            } else {
-                                "https://img.youtube.com/vi/${track.id}/hqdefault.jpg"
+                            var durSec = PlaybackController.durationSeconds.value
+                            if (durSec <= 0f && track.duration.isNotBlank()) {
+                                durSec = parseDurationSeconds(track.duration)
                             }
 
+                            if (isPlaying) {
+                                val now = System.currentTimeMillis()
+                                val startMs = now - (curSec * 1000f).toLong()
+                                val endMs = if (durSec > 0f) (startMs + (durSec * 1000f).toLong()) else null
+
+                                val timestamps = JSONObject().apply {
+                                    put("start", startMs)
+                                    // Including 'end' renders the live Spotify progress bar (0:45 ──●───── 3:30)
+                                    if (endMs != null && endMs > startMs) {
+                                        put("end", endMs)
+                                    }
+                                }
+                                put("timestamps", timestamps)
+                            }
+
+                            // High-Resolution Cover Art
+                            val thumb = when {
+                                track.thumbnailUrl.isNotBlank() && track.thumbnailUrl.startsWith("http") && !track.thumbnailUrl.contains("default.jpg") -> track.thumbnailUrl
+                                track.id.length == 11 -> "https://i.ytimg.com/vi/${track.id}/hqdefault.jpg"
+                                track.thumbnailUrl.isNotBlank() && track.thumbnailUrl.startsWith("http") -> track.thumbnailUrl
+                                else -> "https://img.youtube.com/vi/${track.id}/hqdefault.jpg"
+                            }
+
+                            val albumOrSong = if (track.album.isNotBlank()) track.album else track.title
                             put("assets", JSONObject().apply {
                                 put("large_image", thumb)
-                                put("large_text", "AURALIX Music")
-                                put("small_image", "play")
-                                put("small_text", "Listening on AURALIX")
+                                put("large_text", albumOrSong.take(128))
+                                put("small_image", "https://raw.githubusercontent.com/Pawas44/AURALIX/main/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png")
+                                put("small_text", if (isPlaying) "Playing on AURALIX" else "Paused on AURALIX")
                             })
 
-                            // Telegram link button as requested
+                            // Telegram link button
                             val buttons = JSONArray().apply {
                                 put(JSONObject().apply {
                                     put("label", "Join Telegram")
@@ -222,9 +291,23 @@ object DiscordRpcEngine {
             }
 
             ws.send(payload.toString())
-            Log.d(TAG, "Sent SET_ACTIVITY for ${track?.title}")
+            Log.d(TAG, "Sent Spotify-style SET_ACTIVITY for ${track?.title} (playing=$isPlaying)")
         } catch (e: Exception) {
             Log.e(TAG, "Error updating Discord RPC activity: ${e.message}")
+        }
+    }
+
+    private fun parseDurationSeconds(durationStr: String): Float {
+        return try {
+            val parts = durationStr.trim().split(":").mapNotNull { it.toIntOrNull() }
+            when (parts.size) {
+                3 -> (parts[0] * 3600 + parts[1] * 60 + parts[2]).toFloat()
+                2 -> (parts[0] * 60 + parts[1]).toFloat()
+                1 -> parts[0].toFloat()
+                else -> 0f
+            }
+        } catch (e: Exception) {
+            0f
         }
     }
 }
