@@ -21,7 +21,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.videoguard.app.data.AppSettingsRepository
-import com.videoguard.app.data.DiscordRpcEngine
 import com.videoguard.app.service.PlaybackController
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,10 +46,6 @@ fun PlayerSettingsBottomSheet(
     val isSleepTimerFadeOut by AppSettingsRepository.isSleepTimerFadeOut.collectAsState()
 
     val context = LocalContext.current
-    val isDiscordRpcEnabled by DiscordRpcEngine.isEnabled.collectAsState()
-    val isDiscordConnected by DiscordRpcEngine.isConnected.collectAsState()
-    val discordConnectionMode by DiscordRpcEngine.connectionMode.collectAsState()
-    val discordToken by DiscordRpcEngine.userToken.collectAsState()
 
     var showQualityDialog by remember { mutableStateOf(false) }
     var showSpeedDialog by remember { mutableStateOf(false) }
@@ -58,8 +53,6 @@ fun PlayerSettingsBottomSheet(
     var customSleepMinutes by remember { mutableIntStateOf(20) }
     var showStatsDialog by remember { mutableStateOf(false) }
     var showJamSheet by remember { mutableStateOf(false) }
-    var showDiscordSetupDialog by remember { mutableStateOf(false) }
-    var tempTokenInput by remember(discordToken) { mutableStateOf(discordToken) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -257,26 +250,6 @@ fun PlayerSettingsBottomSheet(
                     title = "Stats & video info",
                     subtitle = "Resolution, ID, codec & channel",
                     onClick = { showStatsDialog = true }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-            SettingsSectionHeader("Discord Rich Presence")
-            SettingsGroupCard {
-                SettingsRow(
-                    icon = Icons.Default.SportsEsports,
-                    title = "Discord Rich Presence (Always Active)",
-                    subtitle = if (isDiscordConnected) {
-                        "🟢 Connected via $discordConnectionMode"
-                    } else if (discordToken.isNotBlank()) {
-                        "🟡 Connecting to Discord Gateway..."
-                    } else {
-                        "🟡 Local PC RPC scanning • Tap to enter phone token"
-                    },
-                    onClick = {
-                        tempTokenInput = discordToken
-                        showDiscordSetupDialog = true
-                    }
                 )
             }
 
@@ -638,89 +611,6 @@ fun PlayerSettingsBottomSheet(
 
     if (showJamSheet) {
         ListenTogetherSheet(onDismiss = { showJamSheet = false })
-    }
-
-    if (showDiscordSetupDialog) {
-        AlertDialog(
-            onDismissRequest = { showDiscordSetupDialog = false },
-            title = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.SportsEsports,
-                        contentDescription = null,
-                        tint = Color(0xFF5865F2),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Discord Rich Presence", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                }
-            },
-            text = {
-                Column {
-                    Text(
-                        text = "Status: ${if (isDiscordConnected) "🟢 Connected via $discordConnectionMode" else "🟡 Scanning PC/Emulator RPC"}",
-                        color = if (isDiscordConnected) Color(0xFF4ADE80) else Color(0xFFFBBF24),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "• PC / Emulator: Connects automatically when Discord PC is running.\n• Android Phone: Discord mobile requires your account token to broadcast your song and progress bar worldwide.",
-                        color = Color(0xFFCCCCCC),
-                        fontSize = 12.sp
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedTextField(
-                        value = tempTokenInput,
-                        onValueChange = { tempTokenInput = it },
-                        label = { Text("Discord User Token (for phone)", color = Color(0xFFAAAAAA), fontSize = 12.sp) },
-                        placeholder = { Text("Paste token if on phone", color = Color(0xFF666666)) },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF5865F2),
-                            unfocusedBorderColor = Color(0xFF444444)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    TextButton(
-                        onClick = {
-                            try {
-                                val intent = android.content.Intent(
-                                    android.content.Intent.ACTION_VIEW,
-                                    android.net.Uri.parse("https://t.me/auralix_music")
-                                )
-                                context.startActivity(intent)
-                            } catch (e: Exception) {}
-                        },
-                        contentPadding = PaddingValues(0.dp)
-                    ) {
-                        Text("📢 Telegram Channel: https://t.me/auralix_music", color = Color(0xFF38BDF8), fontSize = 12.sp)
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val clean = tempTokenInput.trim()
-                        DiscordRpcEngine.setToken(context, clean)
-                        showDiscordSetupDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5865F2))
-                ) {
-                    Text("Save & Connect", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDiscordSetupDialog = false }) {
-                    Text("Close", color = Color(0xFFAAAAAA))
-                }
-            },
-            containerColor = Color(0xFF1E212B),
-            shape = RoundedCornerShape(16.dp)
-        )
     }
 }
 

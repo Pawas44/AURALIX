@@ -48,7 +48,6 @@ class MainActivity : ComponentActivity() {
         com.videoguard.app.data.AuthManager.init(this)
         com.videoguard.app.data.GoogleDriveBackupEngine.init(this)
         com.videoguard.app.data.ListenTogetherEngine.init(this)
-        com.videoguard.app.data.DiscordRpcEngine.init(this)
 
         if (com.videoguard.app.data.AuthManager.verifySessionToken(this)) {
             CoroutineScope(Dispatchers.IO).launch {
