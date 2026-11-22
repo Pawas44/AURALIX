@@ -211,15 +211,6 @@ fun MainScreen() {
             .fillMaxSize()
             .background(bgBrush)
     ) {
-        // Dynamic Island Download Progress Pill (for batch playlist downloads & single song downloads)
-        DynamicIslandDownloadPill(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(top = 8.dp)
-                .zIndex(100f)
-        )
-
         // Floating In-App Update Banner Pill
         val updateInfo by com.videoguard.app.data.AppUpdateManager.updateInfo.collectAsState()
         val showUpdateDialog by com.videoguard.app.data.AppUpdateManager.showUpdateDialog.collectAsState()
@@ -337,6 +328,25 @@ fun MainScreen() {
         Column(
             modifier = Modifier.fillMaxSize()
         ) {
+            // Sticky Download Progress Indicator (Pinned directly below status bar, above TopBar & content)
+            if (!isPlayerExpanded) {
+                DynamicIslandDownloadPill(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(top = 8.dp, bottom = 4.dp),
+                    onOpenDownloads = {
+                        activePlaylist = com.videoguard.app.model.UserPlaylist(
+                            id = "downloads",
+                            title = "Downloads",
+                            description = "Offline downloaded tracks",
+                            videos = emptyList(),
+                            iconType = "download"
+                        )
+                    }
+                )
+            }
+
             // Mode-Aware Top Bar (shown on Feed / Home tabs when no child overlay is active)
             if (!isSearchActive && !isSupportActive && !isLibraryActive && activeChannelVideo == null && activePlaylist == null) {
                 if ((appMode == AppMode.YOUTUBE && selectedYTTab != YouTubeTab.YOU) ||
@@ -379,7 +389,8 @@ fun MainScreen() {
                         },
                         onSettingsClick = {
                             showSettingsSheet = true
-                        }
+                        },
+                        hasTopDownloadBanner = hasActiveDownload && !isPlayerExpanded
                     )
                 }
             }

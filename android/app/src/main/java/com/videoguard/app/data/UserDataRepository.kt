@@ -20,9 +20,15 @@ import java.util.UUID
 data class DownloadTask(
     val videoId: String,
     val title: String,
+    val artist: String = "",
+    val thumbnailUrl: String = "",
     val progress: Int,
     val bytesText: String,
-    val isComplete: Boolean = false
+    val isComplete: Boolean = false,
+    val isPaused: Boolean = false,
+    val isFailed: Boolean = false,
+    val totalTracksInBatch: Int = 0,
+    val currentBatchIndex: Int = 0
 )
 
 data class BatchDownloadState(
@@ -67,6 +73,31 @@ object UserDataRepository {
 
     private val _batchDownload = MutableStateFlow<BatchDownloadState?>(null)
     val batchDownload: StateFlow<BatchDownloadState?> = _batchDownload.asStateFlow()
+
+    private val isDownloadPaused = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val isDownloadCancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val downloadQueue = java.util.Collections.synchronizedList(mutableListOf<Pair<Context, VideoItem>>())
+    private val _queuedDownloadsCount = MutableStateFlow(0)
+    val queuedDownloadsCount: StateFlow<Int> = _queuedDownloadsCount.asStateFlow()
+
+    fun pauseDownload() {
+        isDownloadPaused.set(true)
+        _currentDownload.value = _currentDownload.value?.copy(isPaused = true)
+    }
+
+    fun resumeDownload() {
+        isDownloadPaused.set(false)
+        _currentDownload.value = _currentDownload.value?.copy(isPaused = false)
+    }
+
+    fun cancelDownload() {
+        isDownloadCancelled.set(true)
+        isDownloadPaused.set(false)
+        downloadQueue.clear()
+        _queuedDownloadsCount.value = 0
+        _currentDownload.value = null
+        _batchDownload.value = null
+    }
 
     private val repoScope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 
@@ -315,6 +346,8 @@ object UserDataRepository {
         }
     }
 
+    fun downloadSong(context: Context, video: VideoItem) = startDownload(context, video)
+
     fun startDownload(context: Context, video: VideoItem) {
         val resolvedId = com.videoguard.app.service.PlaybackController.getResolvedSpotifyId(video.id)
         val isAlready = isDownloaded(video.id) || (resolvedId != null && isDownloaded(resolvedId))
@@ -342,6 +375,28 @@ object UserDataRepository {
             return
         }
 
+        // If a download is already actively running, enqueue it
+        val active = _currentDownload.value
+        if (active != null && !active.isComplete) {
+            if (downloadQueue.none { it.second.id == video.id }) {
+                downloadQueue.add(Pair(context, video))
+                _queuedDownloadsCount.value = downloadQueue.size
+                android.widget.Toast.makeText(
+                    context,
+                    "Added to download queue (${downloadQueue.size} waiting)",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+            return
+        }
+
+        startDownloadExecution(context, video)
+    }
+
+    private fun startDownloadExecution(context: Context, video: VideoItem) {
+        isDownloadPaused.set(false)
+        isDownloadCancelled.set(false)
+
         repoScope.launch {
             withContext(Dispatchers.Main) {
                 android.widget.Toast.makeText(
@@ -359,7 +414,7 @@ object UserDataRepository {
                         android.widget.Toast.LENGTH_SHORT
                     ).show()
                 }
-            } else {
+            } else if (!isDownloadCancelled.get()) {
                 withContext(Dispatchers.Main) {
                     android.widget.Toast.makeText(
                         context,
@@ -368,8 +423,16 @@ object UserDataRepository {
                     ).show()
                 }
             }
-            kotlinx.coroutines.delay(1200)
-            _currentDownload.value = null
+
+            if (downloadQueue.isNotEmpty()) {
+                kotlinx.coroutines.delay(800)
+                val next = downloadQueue.removeAt(0)
+                _queuedDownloadsCount.value = downloadQueue.size
+                startDownloadExecution(next.first, next.second)
+            } else {
+                kotlinx.coroutines.delay(1800)
+                _currentDownload.value = null
+            }
         }
     }
 
@@ -527,10 +590,15 @@ object UserDataRepository {
         val batchPrefix = if (batchTotal > 0) "($batchIndex/$batchTotal) " else ""
         _currentDownload.value = DownloadTask(
             videoId = targetVideo.id,
-            title = "$batchPrefix${targetVideo.title}",
+            title = targetVideo.title,
+            artist = targetVideo.artist.ifBlank { targetVideo.channelName },
+            thumbnailUrl = targetVideo.thumbnailUrl,
             progress = 5,
             bytesText = if (batchTotal > 0) "Track $batchIndex of $batchTotal" else "Connecting...",
-            isComplete = false
+            isComplete = false,
+            isPaused = isDownloadPaused.get(),
+            totalTracksInBatch = batchTotal,
+            currentBatchIndex = batchIndex
         )
 
         var isRealStreamDownloaded = false
@@ -553,7 +621,7 @@ object UserDataRepository {
 
         for (format in candidateFormats) {
             if (targetFile.exists()) targetFile.delete()
-            val ok = downloadStreamToFile(context, targetVideo, format, targetFile, notifManager, channelId, notifId)
+            val ok = downloadStreamToFile(context, targetVideo, format, targetFile, notifManager, channelId, notifId, batchIndex, batchTotal)
             if (ok && targetFile.exists() && targetFile.length() > 100_000L) {
                 isRealStreamDownloaded = true
                 break
@@ -566,9 +634,15 @@ object UserDataRepository {
             _currentDownload.value = DownloadTask(
                 videoId = targetVideo.id,
                 title = targetVideo.title,
+                artist = targetVideo.artist.ifBlank { targetVideo.channelName },
+                thumbnailUrl = targetVideo.thumbnailUrl,
                 progress = 0,
                 bytesText = "Download failed",
-                isComplete = true
+                isComplete = true,
+                isFailed = true,
+                isPaused = false,
+                totalTracksInBatch = batchTotal,
+                currentBatchIndex = batchIndex
             )
             return@withContext false
         }
@@ -577,9 +651,15 @@ object UserDataRepository {
         _currentDownload.value = DownloadTask(
             videoId = targetVideo.id,
             title = targetVideo.title,
+            artist = targetVideo.artist.ifBlank { targetVideo.channelName },
+            thumbnailUrl = targetVideo.thumbnailUrl,
             progress = 100,
             bytesText = "Complete",
-            isComplete = true
+            isComplete = true,
+            isFailed = false,
+            isPaused = false,
+            totalTracksInBatch = batchTotal,
+            currentBatchIndex = batchIndex
         )
 
         // Also create file alias for original ID if different (e.g., spotify_...)
@@ -648,7 +728,9 @@ object UserDataRepository {
         targetFile: File,
         notifManager: android.app.NotificationManager?,
         channelId: String,
-        notifId: Int
+        notifId: Int,
+        batchIndex: Int = 0,
+        batchTotal: Int = 0
     ): Boolean = withContext(Dispatchers.IO) {
         val tempFile = File(targetFile.parentFile, "${video.id}.tmp")
         try {
@@ -687,6 +769,19 @@ object UserDataRepository {
                     val buffer = ByteArray(64 * 1024)
                     var bytesRead: Int
                     while (input.read(buffer).also { bytesRead = it } != -1) {
+                        if (isDownloadCancelled.get()) {
+                            try { if (tempFile.exists()) tempFile.delete() } catch (ignored: Exception) {}
+                            return@withContext false
+                        }
+
+                        while (isDownloadPaused.get()) {
+                            kotlinx.coroutines.delay(200)
+                            if (isDownloadCancelled.get()) {
+                                try { if (tempFile.exists()) tempFile.delete() } catch (ignored: Exception) {}
+                                return@withContext false
+                            }
+                        }
+
                         output.write(buffer, 0, bytesRead)
                         downloaded += bytesRead
 
@@ -700,9 +795,14 @@ object UserDataRepository {
                             _currentDownload.value = DownloadTask(
                                 videoId = video.id,
                                 title = video.title,
+                                artist = video.artist.ifBlank { video.channelName },
+                                thumbnailUrl = video.thumbnailUrl,
                                 progress = percent,
                                 bytesText = "$mbNow MB / $mbTotal MB",
-                                isComplete = false
+                                isComplete = false,
+                                isPaused = isDownloadPaused.get(),
+                                totalTracksInBatch = batchTotal,
+                                currentBatchIndex = batchIndex
                             )
                             if (_batchDownload.value != null) {
                                 _batchDownload.value = _batchDownload.value?.copy(

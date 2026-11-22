@@ -42,6 +42,7 @@ fun TopBar(
     onToggleBackgroundPlay: () -> Unit = {},
     onAccountClick: () -> Unit = {},
     onSettingsClick: () -> Unit = {},
+    hasTopDownloadBanner: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val isMusic = currentMode == AppMode.YOUTUBE_MUSIC
@@ -58,7 +59,7 @@ fun TopBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(glassBg)
-                .statusBarsPadding()
+                .then(if (!hasTopDownloadBanner) Modifier.statusBarsPadding() else Modifier.padding(top = 4.dp))
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
