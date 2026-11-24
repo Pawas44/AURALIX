@@ -20,12 +20,17 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
+    companion object {
+        val incomingSharedPlaylist = kotlinx.coroutines.flow.MutableStateFlow<com.videoguard.app.model.UserPlaylist?>(null)
+    }
+
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* Permission granted or denied */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        handleDeepLinkIntent(intent)
 
         // Process-wide crash protector for UI, Compose, and media playback errors
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -118,6 +123,23 @@ class MainActivity : ComponentActivity() {
             com.videoguard.app.data.AppUpdateManager.checkForUpdates(this)
         } else if (com.videoguard.app.data.AuthManager.isLoggedIn.value) {
             com.videoguard.app.data.AuthManager.logout(this)
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleDeepLinkIntent(intent)
+    }
+
+    private fun handleDeepLinkIntent(intent: android.content.Intent?) {
+        val uri = intent?.data ?: return
+        try {
+            val parsedPlaylist = com.videoguard.app.data.PlaylistShareEngine.parseIncomingDeepLink(uri)
+            if (parsedPlaylist != null) {
+                incomingSharedPlaylist.value = parsedPlaylist
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

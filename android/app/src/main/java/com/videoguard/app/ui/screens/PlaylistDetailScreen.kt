@@ -171,6 +171,17 @@ fun PlaylistDetailScreen(
                         tint = Color.White
                     )
                 }
+                IconButton(onClick = {
+                    val safeList = currentVideos.filter { it.id.isNotBlank() }
+                    val plToShare = playlist.copy(videos = safeList)
+                    com.videoguard.app.data.PlaylistShareEngine.sharePlaylist(context, plToShare)
+                }) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Share Playlist",
+                        tint = Color.White
+                    )
+                }
             }
         },
         containerColor = Color(0xFF0F0F0F),
@@ -379,6 +390,25 @@ fun PlaylistDetailScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
+
+                            IconButton(
+                                onClick = {
+                                    val safeList = currentVideos.filter { it.id.isNotBlank() }
+                                    val plToShare = playlist.copy(videos = safeList)
+                                    com.videoguard.app.data.PlaylistShareEngine.sharePlaylist(context, plToShare)
+                                },
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .background(Color(0xFF272727))
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Share Playlist",
+                                    tint = Color(0xFF3EA6FF),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         } else if (currentVideos.isNotEmpty()) {
                             IconButton(
                                 onClick = { showClearAllDialog = true },
@@ -394,6 +424,33 @@ fun PlaylistDetailScreen(
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
+                        }
+                    }
+
+                    if (!isSaved && !isDownloads) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                val toSave = playlist.copy(
+                                    videos = currentVideos,
+                                    customCoverUrl = playlist.customCoverUrl ?: currentVideos.firstOrNull()?.thumbnailUrl
+                                )
+                                UserDataRepository.savePlaylist(toSave)
+                                android.widget.Toast.makeText(context, "Saved \"${playlist.title}\" to your library!", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF3EA6FF).copy(alpha = 0.20f),
+                                contentColor = Color(0xFF3EA6FF)
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF3EA6FF).copy(alpha = 0.6f)),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                        ) {
+                            Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Save to My Library", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
                     }
 

@@ -169,6 +169,16 @@ fun MainScreen() {
     var activePlaylist by remember { mutableStateOf<UserPlaylist?>(null) }
     var showSettingsSheet by remember { mutableStateOf(false) }
 
+    // 1-Click incoming shared playlist handler
+    val sharedIncomingPlaylist by com.videoguard.app.MainActivity.incomingSharedPlaylist.collectAsState()
+    LaunchedEffect(sharedIncomingPlaylist) {
+        val pl = sharedIncomingPlaylist
+        if (pl != null) {
+            activePlaylist = pl
+            com.videoguard.app.MainActivity.incomingSharedPlaylist.value = null
+        }
+    }
+
     // Mode-aware back button handling
     BackHandler(
         enabled = isFullscreen || isPlayerExpanded || isSearchActive || isJamActive || isSupportActive || isLibraryActive || showAccountSheet ||

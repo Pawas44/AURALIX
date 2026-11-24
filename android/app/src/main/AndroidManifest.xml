@@ -36,11 +36,39 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:theme="@style/Theme.VideoGuard">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- 1-Click Auralix Playlist Sharing Deep Links -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="auralix" />
+            </intent-filter>
+
+            <!-- 1-Click Web Links: https://auralix.app/playlist -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" android:host="auralix.app" android:pathPrefix="/playlist" />
+                <data android:scheme="https" android:host="auralix.app" android:pathPrefix="/playlist" />
+            </intent-filter>
+
+            <!-- Open Direct YouTube and Spotify playlist links inside Auralix -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="www.youtube.com" android:pathPrefix="/playlist" />
+                <data android:scheme="https" android:host="youtube.com" android:pathPrefix="/playlist" />
+                <data android:scheme="https" android:host="open.spotify.com" android:pathPrefix="/playlist" />
             </intent-filter>
         </activity>
 
