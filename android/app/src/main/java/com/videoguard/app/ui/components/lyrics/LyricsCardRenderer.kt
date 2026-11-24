@@ -500,11 +500,21 @@ object LyricsCardRenderer {
 
     private fun resolveNativeTypeface(font: LyricsFont): Typeface {
         return when (font) {
-            LyricsFont.MODERN -> Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
-            LyricsFont.EDITORIAL -> Typeface.create(Typeface.SERIF, Typeface.BOLD)
-            LyricsFont.SIGNATURE -> Typeface.create(Typeface.SERIF, Typeface.BOLD_ITALIC)
+            LyricsFont.SF_PRO -> Typeface.create("sans-serif-medium", Typeface.BOLD)
+            LyricsFont.NEW_YORK -> Typeface.create(Typeface.SERIF, Typeface.BOLD_ITALIC)
+            LyricsFont.SF_ROUNDED -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    Typeface.create("sans-serif-rounded", Typeface.BOLD)
+                } else {
+                    Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+                }
+            }
+            LyricsFont.SIGNATURE -> {
+                val casual = Typeface.create("casual", Typeface.BOLD_ITALIC)
+                if (casual != Typeface.DEFAULT) casual else Typeface.create(Typeface.SERIF, Typeface.BOLD_ITALIC)
+            }
             LyricsFont.HEADLINE -> Typeface.create("sans-serif-condensed", Typeface.BOLD)
-            LyricsFont.TYPEWRITER -> Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            LyricsFont.SF_MONO -> Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         }
     }
 }

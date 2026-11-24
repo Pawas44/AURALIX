@@ -249,6 +249,7 @@ fun KaraokeLyricsView(
                                         fontSize = if (isActive || isSelected) 19.sp else 16.sp,
                                         lineHeight = if (isActive || isSelected) 26.sp else 22.sp,
                                         fontWeight = if (isActive || isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                        letterSpacing = if (isActive || isSelected) (-0.3).sp else 0.sp,
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier.fillMaxWidth()
                                     )

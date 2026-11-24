@@ -65,7 +65,7 @@ enum class LyricsAlignment(val label: String, val composeAlign: TextAlign) {
 }
 
 /**
- * Instagram Story-inspired aesthetic typography fonts.
+ * Apple & Instagram Story-inspired aesthetic typography fonts.
  */
 enum class LyricsFont(
     val id: String,
@@ -77,19 +77,30 @@ enum class LyricsFont(
     val letterSpacingSp: Float = 0f,
     val isAllCaps: Boolean = false
 ) {
-    MODERN(
-        id = "modern",
-        displayName = "Modern",
+    SF_PRO(
+        id = "sf_pro",
+        displayName = "SF Pro",
         previewSample = "Aa",
         composeFontFamily = FontFamily.SansSerif,
-        composeFontWeight = FontWeight.Bold
+        composeFontWeight = FontWeight.Bold,
+        letterSpacingSp = -0.5f
     ),
-    EDITORIAL(
-        id = "editorial",
-        displayName = "Editorial",
+    NEW_YORK(
+        id = "new_york",
+        displayName = "New York",
         previewSample = "Aa",
         composeFontFamily = FontFamily.Serif,
-        composeFontWeight = FontWeight.SemiBold
+        composeFontWeight = FontWeight.SemiBold,
+        composeFontStyle = FontStyle.Italic,
+        letterSpacingSp = -0.2f
+    ),
+    SF_ROUNDED(
+        id = "sf_rounded",
+        displayName = "SF Rounded",
+        previewSample = "Aa",
+        composeFontFamily = FontFamily.SansSerif,
+        composeFontWeight = FontWeight.SemiBold,
+        letterSpacingSp = 0.2f
     ),
     SIGNATURE(
         id = "signature",
@@ -108,9 +119,9 @@ enum class LyricsFont(
         letterSpacingSp = 1.2f,
         isAllCaps = true
     ),
-    TYPEWRITER(
-        id = "typewriter",
-        displayName = "Typewriter",
+    SF_MONO(
+        id = "sf_mono",
+        displayName = "SF Mono",
         previewSample = "Aa",
         composeFontFamily = FontFamily.Monospace,
         composeFontWeight = FontWeight.Medium,
@@ -120,7 +131,7 @@ enum class LyricsFont(
 
 data class LyricsCardConfig(
     val template: LyricsCardTemplate = LyricsCardTemplate.CINEMATIC_BLUR,
-    val font: LyricsFont = LyricsFont.MODERN,
+    val font: LyricsFont = LyricsFont.SF_PRO,
     val alignment: LyricsAlignment = LyricsAlignment.LEFT,
     val fontSize: LyricsFontSize = LyricsFontSize.MEDIUM,
     val showThumbnail: Boolean = true,
