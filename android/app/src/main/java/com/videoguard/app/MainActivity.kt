@@ -44,6 +44,30 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Initialize Coil with HighQualityArtworkInterceptor, MemoryCache, and DiskCache
+        try {
+            val imageLoader = coil.ImageLoader.Builder(this)
+                .components {
+                    add(com.videoguard.app.data.HighQualityArtworkInterceptor())
+                }
+                .memoryCache {
+                    coil.memory.MemoryCache.Builder(this)
+                        .maxSizePercent(0.25)
+                        .build()
+                }
+                .diskCache {
+                    coil.disk.DiskCache.Builder()
+                        .directory(cacheDir.resolve("image_cache"))
+                        .maxSizeBytes(128L * 1024 * 1024)
+                        .build()
+                }
+                .crossfade(true)
+                .build()
+            coil.Coil.setImageLoader(imageLoader)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         PlaybackController.init(this)
         com.videoguard.app.data.AuthManager.init(this)
         com.videoguard.app.data.GoogleDriveBackupEngine.init(this)

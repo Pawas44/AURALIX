@@ -97,7 +97,7 @@ fun MiniPlayerBar(
             ) {
                 // Thumbnail / Album Art with glossy glass frame
                 AsyncImage(
-                    model = video.thumbnailUrl,
+                    model = com.videoguard.app.data.ArtworkUrlHelper.getHighResArtworkUrl(video.thumbnailUrl, video.id),
                     contentDescription = video.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier

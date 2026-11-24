@@ -56,13 +56,13 @@ object LyricsCardRenderer {
     }
 
     private suspend fun loadArtworkBitmap(context: Context, track: VideoItem): Bitmap? {
-        val artUrl = track.thumbnailUrl.ifBlank { "https://img.youtube.com/vi/${track.id}/hqdefault.jpg" }
+        val artUrl = com.videoguard.app.data.ArtworkUrlHelper.getHighResArtworkUrl(track.thumbnailUrl, track.id)
         return try {
             val loader = Coil.imageLoader(context)
             val req = ImageRequest.Builder(context)
                 .data(artUrl)
                 .allowHardware(false)
-                .size(720, 720)
+                .size(1080, 1080)
                 .build()
             val res = loader.execute(req)
             if (res is SuccessResult) {

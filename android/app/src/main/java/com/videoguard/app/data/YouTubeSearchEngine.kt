@@ -290,6 +290,7 @@ object YouTubeSearchEngine {
                 thumb = if (t.startsWith("//")) "https:$t" else t
             }
         }
+        thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, vid)
 
         return VideoItem(
             id = vid,
@@ -361,6 +362,7 @@ object YouTubeSearchEngine {
             val t = thumbSources.optJSONObject(thumbSources.length() - 1)?.optString("url") ?: ""
             if (t.isNotBlank()) thumb = if (t.startsWith("//")) "https:$t" else t
         }
+        thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, vid)
 
         var duration = "3:45"
         val overlays = lvm.optJSONObject("contentImage")?.optJSONObject("thumbnailViewModel")?.optJSONArray("overlays")

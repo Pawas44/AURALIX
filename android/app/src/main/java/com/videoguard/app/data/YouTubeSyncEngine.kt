@@ -1423,6 +1423,7 @@ object YouTubeSyncEngine {
                 thumb = if (t.startsWith("//")) "https:$t" else t
             }
         }
+        thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, vid)
 
         var duration = "3:45"
         val overlays = lvm.optJSONObject("contentImage")?.optJSONObject("thumbnailViewModel")?.optJSONArray("overlays")
@@ -1699,6 +1700,7 @@ object YouTubeSyncEngine {
                 thumb = if (u.startsWith("//")) "https:$u" else u
             }
         }
+        thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, vid)
 
         return VideoItem(
             id = vid,
@@ -1766,6 +1768,7 @@ object YouTubeSyncEngine {
                 thumb = if (u.startsWith("//")) "https:$u" else u
             }
         }
+        thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, vid)
 
         return VideoItem(
             id = vid,

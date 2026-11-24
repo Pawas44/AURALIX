@@ -487,7 +487,7 @@ private fun LiveLyricsCardPreview(
     palette: AmbientPalette,
     modifier: Modifier = Modifier
 ) {
-    val artUrl = track.thumbnailUrl.ifBlank { "https://img.youtube.com/vi/${track.id}/hqdefault.jpg" }
+    val artUrl = com.videoguard.app.data.ArtworkUrlHelper.getHighResArtworkUrl(track.thumbnailUrl, track.id)
     val isGlass = config.template == LyricsCardTemplate.GLASSMORPHISM
     val isEditorial = config.template == LyricsCardTemplate.EDITORIAL
 

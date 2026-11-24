@@ -461,7 +461,7 @@ fun MusicPlayerScreen(
             .statusBarsPadding()
     ) {
         // Blurred Song Poster Artwork Background (Apple Music / ByTune style)
-        val posterBgUrl = track.thumbnailUrl.ifBlank { "https://img.youtube.com/vi/${track.id}/hqdefault.jpg" }
+        val posterBgUrl = com.videoguard.app.data.ArtworkUrlHelper.getHighResArtworkUrl(track.thumbnailUrl, track.id)
         AsyncImage(
             model = posterBgUrl,
             contentDescription = null,
@@ -842,7 +842,7 @@ fun MusicPlayerScreen(
                         ) {
                             // 1. Song's Album Poster in background
                             AsyncImage(
-                                model = track.thumbnailUrl.ifBlank { "https://img.youtube.com/vi/${track.id}/hqdefault.jpg" },
+                                model = com.videoguard.app.data.ArtworkUrlHelper.getHighResArtworkUrl(track.thumbnailUrl, track.id),
                                 contentDescription = track.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -1084,7 +1084,7 @@ fun MusicPlayerScreen(
                                     }
                             ) {
                                 AsyncImage(
-                                    model = itemTrack.thumbnailUrl,
+                                    model = com.videoguard.app.data.ArtworkUrlHelper.getHighResArtworkUrl(itemTrack.thumbnailUrl, itemTrack.id),
                                     contentDescription = itemTrack.title,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
