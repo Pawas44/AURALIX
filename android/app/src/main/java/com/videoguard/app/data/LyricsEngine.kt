@@ -32,13 +32,107 @@ object LyricsEngine {
         "geet mp3", "nav haryanvi", "gringo", "single track", "jass records", "saga hits",
         "times music", "bhojpuri", "goldmines", "venus", "ultra", "pen music", "dharma",
         "universal music", "warner music", "vevo", "topic", "official", "records", "music",
-        "channel", "production", "films"
+        "channel", "production", "films", "soundtrack", "aditya music", "lahari", "think music",
+        "anand audio", "muzik247", "svf", "red chillies", "shemaroo", "wave music", "t-series regional"
     )
 
-    private fun isGenericOrLabel(name: String): Boolean {
+    fun isGenericOrLabel(name: String): Boolean {
         val lower = name.lowercase().trim()
         if (lower.isBlank()) return true
         return RECORD_LABELS.any { lower.contains(it) }
+    }
+
+    /**
+     * Extracts all candidate singers, composers, and vocal artists from metadata, description, and title.
+     * Guaranteed to separate compound artists (e.g., "Pritam, Arijit Singh") into individual searchable artists.
+     */
+    fun extractCandidateArtists(title: String, artist: String, description: String = ""): List<String> {
+        val candidates = linkedSetOf<String>()
+
+        // 1. Provided artistName from metadata (if not generic/label)
+        val cleanProvided = cleanArtistRaw(artist)
+        if (cleanProvided.isNotBlank() && !isGenericOrLabel(cleanProvided)) {
+            splitArtists(cleanProvided).forEach { candidates.add(it) }
+        }
+
+        // 2. YouTube description metadata (very high accuracy for official songs)
+        if (description.isNotBlank()) {
+            // "Provided to YouTube by ... \n\n Track · Artist"
+            val providedMatcher = Regex("(?i)Provided to YouTube by [^\n\r]+\n\n([^\n\r·]+)·\\s*([^\n\r·\n]+)").find(description)
+            if (providedMatcher != null) {
+                val art = cleanArtistRaw(providedMatcher.groupValues[2])
+                if (art.isNotBlank() && !isGenericOrLabel(art)) {
+                    splitArtists(art).forEach { candidates.add(it) }
+                }
+            }
+
+            // Singer: Name, Vocals: Name, Artist: Name, Music: Name
+            val descPatterns = listOf(
+                Regex("(?i)(?:Singer|Singers|Vocals|Artist|Artists|Vocalist)\\s*[:\\-–|]\\s*([^\n\r;|\"]+)"),
+                Regex("(?i)(?:Music|Music Director|Composer|Music by)\\s*[:\\-–|]\\s*([^\n\r;|\"]+)")
+            )
+            for (p in descPatterns) {
+                p.findAll(description).take(3).forEach { match ->
+                    val raw = match.groupValues[1]
+                    splitArtists(raw).forEach { name ->
+                        if (name.isNotBlank() && !isGenericOrLabel(name)) {
+                            candidates.add(name)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. From Title: Check "feat.", "ft.", "with" inside parentheses/brackets
+        val featMatches = Regex("(?i)[(\\[](?:feat\\.?|ft\\.?|with)\\s+([^)\\]]+)[)\\]]").findAll(title)
+        for (m in featMatches) {
+            splitArtists(m.groupValues[1]).forEach { candidates.add(it) }
+        }
+
+        // 4. From Title: Check segments separated by "|", "-", ":", "by"
+        if (title.contains("|")) {
+            val parts = title.split("|")
+            for (i in 1 until parts.size) {
+                splitArtists(parts[i]).forEach { candidates.add(it) }
+            }
+        }
+
+        if (title.contains(" - ")) {
+            val parts = title.split(" - ")
+            if (parts.size >= 2) {
+                splitArtists(parts[0]).forEach { candidates.add(it) }
+                splitArtists(parts[1]).forEach { candidates.add(it) }
+            }
+        }
+
+        if (title.contains(" by ", ignoreCase = true)) {
+            val parts = title.split(Regex("(?i)\\s+by\\s+"))
+            if (parts.size >= 2) {
+                splitArtists(parts[1]).forEach { candidates.add(it) }
+            }
+        }
+
+        if (title.contains(":")) {
+            val parts = title.split(":")
+            if (parts.size >= 2) {
+                splitArtists(parts[0]).forEach { candidates.add(it) }
+            }
+        }
+
+        return candidates
+            .map { cleanArtistRaw(it) }
+            .filter { it.length in 2..50 && !isGenericOrLabel(it) }
+            .distinct()
+    }
+
+    fun extractBestArtist(title: String, artist: String, description: String = ""): String {
+        return extractCandidateArtists(title, artist, description).firstOrNull().orEmpty()
+    }
+
+    fun splitArtists(raw: String): List<String> {
+        return raw.split(Regex("(?i)[,&/|•]|\\band\\b|\\bfeat\\.?\\b|\\bft\\.?\\b|\\bwith\\b|\\bx\\b"))
+            .map { cleanArtistRaw(it) }
+            .filter { it.isNotBlank() && !isGenericOrLabel(it) }
     }
 
     fun getLyricsFromDisk(context: Context, videoId: String): LyricsResult? {
@@ -102,11 +196,13 @@ object LyricsEngine {
         artistName: String,
         durationSeconds: Int = 0,
         videoId: String = "",
-        context: Context? = null
+        context: Context? = null,
+        description: String = ""
     ): LyricsResult? = withContext(Dispatchers.IO) {
         val cleanTitle = cleanTrackNameRaw(trackTitle)
-        val cleanArtist = cleanArtistRaw(artistName)
-        val cacheKey = "${cleanTitle.lowercase()}_${cleanArtist.lowercase()}_$videoId"
+        val candidateArtists = extractCandidateArtists(trackTitle, artistName, description)
+        val primaryArtist = candidateArtists.firstOrNull().orEmpty().ifBlank { cleanArtistRaw(artistName) }
+        val cacheKey = "${cleanTitle.lowercase()}_${primaryArtist.lowercase()}_$videoId"
 
         // 1. In-memory Cache check
         if (memoryCache.containsKey(cacheKey) && memoryCache[cacheKey] != null) {
@@ -132,48 +228,52 @@ object LyricsEngine {
 
         // Build list of smart search pairs (Title to Artist)
         val variants = mutableListOf<Pair<String, String>>()
-        if (cleanTitle.isNotBlank()) {
-            variants.add(cleanTitle to cleanArtist)
+
+        // A. Primary candidates: cleanTitle with every single candidate artist discovered
+        for (artist in candidateArtists) {
+            if (artist.isNotBlank() && !isGenericOrLabel(artist)) {
+                variants.add(cleanTitle to artist)
+            }
         }
 
-        // Split by " - " to test both Track/Artist and Artist/Track combinations
+        // B. Title / Artist split combinations from trackTitle
         if (trackTitle.contains(" - ")) {
             val parts = trackTitle.split(" - ")
             if (parts.size >= 2) {
                 val p0 = cleanTrackNameRaw(parts[0])
                 val p1 = cleanTrackNameRaw(parts[1])
-                if (p0.isNotBlank() && p1.isNotBlank()) {
-                    variants.add(p0 to p1)
-                    variants.add(p1 to p0)
-                }
+                val a0 = cleanArtistRaw(parts[0])
+                val a1 = cleanArtistRaw(parts[1])
+                if (p0.isNotBlank() && !isGenericOrLabel(a1)) variants.add(p0 to a1)
+                if (p1.isNotBlank() && !isGenericOrLabel(a0)) variants.add(p1 to a0)
             }
         }
 
-        // Split by "|" e.g. "Barsaat | Banjaare, Roni" or "Song | Movie | Actor | Singer"
         if (trackTitle.contains("|")) {
             val parts = trackTitle.split("|").map { it.trim() }
             val p0 = cleanTrackNameRaw(parts[0])
             for (i in 1 until parts.size) {
-                val segArtist = cleanArtistRaw(parts[i])
-                if (segArtist.isNotBlank() && !isGenericOrLabel(segArtist)) {
-                    variants.add(p0 to segArtist)
+                splitArtists(parts[i]).forEach { segArtist ->
+                    if (segArtist.isNotBlank() && !isGenericOrLabel(segArtist)) {
+                        variants.add(p0 to segArtist)
+                    }
                 }
             }
         }
 
-        // Split by "by" or "feat" e.g. "Song by Singer" or "Song feat. Singer"
         if (trackTitle.contains(" by ", ignoreCase = true)) {
             val parts = trackTitle.split(Regex("(?i)\\s+by\\s+"))
             if (parts.size >= 2) {
                 val p0 = cleanTrackNameRaw(parts[0])
-                val p1 = cleanArtistRaw(parts[1])
-                if (p0.isNotBlank() && p1.isNotBlank()) {
-                    variants.add(p0 to p1)
+                splitArtists(parts[1]).forEach { a ->
+                    if (a.isNotBlank() && !isGenericOrLabel(a)) {
+                        variants.add(p0 to a)
+                    }
                 }
             }
         }
 
-        // Title alone (essential when artist is a record label like T-Series or Zee Music)
+        // C. Clean title alone (in case artist is unlisted or generic)
         if (cleanTitle.isNotBlank()) {
             variants.add(cleanTitle to "")
         }
@@ -195,7 +295,24 @@ object LyricsEngine {
                 }
             }
 
-            // 1b. LRCLib Search: query = title + artist
+            // 1b. Structured search with track_name & artist_name
+            if (effectiveArtist.isNotBlank()) {
+                val structuredSearch = trySearchLrc(
+                    query = "$title $effectiveArtist",
+                    expectedTitle = title,
+                    expectedArtist = effectiveArtist,
+                    durationSeconds = durationSeconds,
+                    trackNameParam = title,
+                    artistNameParam = effectiveArtist
+                )
+                if (structuredSearch != null && structuredSearch.isSynced) {
+                    return@withContext cacheAndReturn(structuredSearch)
+                } else if (structuredSearch != null && bestCandidate == null) {
+                    bestCandidate = structuredSearch
+                }
+            }
+
+            // 1c. LRCLib Search: query = title + artist
             val qWithArtist = if (effectiveArtist.isNotBlank()) "$title $effectiveArtist".trim() else title
             val searched = trySearchLrc(qWithArtist, title, effectiveArtist, durationSeconds)
             if (searched != null && searched.isSynced) {
@@ -204,7 +321,7 @@ object LyricsEngine {
                 bestCandidate = searched
             }
 
-            // 1c. LRCLib Search: query = title alone (high hit rate for songs with record labels or feature artists)
+            // 1d. LRCLib Search: query = title alone (high hit rate for songs with record labels or feature artists)
             if (effectiveArtist.isNotBlank()) {
                 val searchTitleOnly = trySearchLrc(title, title, "", durationSeconds)
                 if (searchTitleOnly != null && searchTitleOnly.isSynced) {
@@ -223,7 +340,7 @@ object LyricsEngine {
             }
         }
 
-        // Pass 3: If only plain lyrics were found, auto-sync them against the song duration
+        // Pass 3: If only plain lyrics were found, return them
         if (bestCandidate != null) {
             val autoSynced = autoSyncPlainLyrics(bestCandidate.plainLyrics, durationSeconds)
             return@withContext cacheAndReturn(autoSynced)
@@ -252,10 +369,23 @@ object LyricsEngine {
         }
     }
 
-    private fun trySearchLrc(query: String, expectedTitle: String, expectedArtist: String, durationSeconds: Int = 0): LyricsResult? {
+    private fun trySearchLrc(
+        query: String,
+        expectedTitle: String,
+        expectedArtist: String,
+        durationSeconds: Int = 0,
+        trackNameParam: String = "",
+        artistNameParam: String = ""
+    ): LyricsResult? {
         return try {
-            val encodedQ = URLEncoder.encode(query, "UTF-8")
-            val searchUrl = "https://lrclib.net/api/search?q=$encodedQ"
+            val searchUrl = if (trackNameParam.isNotBlank() && artistNameParam.isNotBlank()) {
+                val encT = URLEncoder.encode(trackNameParam, "UTF-8")
+                val encA = URLEncoder.encode(artistNameParam, "UTF-8")
+                "https://lrclib.net/api/search?track_name=$encT&artist_name=$encA"
+            } else {
+                val encodedQ = URLEncoder.encode(query, "UTF-8")
+                "https://lrclib.net/api/search?q=$encodedQ"
+            }
             val jsonStr = httpGet(searchUrl)
             if (jsonStr.isNotBlank() && jsonStr.startsWith("[")) {
                 val arr = JSONArray(jsonStr)
@@ -275,11 +405,14 @@ object LyricsEngine {
                     val titleMatches = titleMatchesWell(resTrack, expTitleClean)
                     if (!titleMatches) continue
 
-                    // Artist validation: if artist is specified, ensure it doesn't match an entirely different artist
+                    // Artist validation: if artist is specified, check exact, containment, or shared keywords
                     var artistMatches = true
                     if (!isGeneric && expArtistClean.isNotBlank()) {
+                        val expWords = expArtistClean.split(Regex("[\\s,]+")).filter { it.length > 2 }
+                        val resWords = resArtist.split(Regex("[\\s,]+")).filter { it.length > 2 }
+                        val shareWord = expWords.any { it in resWords }
                         artistMatches = resArtist.contains(expArtistClean) || expArtistClean.contains(resArtist) ||
-                                titleMatchesWell(resArtist, expArtistClean)
+                                titleMatchesWell(resArtist, expArtistClean) || shareWord
                     }
 
                     if (!artistMatches) {
@@ -302,7 +435,15 @@ object LyricsEngine {
                     var score = 0
                     if (hasSynced) score += 70 // Strongly prefer real synced lyrics
                     if (hasPlain) score += 5
-                    if (resArtist == expArtistClean && !isGeneric) score += 40
+                    if (!isGeneric && expArtistClean.isNotBlank()) {
+                        if (resArtist == expArtistClean) {
+                            score += 50
+                        } else if (resArtist.contains(expArtistClean) || expArtistClean.contains(resArtist)) {
+                            score += 35
+                        } else {
+                            score += 15
+                        }
+                    }
                     if (resTrack == expTitleClean) score += 40
 
                     if (durationSeconds > 0 && candidateDur > 0) {

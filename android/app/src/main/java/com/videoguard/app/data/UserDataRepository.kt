@@ -717,7 +717,8 @@ object UserDataRepository {
                 artistName = targetVideo.artist.ifBlank { targetVideo.channelName },
                 durationSeconds = durSec,
                 videoId = targetVideo.id,
-                context = context
+                context = context,
+                description = targetVideo.description
             )
             if (fetchedLyrics != null) {
                 LyricsEngine.saveLyricsToDisk(context, targetVideo.id, fetchedLyrics)

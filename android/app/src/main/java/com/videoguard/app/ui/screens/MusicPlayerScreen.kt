@@ -288,7 +288,8 @@ fun MusicPlayerScreen(
                 artistName = track.artist.ifBlank { track.channelName },
                 durationSeconds = duration.toInt(),
                 videoId = track.id,
-                context = context
+                context = context,
+                description = track.description
             )
         } catch (e: Exception) {
             lyricsResult = null
@@ -934,7 +935,13 @@ fun MusicPlayerScreen(
                                         .background(Color.Black.copy(alpha = 0.55f))
                                         .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
                                         .clickable {
-                                            customLyricsQuery = com.videoguard.app.data.LyricsEngine.cleanTrackNameRaw(track.title).ifBlank { track.title }
+                                            val bestArtist = com.videoguard.app.data.LyricsEngine.extractBestArtist(
+                                                title = track.title,
+                                                artist = track.artist.ifBlank { track.channelName },
+                                                description = track.description
+                                            )
+                                            val cleanTitle = com.videoguard.app.data.LyricsEngine.cleanTrackNameRaw(track.title).ifBlank { track.title }
+                                            customLyricsQuery = if (bestArtist.isNotBlank()) "$cleanTitle $bestArtist".trim() else cleanTitle
                                             showWrongLyricsDialog = true
                                             scope.launch {
                                                 isSearchingCustomLyrics = true
