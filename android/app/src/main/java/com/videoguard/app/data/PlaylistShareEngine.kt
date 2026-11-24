@@ -24,34 +24,15 @@ object PlaylistShareEngine {
      */
     fun sharePlaylist(context: Context, playlist: UserPlaylist) {
         val shareLink = generateShareLink(playlist)
-        val songCount = playlist.videos.size
-        val sampleSongs = playlist.videos.take(3).joinToString("\n") { "• ${it.title}" }
-        val moreText = if (songCount > 3) "\n...and ${songCount - 3} more songs" else ""
-
-        val shareText = buildString {
-            append("🎵 Listen to \"${playlist.title}\" on AURALIX!\n\n")
-            append("🔗 1-Click Link:\n$shareLink\n\n")
-            append("✨ How to open in Auralix:\n")
-            append("• Tap the link above OR copy this message.\n")
-            append("• Open Auralix -> it will open automatically!\n")
-            append("  (Or tap 'Import' in Library)\n\n")
-            if (playlist.videos.isNotEmpty()) {
-                append("🎶 Tracklist ($songCount songs):\n")
-                append(sampleSongs)
-                append(moreText)
-                append("\n\n")
-            }
-            append("⚡ Ad-free background music streaming on AURALIX")
-        }
 
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "🎵 Playlist: ${playlist.title}")
-            putExtra(Intent.EXTRA_TEXT, shareText)
+            putExtra(Intent.EXTRA_SUBJECT, playlist.title)
+            putExtra(Intent.EXTRA_TEXT, shareLink)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
-        val chooser = Intent.createChooser(sendIntent, "Share \"${playlist.title}\" via")
+        val chooser = Intent.createChooser(sendIntent, "Share \"${playlist.title}\"")
         chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(chooser)
     }
