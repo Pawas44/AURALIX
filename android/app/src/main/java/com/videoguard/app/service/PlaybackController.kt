@@ -294,6 +294,78 @@ object PlaybackController {
 
     private var appContext: Context? = null
     private var isNoisyReceiverRegistered = false
+    private var audioManager: AudioManager? = null
+    private var audioFocusRequest: android.media.AudioFocusRequest? = null
+    private var resumeOnFocusGain = false
+
+    private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                resumeOnFocusGain = false
+                pause()
+            }
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
+                // Incoming or answered phone call -> pause music immediately
+                if (_isPlaying.value) {
+                    resumeOnFocusGain = true
+                    pause(fromUser = false)
+                }
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // Call ended -> resume playback smoothly
+                if (resumeOnFocusGain) {
+                    resumeOnFocusGain = false
+                    play()
+                }
+            }
+        }
+    }
+
+    fun requestAudioFocus(): Boolean {
+        val ctx = appContext ?: return true
+        if (audioManager == null) {
+            audioManager = ctx.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        }
+        val am = audioManager ?: return true
+        return try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val playbackAttributes = android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+                val focusRequest = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                    .setAudioAttributes(playbackAttributes)
+                    .setAcceptsDelayedFocusGain(true)
+                    .setOnAudioFocusChangeListener(audioFocusChangeListener)
+                    .build()
+                audioFocusRequest = focusRequest
+                am.requestAudioFocus(focusRequest) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            } else {
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(
+                    audioFocusChangeListener,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.AUDIOFOCUS_GAIN
+                ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            }
+        } catch (e: Exception) {
+            true
+        }
+    }
+
+    fun abandonAudioFocus() {
+        val am = audioManager ?: return
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                audioFocusRequest?.let { am.abandonAudioFocusRequest(it) }
+                audioFocusRequest = null
+            } else {
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(audioFocusChangeListener)
+            }
+        } catch (e: Exception) {}
+    }
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -508,6 +580,7 @@ object PlaybackController {
             val hasGhost = appContext?.let { com.videoguard.app.data.GhostCacheEngine.getCachedFile(it, track.id) != null } ?: false
             val isDownloaded = isOffline || com.videoguard.app.data.UserDataRepository.isDownloaded(track.id) || hasGhost
 
+            requestAudioFocus()
             startOrUpdateService()
 
             if (isDownloaded) {
@@ -752,6 +825,7 @@ object PlaybackController {
             com.videoguard.app.data.AuthManager.logout(ctx)
             return
         }
+        requestAudioFocus()
         _isPlaying.value = true
         if (isOfflineModeActive) {
             try { offlineMediaPlayer?.start() } catch (e: Exception) {}
@@ -763,7 +837,10 @@ object PlaybackController {
         com.videoguard.app.data.ListenTogetherEngine.onHostPlayStateChanged(true, (_currentTimeSeconds.value * 1000).toLong())
     }
 
-    fun pause() {
+    fun pause(fromUser: Boolean = true) {
+        if (fromUser) {
+            resumeOnFocusGain = false
+        }
         lastTrackChangeTimeMs = 0L
         _isPlaying.value = false
         if (isOfflineModeActive) {

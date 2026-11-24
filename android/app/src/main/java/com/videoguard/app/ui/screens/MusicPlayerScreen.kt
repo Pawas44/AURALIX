@@ -126,6 +126,9 @@ fun MusicPlayerScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
+    var showLyricsCardDialog by remember { mutableStateOf(false) }
+    var selectedLyricsLinesForCard by remember { mutableStateOf<List<String>>(emptyList()) }
+
     val ghostCachedIds by com.videoguard.app.data.GhostCacheEngine.cachedTrackIds.collectAsState()
     val isTrackGhostCached = remember(ghostCachedIds, track.id) {
         ghostCachedIds.contains(track.id) || com.videoguard.app.data.GhostCacheEngine.getCachedFile(context, track.id) != null
@@ -861,6 +864,10 @@ fun MusicPlayerScreen(
                                 romanizeMode = romanizeMode,
                                 onSeekTo = { posSec ->
                                     com.videoguard.app.service.PlaybackController.seekTo(posSec)
+                                },
+                                onCreateLyricsCard = { lines ->
+                                    selectedLyricsLinesForCard = lines
+                                    showLyricsCardDialog = true
                                 },
                                 modifier = Modifier.fillMaxSize()
                             )
@@ -1776,6 +1783,15 @@ fun MusicPlayerScreen(
 
     // Floating Reactions Overlay: flies up over the album art and full music player!
     com.videoguard.app.ui.components.FloatingReactionsOverlay(modifier = Modifier.fillMaxSize())
+
+    // Editorial Lyrics Sharing Card Dialog
+    if (showLyricsCardDialog) {
+        com.videoguard.app.ui.components.lyrics.LyricsCardEditorDialog(
+            track = track,
+            selectedLines = selectedLyricsLinesForCard,
+            onDismiss = { showLyricsCardDialog = false }
+        )
+    }
 }
 
 
