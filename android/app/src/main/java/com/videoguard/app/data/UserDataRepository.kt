@@ -1044,7 +1044,7 @@ object UserDataRepository {
         }
     }
 
-    private suspend fun fetchMuxedFormat18(videoId: String): AudioStreamFormat? = withContext(Dispatchers.IO) {
+    suspend fun fetchMuxedFormat18(videoId: String): AudioStreamFormat? = withContext(Dispatchers.IO) {
         try {
             val clientObj = JSONObject().apply {
                 put("clientName", "ANDROID")
@@ -1100,7 +1100,7 @@ object UserDataRepository {
         null
     }
 
-    private suspend fun fetchRealYouTubeAudioFormat(videoId: String): AudioStreamFormat? = withContext(Dispatchers.IO) {
+    suspend fun fetchRealYouTubeAudioFormat(videoId: String): AudioStreamFormat? = withContext(Dispatchers.IO) {
         // 1. ANDROID client (21.03.38) — provides reliable format 18 and audio streams
         tryPlayerClient(
             videoId = videoId,

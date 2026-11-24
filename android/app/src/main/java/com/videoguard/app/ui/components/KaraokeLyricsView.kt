@@ -1,4 +1,7 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(
+    androidx.compose.material3.ExperimentalMaterial3Api::class,
+    androidx.compose.foundation.ExperimentalFoundationApi::class
+)
 
 package com.videoguard.app.ui.components
 
@@ -9,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -43,6 +47,7 @@ import com.videoguard.app.model.VideoItem
  * - Tap any line to seek playback
  * - Universal Romanization support (Hindi, Punjabi, Korean, Japanese, Russian, etc.)
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun KaraokeLyricsView(
     lyrics: LyricsResult?,
@@ -52,6 +57,7 @@ fun KaraokeLyricsView(
     lyricsOffsetMs: Long = 0L,
     romanizeMode: LyricsRomanizeMode,
     onSeekTo: (Float) -> Unit,
+    onLineLongClick: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val adjustedTimeMs = (currentSeconds * 1000).toLong() + lyricsOffsetMs
@@ -160,12 +166,17 @@ fun KaraokeLyricsView(
                                     this.alpha = itemAlpha
                                 }
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable {
-                                    if (lyrics.isSynced) {
-                                        val targetSec = ((line.timestampMs - lyricsOffsetMs) / 1000f).coerceAtLeast(0f)
-                                        onSeekTo(targetSec)
+                                .combinedClickable(
+                                    onClick = {
+                                        if (lyrics.isSynced) {
+                                            val targetSec = ((line.timestampMs - lyricsOffsetMs) / 1000f).coerceAtLeast(0f)
+                                            onSeekTo(targetSec)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        onLineLongClick?.invoke(mainText)
                                     }
-                                }
+                                )
                                 .padding(vertical = if (isActive) 8.dp else 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {

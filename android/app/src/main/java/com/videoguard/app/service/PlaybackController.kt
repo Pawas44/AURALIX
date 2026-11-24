@@ -324,6 +324,7 @@ object PlaybackController {
         com.videoguard.app.data.SpotifyConnectEngine.init(context)
         com.videoguard.app.recommendation.RecommendationEngine.init(context)
         com.videoguard.app.audio.EqualizerEngine.init(context)
+        com.videoguard.app.data.GhostCacheEngine.init(context)
         registerNoisyReceiver()
     }
 
@@ -486,6 +487,9 @@ object PlaybackController {
             // Automatically record to User History
             com.videoguard.app.data.UserDataRepository.addToHistory(track)
             com.videoguard.app.recommendation.ListeningHistoryManager.onTrackStarted(track, initialDurationSec)
+            appContext?.let { ctx ->
+                com.videoguard.app.data.GhostCacheEngine.onTrackPlayed(ctx, track)
+            }
 
             if (queue.isNotEmpty()) {
                 if (_isShuffleEnabled.value && queue.size > 1) {
@@ -501,7 +505,8 @@ object PlaybackController {
                 _playbackQueue.value = listOf(track)
             }
 
-            val isDownloaded = isOffline || com.videoguard.app.data.UserDataRepository.isDownloaded(track.id)
+            val hasGhost = appContext?.let { com.videoguard.app.data.GhostCacheEngine.getCachedFile(it, track.id) != null } ?: false
+            val isDownloaded = isOffline || com.videoguard.app.data.UserDataRepository.isDownloaded(track.id) || hasGhost
 
             startOrUpdateService()
 
@@ -562,13 +567,17 @@ object PlaybackController {
                 try {
                     val dir = java.io.File(ctx.filesDir, "downloads")
                     val candidateIds = listOfNotNull(track.id, resolvedId).distinct()
-                    val f = candidateIds.flatMap { cid ->
+                    val downloadedFile = candidateIds.flatMap { cid ->
                         listOf(
                             java.io.File(dir, "$cid.m4a"),
                             java.io.File(dir, "$cid.mp4"),
                             java.io.File(dir, "$cid.webm")
                         )
                     }.firstOrNull { it.exists() && it.length() > 20_000L }
+
+                    val f = downloadedFile ?: candidateIds.firstNotNullOfOrNull { cid ->
+                        com.videoguard.app.data.GhostCacheEngine.getCachedFile(ctx, cid)
+                    }
 
                     if (f != null) {
                         try { offlineFileInputStream?.close() } catch (e: Exception) {}
