@@ -126,10 +126,6 @@ fun MusicPlayerScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var activeSkin by remember { mutableStateOf(com.videoguard.app.ui.components.PlayerSkinManager.getSavedSkin(context)) }
-    var showSkinSelectorSheet by remember { mutableStateOf(false) }
-    var showLyricsPosterSheet by remember { mutableStateOf(false) }
-    var selectedLyricsLineForPoster by remember { mutableStateOf("") }
     val ghostCachedIds by com.videoguard.app.data.GhostCacheEngine.cachedTrackIds.collectAsState()
     val isTrackGhostCached = remember(ghostCachedIds, track.id) {
         ghostCachedIds.contains(track.id) || com.videoguard.app.data.GhostCacheEngine.getCachedFile(context, track.id) != null
@@ -396,25 +392,6 @@ fun MusicPlayerScreen(
     val dynamicPrimary = androidx.compose.ui.graphics.lerp(fromPalette.primary, toPalette.primary, safeBlend)
     val dynamicSecondary = androidx.compose.ui.graphics.lerp(fromPalette.secondary, toPalette.secondary, safeBlend)
     val dynamicDeep = androidx.compose.ui.graphics.lerp(fromPalette.deep, toPalette.deep, safeBlend)
-
-    // Full-screen Car Dashboard mode takes over directly
-    if (activeSkin == com.videoguard.app.ui.components.PlayerSkin.CAR_DASHBOARD) {
-        com.videoguard.app.ui.components.CarDashboardSkin(
-            track = track,
-            isPlaying = isPlaying,
-            currentSeconds = currentSeconds,
-            durationSeconds = maxSeconds,
-            onPlayPause = onPlayPauseToggle,
-            onNext = onNextTrack,
-            onPrev = onPrevTrack,
-            onExitCarMode = {
-                activeSkin = com.videoguard.app.ui.components.PlayerSkin.MODERN
-                com.videoguard.app.ui.components.PlayerSkinManager.saveSkin(context, com.videoguard.app.ui.components.PlayerSkin.MODERN)
-            },
-            modifier = modifier.fillMaxSize()
-        )
-        return
-    }
 
     Box(
         modifier = modifier
@@ -797,29 +774,6 @@ fun MusicPlayerScreen(
                 }
 
                 IconButton(
-                    onClick = { showSkinSelectorSheet = true },
-                    modifier = Modifier
-                        .size(38.dp)
-                        .shadow(elevation = 6.dp, shape = CircleShape)
-                        .clip(CircleShape)
-                        .background(
-                            if (activeSkin != com.videoguard.app.ui.components.PlayerSkin.MODERN) Color(0xFFEAB308).copy(alpha = 0.28f)
-                            else Color.White.copy(alpha = 0.12f)
-                        )
-                        .border(
-                            1.dp,
-                            if (activeSkin != com.videoguard.app.ui.components.PlayerSkin.MODERN) androidx.compose.ui.graphics.SolidColor(Color(0xFFFBBF24).copy(alpha = 0.7f))
-                            else LiquidGlassDefaults.BorderSpecular,
-                            CircleShape
-                        )
-                ) {
-                    Text(
-                        text = activeSkin.icon,
-                        fontSize = 18.sp
-                    )
-                }
-
-                IconButton(
                     onClick = { showSettingsSheet = true },
                     modifier = Modifier
                         .size(38.dp)
@@ -905,77 +859,34 @@ fun MusicPlayerScreen(
                                 currentSeconds = currentSeconds,
                                 lyricsOffsetMs = lyricsOffsetMs,
                                 romanizeMode = romanizeMode,
-                                onLineLongClick = { line ->
-                                    selectedLyricsLineForPoster = line
-                                    showLyricsPosterSheet = true
-                                },
                                 onSeekTo = { posSec ->
                                     com.videoguard.app.service.PlaybackController.seekTo(posSec)
                                 },
                                 modifier = Modifier.fillMaxSize()
                             )
 
-                            // 4. Top-right floating controls: Story Poster & ABC Pill
-                            Row(
+                            // 4. Top-right sleek floating ABC pill toggle
+                            val (modeLabel, isHighlighted) = when (romanizeMode) {
+                                com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "ABC: Both" to true
+                                com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "ABC: Roman" to true
+                                com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> "ABC: Off" to false
+                            }
+                            Box(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
-                                    .padding(end = 8.dp, top = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(end = 8.dp, top = 8.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.45f))
+                                    .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
+                                    .clickable { onCycleRomanizeMode() }
+                                    .padding(horizontal = 9.dp, vertical = 4.dp)
                             ) {
-                                // Story Poster Maker Button
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(Color(0xFF831843).copy(alpha = 0.85f))
-                                        .border(1.dp, Color(0xFFF472B6).copy(alpha = 0.70f), RoundedCornerShape(12.dp))
-                                        .clickable {
-                                            val currentMs = (currentSeconds * 1000).toLong() - lyricsOffsetMs
-                                            val currentLine = lyricsResult?.lines?.lastOrNull { l ->
-                                                l.timestampMs <= currentMs
-                                            }?.text ?: track.title
-                                            selectedLyricsLineForPoster = currentLine
-                                            showLyricsPosterSheet = true
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.AutoAwesome,
-                                            contentDescription = "Story Share",
-                                            tint = Color(0xFFFBCFE8),
-                                            modifier = Modifier.size(12.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(3.dp))
-                                        Text(
-                                            text = "Story",
-                                            color = Color.White,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-
-                                val (modeLabel, isHighlighted) = when (romanizeMode) {
-                                    com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "ABC: Both" to true
-                                    com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "ABC: Roman" to true
-                                    com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> "ABC: Off" to false
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.45f))
-                                        .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
-                                        .clickable { onCycleRomanizeMode() }
-                                        .padding(horizontal = 9.dp, vertical = 4.dp)
-                                ) {
-                                    Text(
-                                        text = modeLabel,
-                                        color = if (isHighlighted) Color(0xFF3EA6FF) else Color.White.copy(alpha = 0.85f),
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
+                                Text(
+                                    text = modeLabel,
+                                    color = if (isHighlighted) Color(0xFF3EA6FF) else Color.White.copy(alpha = 0.85f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
 
@@ -983,27 +894,7 @@ fun MusicPlayerScreen(
                         Spacer(modifier = Modifier.height(32.dp))
                     }
                 }
-            } else when (activeSkin) {
-                com.videoguard.app.ui.components.PlayerSkin.VINYL -> {
-                    com.videoguard.app.ui.components.VinylRecordSkin(
-                        track = track,
-                        isPlaying = isPlaying,
-                        currentSeconds = currentSeconds,
-                        durationSeconds = maxSeconds,
-                        onSeekTo = { posSec -> com.videoguard.app.service.PlaybackController.seekTo(posSec) },
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                com.videoguard.app.ui.components.PlayerSkin.CASSETTE -> {
-                    com.videoguard.app.ui.components.CassetteTapeSkin(
-                        track = track,
-                        isPlaying = isPlaying,
-                        currentSeconds = currentSeconds,
-                        durationSeconds = maxSeconds,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-                else -> {
+            } else {
                 HorizontalPager(
                     state = pagerState,
                     contentPadding = PaddingValues(horizontal = 38.dp),
@@ -1087,7 +978,6 @@ fun MusicPlayerScreen(
                             }
                         }
                     }
-                }
                 }
             }
         }
@@ -1886,28 +1776,6 @@ fun MusicPlayerScreen(
 
     // Floating Reactions Overlay: flies up over the album art and full music player!
     com.videoguard.app.ui.components.FloatingReactionsOverlay(modifier = Modifier.fillMaxSize())
-
-    // Retro Player Skin Selector Sheet
-    if (showSkinSelectorSheet) {
-        com.videoguard.app.ui.components.SkinSelectorSheet(
-            currentSkin = activeSkin,
-            onSelectSkin = { selected ->
-                activeSkin = selected
-                com.videoguard.app.ui.components.PlayerSkinManager.saveSkin(context, selected)
-                showSkinSelectorSheet = false
-            },
-            onDismiss = { showSkinSelectorSheet = false }
-        )
-    }
-
-    // Dynamic Lyrics Poster Maker Sheet
-    if (showLyricsPosterSheet) {
-        com.videoguard.app.ui.components.LyricsPosterSheet(
-            track = track,
-            initialLine = selectedLyricsLineForPoster.ifBlank { track.title },
-            onDismiss = { showLyricsPosterSheet = false }
-        )
-    }
 }
 
 
