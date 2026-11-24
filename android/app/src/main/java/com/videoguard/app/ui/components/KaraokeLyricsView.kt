@@ -114,8 +114,8 @@ fun KaraokeLyricsView(
                     LazyColumn(
                         state = listState,
                         contentPadding = PaddingValues(
-                            top = centerPadding,
-                            bottom = if (isSelectionMode) centerPadding + 70.dp else centerPadding,
+                            top = if (lyrics.isSynced) centerPadding else 24.dp,
+                            bottom = if (isSelectionMode) centerPadding + 70.dp else (if (lyrics.isSynced) centerPadding else 48.dp),
                             start = 14.dp,
                             end = 14.dp
                         ),
@@ -150,6 +150,7 @@ fun KaraokeLyricsView(
                                     isSelected -> Color.White
                                     isActive -> Color(0xFF3EA6FF)
                                     isPast -> Color.White.copy(alpha = 0.32f)
+                                    !lyrics.isSynced -> Color.White.copy(alpha = 0.92f)
                                     else -> Color.White.copy(alpha = 0.65f)
                                 },
                                 animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
@@ -160,6 +161,7 @@ fun KaraokeLyricsView(
                                 targetValue = when {
                                     isSelected -> 1.05f
                                     isActive -> 1.07f
+                                    !lyrics.isSynced -> 1.0f
                                     else -> 0.94f
                                 },
                                 animationSpec = spring(
@@ -175,6 +177,7 @@ fun KaraokeLyricsView(
                                     isSelectionMode -> 0.40f
                                     isActive -> 1f
                                     isPast -> 0.35f
+                                    !lyrics.isSynced -> 0.95f
                                     else -> 0.70f
                                 },
                                 animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),

@@ -149,13 +149,25 @@ object LyricsEngine {
             }
         }
 
-        // Split by "|" e.g. "Barsaat | Banjaare, Roni"
+        // Split by "|" e.g. "Barsaat | Banjaare, Roni" or "Song | Movie | Actor | Singer"
         if (trackTitle.contains("|")) {
-            val parts = trackTitle.split("|")
+            val parts = trackTitle.split("|").map { it.trim() }
+            val p0 = cleanTrackNameRaw(parts[0])
+            for (i in 1 until parts.size) {
+                val segArtist = cleanArtistRaw(parts[i])
+                if (segArtist.isNotBlank() && !isGenericOrLabel(segArtist)) {
+                    variants.add(p0 to segArtist)
+                }
+            }
+        }
+
+        // Split by "by" or "feat" e.g. "Song by Singer" or "Song feat. Singer"
+        if (trackTitle.contains(" by ", ignoreCase = true)) {
+            val parts = trackTitle.split(Regex("(?i)\\s+by\\s+"))
             if (parts.size >= 2) {
                 val p0 = cleanTrackNameRaw(parts[0])
                 val p1 = cleanArtistRaw(parts[1])
-                if (p0.isNotBlank()) {
+                if (p0.isNotBlank() && p1.isNotBlank()) {
                     variants.add(p0 to p1)
                 }
             }
@@ -259,17 +271,15 @@ object LyricsEngine {
                     val resTrack = obj.optString("trackName", "").lowercase().trim()
                     val resArtist = obj.optString("artistName", "").lowercase().trim()
 
-                    // Title must have significant overlap
-                    val titleMatches = resTrack.contains(expTitleClean) || expTitleClean.contains(resTrack) ||
-                            shareSignificantWord(resTrack, expTitleClean)
-
+                    // Title must have strong match (exact, containment, or high significant word overlap)
+                    val titleMatches = titleMatchesWell(resTrack, expTitleClean)
                     if (!titleMatches) continue
 
-                    // Artist validation: if artist is not generic, ensure it doesn't match a completely different artist
+                    // Artist validation: if artist is specified, ensure it doesn't match an entirely different artist
                     var artistMatches = true
                     if (!isGeneric && expArtistClean.isNotBlank()) {
                         artistMatches = resArtist.contains(expArtistClean) || expArtistClean.contains(resArtist) ||
-                                shareSignificantWord(resArtist, expArtistClean)
+                                titleMatchesWell(resArtist, expArtistClean)
                     }
 
                     if (!artistMatches) {
@@ -280,22 +290,29 @@ object LyricsEngine {
                     val hasPlain = obj.optString("plainLyrics", "").isNotBlank()
                     if (!hasSynced && !hasPlain) continue
 
-                    var score = 0
-                    if (hasSynced) score += 60 // Heavily favor synced lyrics
-                    if (hasPlain) score += 5
-                    if (resArtist == expArtistClean && !isGeneric) score += 30
-                    if (resTrack == expTitleClean) score += 30
-
-                    // DURATION MATCHING: Ensures lyrics match the exact cut/mix of the song
+                    // DURATION MATCHING: Reject songs with large duration discrepancy (>20s) to avoid wrong cuts/mixes
                     val candidateDur = obj.optDouble("duration", 0.0).toInt()
                     if (durationSeconds > 0 && candidateDur > 0) {
                         val diff = kotlin.math.abs(candidateDur - durationSeconds)
+                        if (diff > 20) {
+                            continue
+                        }
+                    }
+
+                    var score = 0
+                    if (hasSynced) score += 70 // Strongly prefer real synced lyrics
+                    if (hasPlain) score += 5
+                    if (resArtist == expArtistClean && !isGeneric) score += 40
+                    if (resTrack == expTitleClean) score += 40
+
+                    if (durationSeconds > 0 && candidateDur > 0) {
+                        val diff = kotlin.math.abs(candidateDur - durationSeconds)
                         if (diff <= 3) {
-                            score += 50 // Perfect duration match
+                            score += 60 // Exact duration match
                         } else if (diff <= 8) {
-                            score += 25
-                        } else if (diff > 30) {
-                            score -= 35
+                            score += 30
+                        } else {
+                            score -= (diff * 2)
                         }
                     }
 
@@ -315,16 +332,26 @@ object LyricsEngine {
         }
     }
 
-    private fun shareSignificantWord(s1: String, s2: String): Boolean {
-        val stopwords = setOf("the", "and", "official", "audio", "video", "feat", "with", "prod")
-        val w1 = s1.split(Regex("[\\s\\-_,./&|()]+")).map { it.trim().lowercase() }.filter { it.length > 2 && it !in stopwords }
-        val w2 = s2.split(Regex("[\\s\\-_,./&|()]+")).map { it.trim().lowercase() }.filter { it.length > 2 && it !in stopwords }
-        return w1.any { it in w2 }
+    private fun titleMatchesWell(s1: String, s2: String): Boolean {
+        val clean1 = s1.lowercase().trim()
+        val clean2 = s2.lowercase().trim()
+        if (clean1 == clean2) return true
+        if (clean1.contains(clean2) || clean2.contains(clean1)) return true
+
+        val stopwords = setOf("the", "and", "official", "audio", "video", "feat", "with", "prod", "song", "lyrics")
+        val w1 = clean1.split(Regex("[\\s\\-_,./&|()]+")).map { it.trim() }.filter { it.length > 2 && it !in stopwords }
+        val w2 = clean2.split(Regex("[\\s\\-_,./&|()]+")).map { it.trim() }.filter { it.length > 2 && it !in stopwords }
+
+        if (w1.isEmpty() || w2.isEmpty()) return false
+        val common = w1.count { it in w2 }
+        val minLen = minOf(w1.size, w2.size)
+        return common >= 2 || (minLen == 1 && common == 1) || (common.toFloat() / minLen >= 0.6f)
     }
 
     /**
-     * Converts plain lyrics text into accurately-spaced auto-synchronized karaoke lyrics
-     * based on natural vocal phrasing, syllable weight, and total track duration.
+     * Converts plain lyrics text into readable, scrollable lyric lines.
+     * Note: Marked as isSynced = false so the UI presents them as clean readable text
+     * rather than jumping ahead/behind on artificial mathematical guesses!
      */
     fun autoSyncPlainLyrics(plain: String, durationSeconds: Int): LyricsResult {
         val rawLines = plain.lines()
@@ -335,37 +362,11 @@ object LyricsEngine {
             return LyricsResult(lines = emptyList(), plainLyrics = plain, isSynced = false)
         }
 
-        val totalMs = (if (durationSeconds > 0) durationSeconds else 210) * 1000L
-        val introMs = (totalMs * 0.08f).toLong().coerceIn(4000L, 16000L)
-        val outroMs = (totalMs * 0.08f).toLong().coerceIn(4000L, 16000L)
-        val singingSpanMs = (totalMs - introMs - outroMs).coerceAtLeast(10000L)
-
-        val weights = rawLines.map { line ->
-            val charWeight = line.length.coerceIn(8, 60).toFloat()
-            val wordWeight = line.split(Regex("\\s+")).size.toFloat() * 2.5f
-            charWeight + wordWeight
-        }
-        val totalWeight = weights.sum().coerceAtLeast(1f)
-
-        var currentMs = introMs
-        val resultLines = mutableListOf<LyricLine>()
-
-        for (i in rawLines.indices) {
-            val lineText = rawLines[i]
-            val lineDurationMs = ((weights[i] / totalWeight) * singingSpanMs).toLong().coerceIn(2000L, 8500L)
+        val resultLines = rawLines.map { lineText ->
             val roman = if (TransliterationEngine.canRomanize(lineText)) TransliterationEngine.romanize(lineText) else ""
-
-            resultLines.add(
-                LyricLine(
-                    timestampMs = currentMs,
-                    text = lineText,
-                    romanizedText = roman
-                )
-            )
-            currentMs += lineDurationMs
+            LyricLine(timestampMs = 0L, text = lineText, romanizedText = roman)
         }
-
-        return LyricsResult(lines = resultLines, plainLyrics = plain, isSynced = true)
+        return LyricsResult(lines = resultLines, plainLyrics = plain, isSynced = false)
     }
 
     fun parseCustomLrc(synced: String, plain: String): LyricsResult {
