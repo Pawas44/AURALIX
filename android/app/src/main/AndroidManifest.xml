@@ -52,11 +52,13 @@
                 <data android:scheme="auralix" />
             </intent-filter>
 
-            <!-- 1-Click Web Links: https://auralix.app/playlist -->
+            <!-- 1-Click Web Links: GitHub Pages & auralix.app -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="pawas44.github.io" android:pathPrefix="/AURALIX" />
+                <data android:scheme="http" android:host="pawas44.github.io" android:pathPrefix="/AURALIX" />
                 <data android:scheme="http" android:host="auralix.app" android:pathPrefix="/playlist" />
                 <data android:scheme="https" android:host="auralix.app" android:pathPrefix="/playlist" />
             </intent-filter>

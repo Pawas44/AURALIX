@@ -22,6 +22,8 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         val incomingSharedPlaylist = kotlinx.coroutines.flow.MutableStateFlow<com.videoguard.app.model.UserPlaylist?>(null)
+        val clipboardSharedPlaylist = kotlinx.coroutines.flow.MutableStateFlow<com.videoguard.app.model.UserPlaylist?>(null)
+        private var lastCheckedClipboardText = ""
     }
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -114,6 +116,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        checkClipboardForSharedPlaylist()
         if (com.videoguard.app.data.AuthManager.verifySessionToken(this)) {
             if (com.videoguard.app.data.YouTubeSyncEngine.hasAuthCookies()) {
                 CoroutineScope(Dispatchers.IO).launch {
@@ -123,6 +126,29 @@ class MainActivity : ComponentActivity() {
             com.videoguard.app.data.AppUpdateManager.checkForUpdates(this)
         } else if (com.videoguard.app.data.AuthManager.isLoggedIn.value) {
             com.videoguard.app.data.AuthManager.logout(this)
+        }
+    }
+
+    private fun checkClipboardForSharedPlaylist() {
+        try {
+            val clipManager = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return
+            val clip = clipManager.primaryClip ?: return
+            if (clip.itemCount > 0) {
+                val rawText = clip.getItemAt(0)?.text?.toString()?.trim() ?: ""
+                if (rawText.isNotBlank() && rawText != lastCheckedClipboardText) {
+                    if (rawText.contains("auralix://") || rawText.contains("/playlist") || rawText.contains("?p=") || rawText.contains("open.spotify.com/playlist") || rawText.contains("youtube.com/playlist") || rawText.contains("AURALIX")) {
+                        lastCheckedClipboardText = rawText
+                        val match = Regex("""(auralix://\S+|https?://\S+)""").find(rawText)?.value ?: rawText
+                        val uri = android.net.Uri.parse(match)
+                        val playlist = com.videoguard.app.data.PlaylistShareEngine.parseIncomingDeepLink(uri)
+                        if (playlist != null) {
+                            clipboardSharedPlaylist.value = playlist
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 

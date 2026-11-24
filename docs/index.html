@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AURALIX Music | Shared Playlist</title>
+  <link rel="icon" href="https://img.icons8.com/fluency/96/musical-notes.png" type="image/png">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      background: radial-gradient(circle at 50% 20%, #1c1033 0%, #06070b 100%);
+      color: #FFFFFF;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      letter-spacing: -0.2px;
+    }
+    .card {
+      width: 100%;
+      max-width: 440px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 28px;
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      padding: 32px 24px;
+      text-align: center;
+      box-shadow: 0 25px 50px -12px rgba(139, 92, 246, 0.25);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      background: rgba(139, 92, 246, 0.18);
+      border: 1px solid rgba(139, 92, 246, 0.35);
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #C084FC;
+      margin-bottom: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .cover {
+      width: 160px;
+      height: 160px;
+      margin: 0 auto 20px;
+      border-radius: 22px;
+      object-fit: cover;
+      background: linear-gradient(135deg, #8B5CF6, #EC4899);
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 52px;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+      margin-bottom: 8px;
+      color: #FFFFFF;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: #A1A1AA;
+      margin-bottom: 24px;
+    }
+    .btn-primary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 16px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%);
+      color: #FFFFFF;
+      font-size: 16px;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 10px 25px rgba(139, 92, 246, 0.45);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer;
+      border: none;
+    }
+    .btn-primary:active {
+      transform: scale(0.98);
+    }
+    .btn-secondary {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      margin-top: 12px;
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #E4E4E7;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.2s ease;
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+    }
+    .tip-box {
+      margin-top: 24px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      font-size: 12px;
+      color: #71717A;
+      line-height: 1.5;
+    }
+    .track-list {
+      margin-top: 20px;
+      max-height: 180px;
+      overflow-y: auto;
+      text-align: left;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 14px;
+      padding: 8px 12px;
+    }
+    .track-item {
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+    }
+    .track-item:last-child {
+      border-bottom: none;
+    }
+    .track-title {
+      font-weight: 600;
+      color: #F4F4F5;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+    .track-artist {
+      font-size: 11px;
+      color: #A1A1AA;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="badge">🎵 Auralix Music</div>
+    
+    <div id="coverBox" class="cover">🎧</div>
+    
+    <h1 id="playlistTitle">Shared Playlist</h1>
+    <p id="playlistSub" class="subtitle">Opening in Auralix...</p>
+
+    <a id="openAppBtn" href="#" class="btn-primary">
+      <span>▶️</span>
+      <span>Open in Auralix App</span>
+    </a>
+
+    <a href="https://raw.githubusercontent.com/Pawas44/AURALIX/main/Auralix-Android.apk" class="btn-secondary">
+      <span>⬇️</span>
+      <span>Download Auralix App (APK)</span>
+    </a>
+
+    <div id="trackList" class="track-list" style="display: none;"></div>
+
+    <div class="tip-box">
+      ⚡ <strong>Tip for 1-Click Launch:</strong><br>
+      In Android: <em>Settings &gt; Apps &gt; Auralix &gt; Open by default &gt; Add links</em> to open links without opening the browser.
+    </div>
+  </div>
+
+  <script>
+    (async function() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const payload = urlParams.get('p');
+      const titleParam = urlParams.get('title') || urlParams.get('t');
+      const ytId = urlParams.get('id');
+
+      // Native app scheme URI
+      const appSchemeUrl = "auralix://playlist" + window.location.search;
+      document.getElementById('openAppBtn').href = appSchemeUrl;
+
+      // 1. Attempt instant app launch
+      window.location.replace(appSchemeUrl);
+
+      // 2. Decode and display info if user stays in browser
+      if (titleParam) {
+        document.getElementById('playlistTitle').textContent = decodeURIComponent(titleParam);
+      }
+
+      if (payload) {
+        try {
+          let base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+          while (base64.length % 4) base64 += '=';
+          const binStr = atob(base64);
+          const bytes = new Uint8Array(binStr.length);
+          for (let i = 0; i < binStr.length; i++) bytes[i] = binStr.charCodeAt(i);
+
+          if (window.DecompressionStream) {
+            const ds = new DecompressionStream('gzip');
+            const writer = ds.writable.getWriter();
+            writer.write(bytes);
+            writer.close();
+            const reader = ds.readable.getReader();
+            const chunks = [];
+            let done, value;
+            while (!({done, value} = await reader.read()).done) {
+              chunks.push(value);
+            }
+            const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+            const res = new Uint8Array(totalLen);
+            let offset = 0;
+            for (const c of chunks) {
+              res.set(c, offset);
+              offset += c.length;
+            }
+            const json = JSON.parse(new TextDecoder().decode(res));
+            
+            if (json.t) document.getElementById('playlistTitle').textContent = json.t;
+            if (json.v && Array.isArray(json.v)) {
+              document.getElementById('playlistSub').textContent = `${json.v.length} tracks • Tap below to play`;
+              
+              const trackListEl = document.getElementById('trackList');
+              trackListEl.innerHTML = '';
+              json.v.forEach((song, i) => {
+                const item = document.createElement('div');
+                item.className = 'track-item';
+                item.innerHTML = `<span style="color: #A1A1AA; font-size: 11px;">${i + 1}</span>
+                                  <div style="flex: 1; min-width: 0;">
+                                    <div class="track-title">${song.t || 'Song'}</div>
+                                    <div class="track-artist">${song.a || 'Auralix Artist'}</div>
+                                  </div>`;
+                trackListEl.appendChild(item);
+              });
+              trackListEl.style.display = 'block';
+
+              if (json.c) {
+                const img = new Image();
+                img.src = json.c;
+                img.className = 'cover';
+                img.onload = () => {
+                  const box = document.getElementById('coverBox');
+                  box.replaceWith(img);
+                };
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Could not unpack payload in browser preview:", e);
+        }
+      }
+    })();
+  </script>
+</body>
+</html>

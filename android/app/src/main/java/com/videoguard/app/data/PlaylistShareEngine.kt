@@ -16,21 +16,25 @@ import java.util.zip.GZIPOutputStream
 
 object PlaylistShareEngine {
 
-    private const val BASE_WEB_URL = "https://auralix.app/playlist"
+    private const val GITHUB_PAGES_URL = "https://pawas44.github.io/AURALIX"
+    private const val BASE_WEB_URL = "https://pawas44.github.io/AURALIX"
+    private const val LEGACY_WEB_URL = "https://auralix.app/playlist"
     private const val BASE_SCHEME_URL = "auralix://playlist"
 
     /**
      * Generates a 1-click share link and launches the native Android sharesheet.
      */
     fun sharePlaylist(context: Context, playlist: UserPlaylist) {
-        val shareLink = generateShareLink(playlist)
+        val appLink = generateAppSchemeLink(playlist)
+        val webLink = generateShareLink(playlist)
         val songCount = playlist.videos.size
         val sampleSongs = playlist.videos.take(3).joinToString("\n") { "• ${it.title}" }
         val moreText = if (songCount > 3) "\n...and ${songCount - 3} more songs" else ""
 
         val shareText = buildString {
             append("🎵 Listen to \"${playlist.title}\" on AURALIX!\n\n")
-            append("▶️ 1-Click Open in Auralix:\n$shareLink\n\n")
+            append("▶️ 1-Click Open in App:\n$appLink\n\n")
+            append("🌐 Web / Browser Link:\n$webLink\n\n")
             if (playlist.videos.isNotEmpty()) {
                 append("🎶 Tracklist ($songCount songs):\n")
                 append(sampleSongs)
@@ -53,6 +57,27 @@ object PlaylistShareEngine {
     }
 
     /**
+     * Direct custom-scheme deep link (auralix://playlist?p=...) that launches the app directly
+     * without routing through a web browser.
+     */
+    fun generateAppSchemeLink(playlist: UserPlaylist): String {
+        return try {
+            val isRemoteYt = playlist.id.startsWith("PL") || playlist.id.startsWith("OLAK5uy_") || playlist.id.startsWith("RD")
+            if (isRemoteYt && playlist.videos.isEmpty()) {
+                val encTitle = URLEncoder.encode(playlist.title, "UTF-8")
+                return "$BASE_SCHEME_URL?id=${playlist.id}&title=$encTitle"
+            }
+            val payload = buildCompressedPayload(playlist)
+            val encTitle = URLEncoder.encode(playlist.title, "UTF-8")
+            "$BASE_SCHEME_URL?p=$payload&title=$encTitle"
+        } catch (e: Exception) {
+            val vids = playlist.videos.map { it.id }.joinToString(",")
+            val encTitle = URLEncoder.encode(playlist.title, "UTF-8")
+            "$BASE_SCHEME_URL?title=$encTitle&v=$vids"
+        }
+    }
+
+    /**
      * Creates an ultra-compact 1-click share URL.
      * Uses GZIP + URL-Safe Base64 so full song lists (even 50+ songs) pack into a tiny URL
      * that opens instantly on any phone without requiring a server database.
@@ -62,39 +87,41 @@ object PlaylistShareEngine {
             val isRemoteYt = playlist.id.startsWith("PL") || playlist.id.startsWith("OLAK5uy_") || playlist.id.startsWith("RD")
             if (isRemoteYt && playlist.videos.isEmpty()) {
                 val encTitle = URLEncoder.encode(playlist.title, "UTF-8")
-                return "$BASE_WEB_URL?id=${playlist.id}&title=$encTitle"
+                return "$BASE_WEB_URL/?id=${playlist.id}&title=$encTitle"
             }
 
-            // Pack full playlist payload: title, cover, and songs
-            val json = JSONObject().apply {
-                put("i", playlist.id)
-                put("t", playlist.title)
-                if (playlist.description.isNotBlank()) put("d", playlist.description)
-                if (!playlist.customCoverUrl.isNullOrBlank()) put("c", playlist.customCoverUrl)
-                val arr = JSONArray()
-                for (v in playlist.videos) {
-                    val vo = JSONObject().apply {
-                        put("i", v.id)
-                        put("t", v.title)
-                        put("a", v.artist.ifBlank { v.channelName })
-                        put("d", v.duration)
-                        if (v.thumbnailUrl.isNotBlank()) put("u", v.thumbnailUrl)
-                    }
-                    arr.put(vo)
-                }
-                put("v", arr)
-            }
-
-            val compressedBase64 = compressAndEncode(json.toString())
+            val compressedBase64 = buildCompressedPayload(playlist)
             val encTitle = URLEncoder.encode(playlist.title, "UTF-8")
-            "$BASE_WEB_URL?p=$compressedBase64&title=$encTitle"
+            "$BASE_WEB_URL/?p=$compressedBase64&title=$encTitle"
         } catch (e: Exception) {
             e.printStackTrace()
             // Fallback to simple comma-separated IDs
             val vids = playlist.videos.map { it.id }.joinToString(",")
             val encTitle = URLEncoder.encode(playlist.title, "UTF-8")
-            "$BASE_WEB_URL?title=$encTitle&v=$vids"
+            "$BASE_WEB_URL/?title=$encTitle&v=$vids"
         }
+    }
+
+    private fun buildCompressedPayload(playlist: UserPlaylist): String {
+        val json = JSONObject().apply {
+            put("i", playlist.id)
+            put("t", playlist.title)
+            if (playlist.description.isNotBlank()) put("d", playlist.description)
+            if (!playlist.customCoverUrl.isNullOrBlank()) put("c", playlist.customCoverUrl)
+            val arr = JSONArray()
+            for (v in playlist.videos) {
+                val vo = JSONObject().apply {
+                    put("i", v.id)
+                    put("t", v.title)
+                    put("a", v.artist.ifBlank { v.channelName })
+                    put("d", v.duration)
+                    if (v.thumbnailUrl.isNotBlank()) put("u", v.thumbnailUrl)
+                }
+                arr.put(vo)
+            }
+            put("v", arr)
+        }
+        return compressAndEncode(json.toString())
     }
 
     /**
@@ -106,8 +133,13 @@ object PlaylistShareEngine {
             val scheme = uri.scheme?.lowercase() ?: ""
             val host = uri.host?.lowercase() ?: ""
 
-            // 1. Auralix Web or Scheme Link (https://auralix.app/playlist or auralix://playlist)
-            if (scheme == "auralix" || (host == "auralix.app" && uri.path?.startsWith("/playlist") == true)) {
+            // 1. Auralix Web or Scheme Link (auralix://, GitHub Pages, auralix.app, or any URI with ?p=)
+            val isAuralixLink = scheme == "auralix" ||
+                    host.contains("pawas44.github.io") ||
+                    host.contains("auralix.app") ||
+                    uri.getQueryParameter("p") != null
+
+            if (isAuralixLink) {
                 // A. Check compressed payload `p`
                 val p = uri.getQueryParameter("p")
                 if (!p.isNullOrBlank()) {

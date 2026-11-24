@@ -179,6 +179,16 @@ fun MainScreen() {
         }
     }
 
+    // Auto-detected shared playlist from clipboard (e.g. copied from browser/WhatsApp)
+    val clipboardPlaylist by com.videoguard.app.MainActivity.clipboardSharedPlaylist.collectAsState()
+    LaunchedEffect(clipboardPlaylist) {
+        val pl = clipboardPlaylist
+        if (pl != null) {
+            activePlaylist = pl
+            com.videoguard.app.MainActivity.clipboardSharedPlaylist.value = null
+        }
+    }
+
     // Mode-aware back button handling
     BackHandler(
         enabled = isFullscreen || isPlayerExpanded || isSearchActive || isJamActive || isSupportActive || isLibraryActive || showAccountSheet ||
