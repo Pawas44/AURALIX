@@ -299,11 +299,15 @@ object PlaybackController {
     private var resumeOnFocusGain = false
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        val am = audioManager ?: appContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        val inCall = am?.let {
+            it.mode == AudioManager.MODE_IN_CALL ||
+            it.mode == AudioManager.MODE_RINGTONE ||
+            it.mode == AudioManager.MODE_IN_COMMUNICATION ||
+            it.mode == AudioManager.MODE_CALL_SCREENING
+        } ?: false
+
         when (focusChange) {
-            AudioManager.AUDIOFOCUS_LOSS -> {
-                resumeOnFocusGain = false
-                pause()
-            }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 // Incoming or answered phone call -> pause music immediately
@@ -311,6 +315,22 @@ object PlaybackController {
                     resumeOnFocusGain = true
                     pause(fromUser = false)
                 }
+            }
+            AudioManager.AUDIOFOCUS_LOSS -> {
+                if (inCall) {
+                    // Phone call or VoIP call took exclusive focus
+                    if (_isPlaying.value) {
+                        resumeOnFocusGain = true
+                        pause(fromUser = false)
+                    }
+                } else if (isOfflineModeActive) {
+                    // Another app took exclusive focus while offline media player is playing
+                    resumeOnFocusGain = false
+                    pause(fromUser = true)
+                }
+                // Note: For online WebView playback, we do NOT self-pause on AUDIOFOCUS_LOSS
+                // because WebView's Chromium audio player requests AUDIOFOCUS_GAIN for the
+                // currently loaded video, which is our own audio playback!
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 // Call ended -> resume playback smoothly
@@ -377,10 +397,35 @@ object PlaybackController {
                 BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
                     pause()
                 }
-                AudioManager.ACTION_HEADSET_PLUG -> {
-                    val state = intent.getIntExtra("state", -1)
-                    if (state == 0 && _isPlaying.value) { // 0 means unplugged
-                        pause()
+            }
+        }
+    }
+
+    private var callMonitorJob: kotlinx.coroutines.Job? = null
+
+    private fun startCallMonitor() {
+        callMonitorJob?.cancel()
+        callMonitorJob = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            val am = appContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return@launch
+            var wasInCall = false
+            while (isActive) {
+                kotlinx.coroutines.delay(500L)
+                val inCall = am.mode == AudioManager.MODE_IN_CALL ||
+                             am.mode == AudioManager.MODE_RINGTONE ||
+                             am.mode == AudioManager.MODE_IN_COMMUNICATION ||
+                             am.mode == AudioManager.MODE_CALL_SCREENING
+
+                if (inCall && !wasInCall) {
+                    wasInCall = true
+                    if (_isPlaying.value) {
+                        resumeOnFocusGain = true
+                        pause(fromUser = false)
+                    }
+                } else if (!inCall && wasInCall) {
+                    wasInCall = false
+                    if (resumeOnFocusGain) {
+                        resumeOnFocusGain = false
+                        play()
                     }
                 }
             }
@@ -398,6 +443,7 @@ object PlaybackController {
         com.videoguard.app.audio.EqualizerEngine.init(context)
         com.videoguard.app.data.GhostCacheEngine.init(context)
         registerNoisyReceiver()
+        startCallMonitor()
     }
 
     private fun registerNoisyReceiver() {
@@ -407,7 +453,6 @@ object PlaybackController {
             val filter = IntentFilter().apply {
                 addAction(AudioManager.ACTION_AUDIO_BECOMING_NOISY)
                 addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
-                addAction(AudioManager.ACTION_HEADSET_PLUG)
             }
             ContextCompat.registerReceiver(
                 ctx,
