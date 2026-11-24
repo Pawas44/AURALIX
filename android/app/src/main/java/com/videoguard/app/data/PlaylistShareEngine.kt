@@ -16,25 +16,25 @@ import java.util.zip.GZIPOutputStream
 
 object PlaylistShareEngine {
 
-    private const val GITHUB_PAGES_URL = "https://pawas44.github.io/AURALIX"
-    private const val BASE_WEB_URL = "https://pawas44.github.io/AURALIX"
-    private const val LEGACY_WEB_URL = "https://auralix.app/playlist"
+    private const val BASE_WEB_URL = "https://auralix.app/playlist"
     private const val BASE_SCHEME_URL = "auralix://playlist"
 
     /**
      * Generates a 1-click share link and launches the native Android sharesheet.
      */
     fun sharePlaylist(context: Context, playlist: UserPlaylist) {
-        val appLink = generateAppSchemeLink(playlist)
-        val webLink = generateShareLink(playlist)
+        val shareLink = generateShareLink(playlist)
         val songCount = playlist.videos.size
         val sampleSongs = playlist.videos.take(3).joinToString("\n") { "• ${it.title}" }
         val moreText = if (songCount > 3) "\n...and ${songCount - 3} more songs" else ""
 
         val shareText = buildString {
             append("🎵 Listen to \"${playlist.title}\" on AURALIX!\n\n")
-            append("▶️ 1-Click Open in App:\n$appLink\n\n")
-            append("🌐 Web / Browser Link:\n$webLink\n\n")
+            append("🔗 1-Click Link:\n$shareLink\n\n")
+            append("✨ How to open in Auralix:\n")
+            append("• Tap the link above OR copy this message.\n")
+            append("• Open Auralix -> it will open automatically!\n")
+            append("  (Or tap 'Import' in Library)\n\n")
             if (playlist.videos.isNotEmpty()) {
                 append("🎶 Tracklist ($songCount songs):\n")
                 append(sampleSongs)
@@ -261,6 +261,76 @@ object PlaylistShareEngine {
             e.printStackTrace()
         }
         return null
+    }
+
+    /**
+     * Robust parser that extracts a playlist from ANY text, whether it is a URL,
+     * an entire copied WhatsApp/Telegram message, or raw parameters.
+     */
+    fun parseTextForPlaylist(rawInput: String): UserPlaylist? {
+        val text = rawInput.trim()
+        if (text.isBlank()) return null
+
+        // 1. Direct regex match on compressed `p` parameter anywhere in the text
+        val pMatch = Regex("""[?&]p=([A-Za-z0-9_-]+)""").find(text)
+        if (pMatch != null) {
+            val pVal = pMatch.groupValues[1]
+            try {
+                val jsonStr = decompressAndDecode(pVal)
+                if (jsonStr.isNotBlank() && jsonStr.startsWith("{")) {
+                    val json = JSONObject(jsonStr)
+                    val id = json.optString("i", "shared_${System.currentTimeMillis()}")
+                    val title = json.optString("t", "Shared Playlist")
+                    val desc = json.optString("d", "Shared via AURALIX")
+                    val cover = json.optString("c", "")
+                    val arr = json.optJSONArray("v") ?: JSONArray()
+                    val list = mutableListOf<VideoItem>()
+                    for (idx in 0 until arr.length()) {
+                        val obj = arr.optJSONObject(idx) ?: continue
+                        val vid = obj.optString("i", "")
+                        if (vid.isBlank()) continue
+                        val vTitle = obj.optString("t", "Song $idx")
+                        val vArtist = obj.optString("a", "Unknown Artist")
+                        val vDur = obj.optString("d", "3:30")
+                        val vThumb = obj.optString("u", ArtworkUrlHelper.getHighResArtworkUrl("", vid))
+                        list.add(
+                            VideoItem(
+                                id = vid,
+                                title = vTitle,
+                                channelName = vArtist,
+                                channelAvatarUrl = vThumb,
+                                thumbnailUrl = vThumb,
+                                views = "",
+                                uploadTime = "",
+                                duration = vDur,
+                                isMusicTrack = true,
+                                artist = vArtist
+                            )
+                        )
+                    }
+                    return UserPlaylist(
+                        id = if (id.startsWith("shared_")) id else "shared_$id",
+                        title = title,
+                        description = desc,
+                        videos = list,
+                        isSystem = false,
+                        iconType = "playlist",
+                        customCoverUrl = cover.ifBlank { list.firstOrNull()?.thumbnailUrl }
+                    )
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 2. Fallback to URI parsing
+        val urlMatch = Regex("""(https?://\S+|auralix://\S+)""").find(text)?.value ?: text
+        return try {
+            val uri = Uri.parse(urlMatch)
+            parseIncomingDeepLink(uri)
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun compressAndEncode(input: String): String {

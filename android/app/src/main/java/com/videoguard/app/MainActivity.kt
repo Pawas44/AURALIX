@@ -136,11 +136,9 @@ class MainActivity : ComponentActivity() {
             if (clip.itemCount > 0) {
                 val rawText = clip.getItemAt(0)?.text?.toString()?.trim() ?: ""
                 if (rawText.isNotBlank() && rawText != lastCheckedClipboardText) {
-                    if (rawText.contains("auralix://") || rawText.contains("/playlist") || rawText.contains("?p=") || rawText.contains("open.spotify.com/playlist") || rawText.contains("youtube.com/playlist") || rawText.contains("AURALIX")) {
+                    if (rawText.contains("p=") || rawText.contains("auralix") || rawText.contains("/playlist") || rawText.contains("spotify.com") || rawText.contains("youtube.com")) {
                         lastCheckedClipboardText = rawText
-                        val match = Regex("""(auralix://\S+|https?://\S+)""").find(rawText)?.value ?: rawText
-                        val uri = android.net.Uri.parse(match)
-                        val playlist = com.videoguard.app.data.PlaylistShareEngine.parseIncomingDeepLink(uri)
+                        val playlist = com.videoguard.app.data.PlaylistShareEngine.parseTextForPlaylist(rawText)
                         if (playlist != null) {
                             clipboardSharedPlaylist.value = playlist
                         }

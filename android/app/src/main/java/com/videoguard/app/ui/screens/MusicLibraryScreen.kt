@@ -77,6 +77,10 @@ fun MusicLibraryScreen(
     var newPlaylistTitle by remember { mutableStateOf("") }
     var selectedPlaylistForOptions by remember { mutableStateOf<UserPlaylist?>(null) }
 
+    var showImportSharedPlaylistDialog by remember { mutableStateOf(false) }
+    var importSharedPlaylistInput by remember { mutableStateOf("") }
+    var importSharedPlaylistError by remember { mutableStateOf<String?>(null) }
+
     // Service Import State (Spotify Link Importer)
     var selectedImportService by remember { mutableStateOf<String?>(null) }
     var importUrlInput by remember { mutableStateOf("") }
@@ -1135,29 +1139,66 @@ fun MusicLibraryScreen(
                             fontWeight = FontWeight.Bold
                         )
 
-                        Surface(
-                            onClick = { showNewPlaylistDialog = true },
-                            shape = RoundedCornerShape(16.dp),
-                            color = Color.White.copy(alpha = 0.08f),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            Surface(
+                                onClick = {
+                                    val clip = clipboardManager.getText()?.text ?: ""
+                                    if (clip.contains("p=") || clip.contains("auralix") || clip.contains("playlist") || clip.contains("spotify.com") || clip.contains("youtube.com")) {
+                                        importSharedPlaylistInput = clip
+                                    }
+                                    showImportSharedPlaylistDialog = true
+                                },
+                                shape = RoundedCornerShape(16.dp),
+                                color = Color(0xFF8B5CF6).copy(alpha = 0.18f),
+                                border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.4f))
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = "New Playlist",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = "New Playlist",
-                                    color = Color.White,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Link,
+                                        contentDescription = "Import Playlist",
+                                        tint = Color(0xFFC084FC),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = "Import",
+                                        color = Color.White,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                onClick = { showNewPlaylistDialog = true },
+                                shape = RoundedCornerShape(16.dp),
+                                color = Color.White.copy(alpha = 0.08f),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "New Playlist",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = "New",
+                                        color = Color.White,
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             }
                         }
                     }
@@ -1384,6 +1425,115 @@ fun MusicLibraryScreen(
             },
             containerColor = Color(0xFF1E1E1E),
             shape = RoundedCornerShape(16.dp)
+        )
+    }
+
+    // Modal: Import Shared Playlist Dialog
+    if (showImportSharedPlaylistDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showImportSharedPlaylistDialog = false
+                importSharedPlaylistInput = ""
+                importSharedPlaylistError = null
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Link,
+                        contentDescription = null,
+                        tint = Color(0xFFC084FC),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Import Playlist",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Paste any Auralix share link, copied message, or YouTube / Spotify playlist URL below:",
+                        color = Color(0xFFA1A1AA),
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    OutlinedTextField(
+                        value = importSharedPlaylistInput,
+                        onValueChange = {
+                            importSharedPlaylistInput = it
+                            importSharedPlaylistError = null
+                        },
+                        placeholder = { Text("Paste link or message...", color = Color.Gray, fontSize = 13.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF8B5CF6),
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f)
+                        ),
+                        trailingIcon = {
+                            if (importSharedPlaylistInput.isNotBlank()) {
+                                IconButton(onClick = { importSharedPlaylistInput = "" }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.Gray, modifier = Modifier.size(18.dp))
+                                }
+                            } else {
+                                TextButton(onClick = {
+                                    val clip = clipboardManager.getText()?.text ?: ""
+                                    if (clip.isNotBlank()) importSharedPlaylistInput = clip
+                                }) {
+                                    Text("Paste", color = Color(0xFFC084FC), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    )
+                    if (importSharedPlaylistError != null) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = importSharedPlaylistError ?: "",
+                            color = Color(0xFFEF4444),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val parsed = com.videoguard.app.data.PlaylistShareEngine.parseTextForPlaylist(importSharedPlaylistInput)
+                        if (parsed != null) {
+                            showImportSharedPlaylistDialog = false
+                            importSharedPlaylistInput = ""
+                            importSharedPlaylistError = null
+                            onPlaylistClick(parsed)
+                        } else {
+                            importSharedPlaylistError = "Could not find a valid playlist. Please check the link or text."
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Open Playlist", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showImportSharedPlaylistDialog = false
+                        importSharedPlaylistInput = ""
+                        importSharedPlaylistError = null
+                    }
+                ) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            },
+            containerColor = Color(0xFF1E1E24),
+            shape = RoundedCornerShape(20.dp)
         )
     }
 
