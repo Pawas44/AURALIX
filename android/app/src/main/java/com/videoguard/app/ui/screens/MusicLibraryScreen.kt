@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -80,6 +81,9 @@ fun MusicLibraryScreen(
     var showImportSharedPlaylistDialog by remember { mutableStateOf(false) }
     var importSharedPlaylistInput by remember { mutableStateOf("") }
     var importSharedPlaylistError by remember { mutableStateOf<String?>(null) }
+
+    var showClearPlaylistDialog by remember { mutableStateOf<UserPlaylist?>(null) }
+    var showDeletePlaylistDialog by remember { mutableStateOf<UserPlaylist?>(null) }
 
     // Service Import State (Spotify Link Importer)
     var selectedImportService by remember { mutableStateOf<String?>(null) }
@@ -1734,114 +1738,282 @@ fun MusicLibraryScreen(
         )
     }
 
-    // Playlist 3-Dots Options BottomSheet (Delete & Clear All Songs)
+    // Redesigned Spotify-Inspired Premium Playlist Options Bottom Sheet
     if (selectedPlaylistForOptions != null) {
         val targetPlaylist = selectedPlaylistForOptions!!
+        val downloadedCount = targetPlaylist.videos.count { v -> offlineTracks.any { it.id == v.id } }
+        val isAllDownloaded = targetPlaylist.videos.isNotEmpty() && downloadedCount == targetPlaylist.videos.size
+
         ModalBottomSheet(
             onDismissRequest = { selectedPlaylistForOptions = null },
-            containerColor = Color(0xFF1B1D28)
+            containerColor = Color(0xFF14131B),
+            contentColor = Color.White,
+            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+            dragHandle = {
+                Box(
+                    modifier = Modifier
+                        .padding(top = 10.dp, bottom = 10.dp)
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(Color.White.copy(alpha = 0.22f))
+                )
+            }
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 20.dp)
-                    .padding(bottom = 32.dp)
+                    .padding(horizontal = 18.dp)
+                    .padding(bottom = 28.dp)
+                    .navigationBarsPadding()
             ) {
-                Text(
-                    text = targetPlaylist.title,
-                    color = Color.White,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                // Header: Artwork + Title + Song count + Close button
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 6.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(54.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(Color(0xFF2E2442), Color(0xFF1A1626))
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val coverUrl = targetPlaylist.coverThumbnailUrl
+                        if (!coverUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = coverUrl,
+                                contentDescription = targetPlaylist.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Outlined.MusicNote,
+                                contentDescription = null,
+                                tint = Color(0xFFC084FC),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = targetPlaylist.title,
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Playlist • ${targetPlaylist.videoCount} songs",
+                            color = Color(0xFFA1A1AA),
+                            fontSize = 12.5.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    IconButton(
+                        onClick = { selectedPlaylistForOptions = null },
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.08f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color(0xFFD4D4D8),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
+
+                HorizontalDivider(
+                    color = Color.White.copy(alpha = 0.06f),
+                    thickness = 0.5.dp,
+                    modifier = Modifier.padding(vertical = 10.dp)
                 )
-                Text(
-                    text = "${targetPlaylist.videoCount} songs",
-                    color = Color.Gray,
-                    fontSize = 12.sp
+
+                // 1. Download Songs
+                PlaylistOptionRow(
+                    icon = if (isAllDownloaded) Icons.Outlined.CheckCircle else Icons.Outlined.FileDownload,
+                    iconTint = if (isAllDownloaded) Color(0xFF1DB954) else Color.White,
+                    title = if (isAllDownloaded) "Downloaded" else "Download songs",
+                    titleColor = Color.White,
+                    subtitle = when {
+                        isAllDownloaded -> "All ${targetPlaylist.videos.size} songs saved offline"
+                        downloadedCount > 0 -> "$downloadedCount of ${targetPlaylist.videos.size} songs downloaded"
+                        else -> "Save for offline listening"
+                    },
+                    onClick = {
+                        val pl = targetPlaylist
+                        selectedPlaylistForOptions = null
+                        UserDataRepository.downloadAllSongs(context, pl)
+                        android.widget.Toast.makeText(context, "Downloading songs from \"${pl.title}\"...", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                 )
-                Spacer(modifier = Modifier.height(16.dp))
 
-                // Download all songs
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            val pl = targetPlaylist
-                            selectedPlaylistForOptions = null
-                            UserDataRepository.downloadAllSongs(context, pl)
-                        }
-                        .padding(vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Download,
-                        contentDescription = "Download All Songs",
-                        tint = Color(0xFF1DB954),
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = "Download all songs",
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+                HorizontalDivider(
+                    color = Color.White.copy(alpha = 0.04f),
+                    thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
 
-                // Clear all songs
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            UserDataRepository.clearPlaylist(targetPlaylist.id)
-                            selectedPlaylistForOptions = null
-                        }
-                        .padding(vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.CleaningServices,
-                        contentDescription = "Clear All Songs",
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = "Clear all songs",
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+                // 2. Clear Songs
+                PlaylistOptionRow(
+                    icon = Icons.Outlined.CleaningServices,
+                    iconTint = Color.White,
+                    title = "Clear songs",
+                    titleColor = Color.White,
+                    subtitle = "Remove all songs from this playlist",
+                    onClick = {
+                        val pl = targetPlaylist
+                        selectedPlaylistForOptions = null
+                        showClearPlaylistDialog = pl
+                    }
+                )
 
-                // Delete Playlist
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            UserDataRepository.deletePlaylist(targetPlaylist.id)
-                            selectedPlaylistForOptions = null
-                        }
-                        .padding(vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Delete Playlist",
-                        tint = Color(0xFFFF4D4D),
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Text(
-                        text = "Delete playlist",
-                        color = Color(0xFFFF4D4D),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
+                HorizontalDivider(
+                    color = Color.White.copy(alpha = 0.04f),
+                    thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+
+                // 3. Delete Playlist
+                PlaylistOptionRow(
+                    icon = Icons.Outlined.Delete,
+                    iconTint = Color(0xFFEF4444),
+                    title = "Delete playlist",
+                    titleColor = Color(0xFFEF4444),
+                    subtitle = "Permanently remove this playlist",
+                    onClick = {
+                        val pl = targetPlaylist
+                        selectedPlaylistForOptions = null
+                        showDeletePlaylistDialog = pl
+                    }
+                )
+
+                HorizontalDivider(
+                    color = Color.White.copy(alpha = 0.04f),
+                    thickness = 0.5.dp,
+                    modifier = Modifier.padding(horizontal = 12.dp)
+                )
+
+                // 4. Share
+                PlaylistOptionRow(
+                    icon = Icons.Outlined.Share,
+                    iconTint = Color(0xFFC084FC),
+                    title = "Share",
+                    titleColor = Color.White,
+                    subtitle = "Share playlist with friends",
+                    onClick = {
+                        val pl = targetPlaylist
+                        selectedPlaylistForOptions = null
+                        com.videoguard.app.data.PlaylistShareEngine.sharePlaylist(context, pl)
+                    }
+                )
             }
         }
+    }
+
+    // Confirmation Dialog: Clear Playlist Songs
+    if (showClearPlaylistDialog != null) {
+        val pl = showClearPlaylistDialog!!
+        AlertDialog(
+            onDismissRequest = { showClearPlaylistDialog = null },
+            containerColor = Color(0xFF181724),
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text(
+                    text = "Clear playlist?",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to remove all ${pl.videoCount} songs from \"${pl.title}\"? This action cannot be undone.",
+                    color = Color(0xFFA1A1AA),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        UserDataRepository.clearPlaylist(pl.id)
+                        showClearPlaylistDialog = null
+                        android.widget.Toast.makeText(context, "Playlist cleared", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Clear Songs", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearPlaylistDialog = null }) {
+                    Text("Cancel", color = Color(0xFFA1A1AA))
+                }
+            }
+        )
+    }
+
+    // Confirmation Dialog: Delete Playlist
+    if (showDeletePlaylistDialog != null) {
+        val pl = showDeletePlaylistDialog!!
+        AlertDialog(
+            onDismissRequest = { showDeletePlaylistDialog = null },
+            containerColor = Color(0xFF181724),
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text(
+                    text = "Delete playlist?",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to delete \"${pl.title}\"? This playlist will be permanently removed.",
+                    color = Color(0xFFA1A1AA),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        UserDataRepository.deletePlaylist(pl.id)
+                        showDeletePlaylistDialog = null
+                        android.widget.Toast.makeText(context, "Playlist deleted", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444)),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Delete", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeletePlaylistDialog = null }) {
+                    Text("Cancel", color = Color(0xFFA1A1AA))
+                }
+            }
+        )
     }
 
     if (showCloudBackupSheet) {
@@ -1857,6 +2029,62 @@ fun MusicLibraryScreen(
                     .padding(bottom = 24.dp)
             ) {
                 com.videoguard.app.ui.components.GoogleDriveBackupCard()
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlaylistOptionRow(
+    icon: ImageVector,
+    iconTint: Color,
+    title: String,
+    titleColor: Color = Color.White,
+    subtitle: String? = null,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(iconTint.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = iconTint,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                color = titleColor,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = (-0.2).sp
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    color = Color(0xFFA1A1AA),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
