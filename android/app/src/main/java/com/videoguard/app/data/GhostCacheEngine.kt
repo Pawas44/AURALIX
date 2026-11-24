@@ -33,7 +33,7 @@ object GhostCacheEngine {
     private const val PREFS_NAME = "auralix_ghost_cache_prefs"
     private const val GHOST_DIR_NAME = "ghost_cache"
     private const val MAX_CACHED_TRACKS = 30
-    private const val PLAY_COUNT_THRESHOLD = 2
+    private const val PLAY_COUNT_THRESHOLD = 1
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var prefs: SharedPreferences? = null
@@ -100,39 +100,48 @@ object GhostCacheEngine {
      * Silently caches the audio file in the background without notifications.
      */
     fun silentCacheTrack(context: Context, track: VideoItem) {
-        val id = track.id
-        if (id.isBlank() || activeCachingJobs.containsKey(id)) return
-        if (UserDataRepository.isDownloaded(id) || getCachedFile(context, id) != null) return
+        val rawId = track.id
+        if (rawId.isBlank() || activeCachingJobs.containsKey(rawId)) return
+        val resolvedId = com.videoguard.app.service.PlaybackController.getResolvedSpotifyId(rawId)
+        val candidateIds = listOfNotNull(rawId, resolvedId).distinct()
+        if (candidateIds.any { UserDataRepository.isDownloaded(it) || getCachedFile(context, it) != null }) return
 
-        activeCachingJobs[id] = true
+        activeCachingJobs[rawId] = true
         scope.launch {
             try {
                 val ghostDir = getGhostDir(context)
-                val targetFile = File(ghostDir, "$id.m4a")
-                val tempFile = File(ghostDir, "$id.tmp")
+                val targetFile = File(ghostDir, "$rawId.m4a")
+                val tempFile = File(ghostDir, "$rawId.tmp")
 
                 // Evict LRU files before writing new ones if limit reached
                 evictLruIfNeeded(context)
 
-                // 1. Resolve stream format from UserDataRepository engine
-                val format = UserDataRepository.fetchMuxedFormat18(id)
-                    ?: UserDataRepository.fetchRealYouTubeAudioFormat(id)
+                // 1. Resolve stream format from UserDataRepository engine using real YouTube ID
+                val fetchId = if (!resolvedId.isNullOrBlank()) resolvedId else rawId
+                val format = UserDataRepository.fetchMuxedFormat18(fetchId)
+                    ?: UserDataRepository.fetchRealYouTubeAudioFormat(fetchId)
 
                 if (format != null && format.url.isNotBlank()) {
                     val success = downloadSilentStream(format.url, format.userAgent, tempFile)
                     if (success && tempFile.exists() && tempFile.length() > 50_000L) {
                         if (targetFile.exists()) targetFile.delete()
                         tempFile.renameTo(targetFile)
-                        Log.d(TAG, "Ghost cached successfully: ${track.title} ($id) [${targetFile.length()} bytes]")
+                        if (!resolvedId.isNullOrBlank() && resolvedId != rawId) {
+                            try {
+                                val altFile = File(ghostDir, "$resolvedId.m4a")
+                                targetFile.copyTo(altFile, overwrite = true)
+                            } catch (e: Exception) {}
+                        }
+                        Log.d(TAG, "Ghost cached successfully: ${track.title} ($rawId) [${targetFile.length()} bytes]")
                         refreshCachedSet(context)
                     } else {
                         tempFile.delete()
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Silent caching failed for $id: ${e.message}")
+                Log.w(TAG, "Silent caching failed for $rawId: ${e.message}")
             } finally {
-                activeCachingJobs.remove(id)
+                activeCachingJobs.remove(rawId)
             }
         }
     }

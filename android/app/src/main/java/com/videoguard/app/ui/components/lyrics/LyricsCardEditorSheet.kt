@@ -136,15 +136,16 @@ fun LyricsCardEditorDialog(
 
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Centered 9:16 Live Card Preview Container
+                // Centered 9:16 Live Card Preview Container - Responsive & Screen-fitted
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 38.dp)
-                        .aspectRatio(9f / 15.5f) // Balanced vertical ratio for mobile viewports
-                        .shadow(elevation = 28.dp, shape = RoundedCornerShape(26.dp), spotColor = config.template.accentColor.copy(alpha = 0.45f))
-                        .clip(RoundedCornerShape(26.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(26.dp))
+                        .padding(horizontal = 56.dp)
+                        .heightIn(max = 350.dp)
+                        .aspectRatio(9f / 16f)
+                        .shadow(elevation = 20.dp, shape = RoundedCornerShape(22.dp), spotColor = config.template.accentColor.copy(alpha = 0.40f))
+                        .clip(RoundedCornerShape(22.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(22.dp))
                 ) {
                     LiveLyricsCardPreview(
                         track = track,
@@ -176,20 +177,84 @@ fun LyricsCardEditorDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
-                // Template Selector Bar (Horizontal Scroll)
+                // 1. Instagram-Style Typography Selector
                 Text(
-                    text = "AESTHETIC TEMPLATE",
+                    text = "FONT STYLE",
                     color = Color(0xFFA1A1AA),
-                    fontSize = 11.sp,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 24.dp)
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    LyricsFont.values().forEach { fontOption ->
+                        val isSel = config.font == fontOption
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (isSel) Color.White.copy(alpha = 0.22f)
+                                    else Color.White.copy(alpha = 0.05f)
+                                )
+                                .border(
+                                    width = if (isSel) 1.5.dp else 0.8.dp,
+                                    color = if (isSel) Color.White else Color.White.copy(alpha = 0.12f),
+                                    shape = RoundedCornerShape(14.dp)
+                                )
+                                .clickable {
+                                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                    config = config.copy(font = fontOption)
+                                }
+                                .padding(horizontal = 14.dp, vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = fontOption.previewSample,
+                                    fontFamily = fontOption.composeFontFamily,
+                                    fontWeight = fontOption.composeFontWeight,
+                                    fontStyle = fontOption.composeFontStyle,
+                                    fontSize = 15.sp,
+                                    color = if (isSel) Color.White else Color(0xFFD4D4D8)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = fontOption.displayName,
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSel) Color.White else Color(0xFFA1A1AA)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 2. Template Selector Bar (Horizontal Scroll)
+                Text(
+                    text = "AESTHETIC TEMPLATE",
+                    color = Color(0xFFA1A1AA),
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Row(
                     modifier = Modifier
@@ -556,7 +621,7 @@ private fun LiveLyricsCardPreview(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = if (isGlass) 26.dp else 22.dp, vertical = 24.dp),
+                .padding(horizontal = if (isGlass) 22.dp else 18.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = if (config.alignment == LyricsAlignment.CENTER) Alignment.CenterHorizontally else Alignment.Start
         ) {
@@ -569,32 +634,35 @@ private fun LiveLyricsCardPreview(
                     LyricsCardTemplate.AMBIENT_GRADIENT -> palette.primary
                     else -> Color.White.copy(alpha = 0.65f)
                 },
-                fontSize = if (isEditorial) 48.sp else 36.sp,
+                fontSize = if (isEditorial) 36.sp else 28.sp,
                 fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Bold,
-                lineHeight = 36.sp,
+                lineHeight = 28.sp,
                 textAlign = config.alignment.composeAlign,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Selected Lyrics Text
+            // Selected Lyrics Text with Instagram-Style Typography
             Column(
                 modifier = Modifier.weight(1f, fill = false),
                 horizontalAlignment = if (config.alignment == LyricsAlignment.CENTER) Alignment.CenterHorizontally else Alignment.Start
             ) {
                 lines.forEachIndexed { idx, line ->
+                    val displayLine = if (config.font.isAllCaps) line.uppercase() else line
                     Text(
-                        text = line,
+                        text = displayLine,
                         color = Color.White,
-                        fontSize = (config.fontSize.spSize * 0.72f).sp, // Scaled for preview viewport
-                        fontFamily = if (isEditorial) FontFamily.Serif else FontFamily.SansSerif,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = (config.fontSize.spSize * 0.95f).sp,
+                        fontSize = (config.fontSize.spSize * 0.62f).sp, // Scaled for fitted preview viewport
+                        fontFamily = config.font.composeFontFamily,
+                        fontWeight = config.font.composeFontWeight,
+                        fontStyle = config.font.composeFontStyle,
+                        letterSpacing = config.font.letterSpacingSp.sp,
+                        lineHeight = (config.fontSize.spSize * 0.85f).sp,
                         textAlign = config.alignment.composeAlign,
                         modifier = Modifier.fillMaxWidth()
                     )
                     if (idx < lines.lastIndex) {
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
             }

@@ -271,16 +271,16 @@ object LyricsCardRenderer {
         canvas.drawText("“", quoteX, quoteY, quotePaint)
 
         // 2. Lyrics Text Layout
-        val lyricsText = lyricsLines.joinToString("\n\n")
+        val formattedLines = if (config.font.isAllCaps) lyricsLines.map { it.uppercase() } else lyricsLines
+        val lyricsText = formattedLines.joinToString("\n\n")
         val baseSp = config.fontSize.spSize
         val pxSize = baseSp * 2.8f // Convert SP to 1080p scale
 
         val lyricsPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = pxSize
-            typeface = if (isEditorial) {
-                Typeface.create(Typeface.SERIF, Typeface.BOLD)
-            } else {
-                Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            typeface = resolveNativeTypeface(config.font)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && config.font.letterSpacingSp != 0f) {
+                letterSpacing = config.font.letterSpacingSp / 14f
             }
             color = android.graphics.Color.WHITE
             setShadowLayer(8f, 0f, 4f, android.graphics.Color.argb(160, 0, 0, 0))
@@ -495,6 +495,16 @@ object LyricsCardRenderer {
             withContext(Dispatchers.Main) {
                 Toast.makeText(context, "Sharing failed: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+
+    private fun resolveNativeTypeface(font: LyricsFont): Typeface {
+        return when (font) {
+            LyricsFont.MODERN -> Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+            LyricsFont.EDITORIAL -> Typeface.create(Typeface.SERIF, Typeface.BOLD)
+            LyricsFont.SIGNATURE -> Typeface.create(Typeface.SERIF, Typeface.BOLD_ITALIC)
+            LyricsFont.HEADLINE -> Typeface.create("sans-serif-condensed", Typeface.BOLD)
+            LyricsFont.TYPEWRITER -> Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
         }
     }
 }

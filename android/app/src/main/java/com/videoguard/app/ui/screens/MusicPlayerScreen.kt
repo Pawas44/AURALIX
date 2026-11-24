@@ -1113,23 +1113,6 @@ fun MusicPlayerScreen(
                                 onChannelClick?.invoke(chVideo)
                             }
                     )
-                    if (isTrackGhostCached && !isTrackDownloaded) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF10B981).copy(alpha = 0.22f))
-                                .border(0.8.dp, Color(0xFF10B981).copy(alpha = 0.6f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 5.dp, vertical = 1.5.dp)
-                        ) {
-                            Text(
-                                text = "⚡ Ghost Cached",
-                                color = Color(0xFF34D399),
-                                fontSize = 9.5.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
                 }
             }
 

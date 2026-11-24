@@ -1,6 +1,9 @@
 package com.videoguard.app.ui.components.lyrics
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 
 /**
@@ -61,8 +64,63 @@ enum class LyricsAlignment(val label: String, val composeAlign: TextAlign) {
     CENTER("Center", TextAlign.Center)
 }
 
+/**
+ * Instagram Story-inspired aesthetic typography fonts.
+ */
+enum class LyricsFont(
+    val id: String,
+    val displayName: String,
+    val previewSample: String,
+    val composeFontFamily: FontFamily,
+    val composeFontWeight: FontWeight,
+    val composeFontStyle: FontStyle = FontStyle.Normal,
+    val letterSpacingSp: Float = 0f,
+    val isAllCaps: Boolean = false
+) {
+    MODERN(
+        id = "modern",
+        displayName = "Modern",
+        previewSample = "Aa",
+        composeFontFamily = FontFamily.SansSerif,
+        composeFontWeight = FontWeight.Bold
+    ),
+    EDITORIAL(
+        id = "editorial",
+        displayName = "Editorial",
+        previewSample = "Aa",
+        composeFontFamily = FontFamily.Serif,
+        composeFontWeight = FontWeight.SemiBold
+    ),
+    SIGNATURE(
+        id = "signature",
+        displayName = "Signature",
+        previewSample = "Aa",
+        composeFontFamily = FontFamily.Cursive,
+        composeFontWeight = FontWeight.Medium,
+        composeFontStyle = FontStyle.Italic
+    ),
+    HEADLINE(
+        id = "headline",
+        displayName = "Headline",
+        previewSample = "AA",
+        composeFontFamily = FontFamily.SansSerif,
+        composeFontWeight = FontWeight.ExtraBold,
+        letterSpacingSp = 1.2f,
+        isAllCaps = true
+    ),
+    TYPEWRITER(
+        id = "typewriter",
+        displayName = "Typewriter",
+        previewSample = "Aa",
+        composeFontFamily = FontFamily.Monospace,
+        composeFontWeight = FontWeight.Medium,
+        letterSpacingSp = 0.5f
+    )
+}
+
 data class LyricsCardConfig(
     val template: LyricsCardTemplate = LyricsCardTemplate.CINEMATIC_BLUR,
+    val font: LyricsFont = LyricsFont.MODERN,
     val alignment: LyricsAlignment = LyricsAlignment.LEFT,
     val fontSize: LyricsFontSize = LyricsFontSize.MEDIUM,
     val showThumbnail: Boolean = true,
