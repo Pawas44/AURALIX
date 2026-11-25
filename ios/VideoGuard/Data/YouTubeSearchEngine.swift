@@ -345,7 +345,7 @@ struct YouTubeSearchEngine {
                         subscriberCount: "Song Track",
                         thumbnailUrl: thumb,
                         views: "Song",
-                        uploadTime = "YouTube Music",
+                        uploadTime: "YouTube Music",
                         duration: duration,
                         description: "\(title) - \(artist)",
                         likes: "100K",
