@@ -99,9 +99,9 @@ object RecommendationEngine {
                 } catch (e: Exception) {}
             }
 
-            // Collect candidate pool with dynamic discovery songs included
+            // Collect candidate pool with dynamic discovery songs included, deduplicated by canonical identity
             val syncFeed = YouTubeSyncEngine.musicFeed.value
-            val candidatePool = (
+            val rawCandidatePool = (
                 dynamicDiscoveryTracks +
                 spotifyTaste +
                 syncFeed.quickPicks +
@@ -112,10 +112,12 @@ object RecommendationEngine {
                 userHistory +
                 likedPlaylist +
                 VideoRepository.sampleVideos
-            ).distinctBy { it.id }.filter { it.id !in recentPlayedIds }
+            ).filter { it.id !in recentPlayedIds }
+            val candidatePool = SongDeduplicationEngine.deduplicate(rawCandidatePool)
 
-            // Deduplication tracker across all smart sections
+            // Deduplication tracker across all smart sections (both Video ID & Canonical Song Identity)
             val placedTrackIds = mutableSetOf<String>()
+            val placedCanonicalKeys = mutableSetOf<String>()
 
             // 1. Made For You / Selected Mood Mix (Blend familiar favorites + new exploration gems)
             val scoredMadeForYou = if (!selectedMood.isNullOrBlank()) {
@@ -125,18 +127,30 @@ object RecommendationEngine {
                 }
                 val candidatesToUse = if (moodCandidates.isNotEmpty()) moodCandidates else candidatePool
                 val pool = if (forceRefresh) candidatesToUse.shuffled() else candidatesToUse
-                pool.filter { it.id !in placedTrackIds }.take(16)
+                SongDeduplicationEngine.deduplicateAndFill(
+                    primaryTracks = pool.filter { it.id !in placedTrackIds },
+                    candidatePool = candidatePool,
+                    targetCount = 16,
+                    excludedKeys = placedCanonicalKeys
+                )
             } else {
                 val pool = if (forceRefresh) candidatePool.shuffled() else candidatePool
-                RecommendationRanker.rank(
+                val rankedTracks = RecommendationRanker.rank(
                     candidates = pool,
                     recentHistory = userHistory.take(15),
                     likedTracks = likedPlaylist,
                     discoveryFactor = if (forceRefresh) 0.55 else 0.40,
                     maxPerArtist = 2
-                ).map { it.track }.filter { it.id !in placedTrackIds }.take(16)
+                ).map { it.track }.filter { it.id !in placedTrackIds }
+                SongDeduplicationEngine.deduplicateAndFill(
+                    primaryTracks = rankedTracks,
+                    candidatePool = candidatePool,
+                    targetCount = 16,
+                    excludedKeys = placedCanonicalKeys
+                )
             }
             placedTrackIds.addAll(scoredMadeForYou.map { it.id })
+            placedCanonicalKeys.addAll(scoredMadeForYou.map { SongDeduplicationEngine.getCanonicalIdentity(it).canonicalKey })
 
             // 2. Discover Weekly (~30 tracks, ~40% familiar / ~60% discovery, 7-day cache)
             val discoverWeeklyTracks = DiscoverWeeklyGenerator.getOrGenerateDiscoverWeekly(
@@ -248,9 +262,19 @@ object RecommendationEngine {
                 maxPerArtist = 2
             ).map { it.track }.take(12)
 
+            val cleanMadeForYou = SongDeduplicationEngine.ensureNoConsecutiveDuplicates(
+                if (scoredMadeForYou.isNotEmpty()) scoredMadeForYou
+                else SongDeduplicationEngine.deduplicateAndFill(candidatePool, candidatePool, 10, placedCanonicalKeys)
+            )
+
+            val cleanRecommended = SongDeduplicationEngine.ensureNoConsecutiveDuplicates(
+                if (recommendedForYou.isNotEmpty()) recommendedForYou
+                else SongDeduplicationEngine.deduplicateAndFill(candidatePool.shuffled(), candidatePool, 10, placedCanonicalKeys)
+            )
+
             val finalFeed = SmartHomeFeed(
-                madeForYou = scoredMadeForYou.ifEmpty { candidatePool.take(10) },
-                recommendedForYou = recommendedForYou.ifEmpty { candidatePool.shuffled().take(10) },
+                madeForYou = cleanMadeForYou,
+                recommendedForYou = cleanRecommended,
                 discoverWeekly = discoverWeeklyTracks,
                 dailyMixes = dailyMixes,
                 becauseYouListenedTo = becauseYouListenedPair,

@@ -181,11 +181,20 @@ object AlbumDataRepository {
             val isMixtape = albumName.contains("tape", ignoreCase = true) ||
                             albumName.contains("mix", ignoreCase = true) ||
                             albumName.contains("vol", ignoreCase = true)
-            AlbumItem(
-                id = "user_album_${albumName.hashCode()}",
+            val albumId = "user_album_${albumName.hashCode()}"
+            val artistName = first.artist.ifBlank { first.channelName }
+            val resolvedCover = AlbumArtworkResolver.resolveArtwork(
+                albumId = albumId,
                 title = albumName,
-                artist = first.artist.ifBlank { first.channelName },
-                coverUrl = first.thumbnailUrl,
+                artist = artistName,
+                primaryUrl = first.thumbnailUrl,
+                tracks = group
+            )
+            AlbumItem(
+                id = albumId,
+                title = albumName,
+                artist = artistName,
+                coverUrl = resolvedCover.ifBlank { first.thumbnailUrl },
                 year = "2024",
                 trackCount = group.distinctBy { it.id }.size,
                 releaseType = if (isMixtape) "Mixtape" else "Album",
@@ -290,11 +299,15 @@ object AlbumDataRepository {
                                     else -> "album_${kotlin.math.abs(title.hashCode())}"
                                 }
 
-                                val thumbs = itObj.optJSONObject("thumbnail")?.optJSONObject("musicThumbnailRenderer")
-                                    ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
-                                val thumb = if (thumbs != null && thumbs.length() > 0) {
+                                val thumbObj = itObj.optJSONObject("thumbnail")
+                                val thumbs = thumbObj?.optJSONObject("musicThumbnailRenderer")?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                                    ?: thumbObj?.optJSONObject("croppedSquareThumbnailRenderer")?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                                    ?: thumbObj?.optJSONObject("thumbnailRenderer")?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                                    ?: thumbObj?.optJSONArray("thumbnails")
+                                var thumb = if (thumbs != null && thumbs.length() > 0) {
                                     thumbs.optJSONObject(thumbs.length() - 1)?.optString("url", "") ?: ""
                                 } else ""
+                                thumb = AlbumArtworkResolver.cleanUrl(thumb)
 
                                 var relType = "Album"
                                 var year = "2024"
@@ -320,12 +333,18 @@ object AlbumDataRepository {
                                 }
 
                                 val artistName = if (artists.isNotEmpty()) artists.joinToString(", ") else query
+                                val resolvedCover = AlbumArtworkResolver.resolveArtwork(
+                                    albumId = effectiveAlbumId,
+                                    title = title,
+                                    artist = artistName,
+                                    primaryUrl = thumb
+                                )
                                 outList.add(
                                     AlbumItem(
                                         id = effectiveAlbumId,
                                         title = title,
                                         artist = artistName,
-                                        coverUrl = thumb,
+                                        coverUrl = resolvedCover.ifBlank { thumb },
                                         year = year,
                                         releaseType = relType
                                     )
@@ -350,27 +369,45 @@ object AlbumDataRepository {
     }
 
     suspend fun getOrFetchAlbumTracks(album: AlbumItem): List<VideoItem> = withContext(Dispatchers.IO) {
-        if (album.tracks.isNotEmpty()) return@withContext album.tracks
-
-        // If it's a real YouTube Music album playlist, browseId, or YouTube playlist
-        if (album.id.startsWith("OLAK5uy_") || album.id.startsWith("MPREb_") || album.id.startsWith("PL") || album.id.startsWith("VL")) {
+        val tracksToReturn = if (album.tracks.isNotEmpty()) {
+            album.tracks
+        } else if (album.id.startsWith("OLAK5uy_") || album.id.startsWith("MPREb_") || album.id.startsWith("PL") || album.id.startsWith("VL")) {
             val plTracks = YouTubeSyncEngine.fetchPlaylistVideos(album.id)
             if (plTracks.isNotEmpty()) {
-                return@withContext plTracks.map {
+                plTracks.map {
                     it.copy(
                         album = album.title,
                         artist = if (it.artist.isNotBlank() && it.artist != "YouTube Music") it.artist else album.artist
                     )
                 }
+            } else {
+                fetchAlbumTracksViaSearch(album)
             }
+        } else {
+            fetchAlbumTracksViaSearch(album)
         }
 
-        // Secondary fallback: search for individual tracks of this album
+        // Cache resolved album artwork if album was previously missing it
+        val resolvedCover = AlbumArtworkResolver.resolveArtwork(
+            albumId = album.id,
+            title = album.title,
+            artist = album.artist,
+            primaryUrl = album.coverUrl,
+            tracks = tracksToReturn
+        )
+        if (resolvedCover.isNotBlank()) {
+            AlbumArtworkResolver.cacheAlbumArtwork(album.id, album.title, album.artist, resolvedCover)
+        }
+
+        tracksToReturn
+    }
+
+    private suspend fun fetchAlbumTracksViaSearch(album: AlbumItem): List<VideoItem> {
         val query = "${album.title} ${album.artist} songs"
         val results = YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true).ifEmpty {
             YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)
         }
-        results.map {
+        return results.map {
             it.copy(
                 album = album.title,
                 artist = if (it.artist.isNotBlank() && it.artist != "YouTube Music") it.artist else album.artist
@@ -379,6 +416,13 @@ object AlbumDataRepository {
     }
 
     fun toUserPlaylist(album: AlbumItem): UserPlaylist {
+        val resolvedCover = AlbumArtworkResolver.resolveArtwork(
+            albumId = album.id,
+            title = album.title,
+            artist = album.artist,
+            primaryUrl = album.coverUrl,
+            tracks = album.tracks
+        )
         return UserPlaylist(
             id = album.id,
             title = album.title,
@@ -386,7 +430,7 @@ object AlbumDataRepository {
             videos = album.tracks,
             isSystem = false,
             iconType = "album",
-            customCoverUrl = album.coverUrl
+            customCoverUrl = resolvedCover.ifBlank { album.coverUrl }
         )
     }
 }

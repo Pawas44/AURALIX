@@ -428,11 +428,18 @@ fun SearchScreen(
                                     .fillMaxWidth()
                                     .clickable {
                                         if (track.category == "Album" || track.id.startsWith("OLAK5uy_") || track.id.startsWith("album_") || track.id.startsWith("MPREb_") || track.views.equals("Album", ignoreCase = true)) {
+                                            val artistName = track.artist.ifBlank { track.channelName }
+                                            val resolvedCover = com.videoguard.app.data.AlbumArtworkResolver.resolveArtwork(
+                                                albumId = track.id,
+                                                title = track.title,
+                                                artist = artistName,
+                                                primaryUrl = track.thumbnailUrl
+                                            )
                                             val album = com.videoguard.app.data.AlbumItem(
                                                 id = track.id,
                                                 title = track.title,
-                                                artist = track.artist.ifBlank { track.channelName },
-                                                coverUrl = track.thumbnailUrl,
+                                                artist = artistName,
+                                                coverUrl = resolvedCover.ifBlank { track.thumbnailUrl },
                                                 releaseType = "Album"
                                             )
                                             onPlaylistClick(com.videoguard.app.data.AlbumDataRepository.toUserPlaylist(album))

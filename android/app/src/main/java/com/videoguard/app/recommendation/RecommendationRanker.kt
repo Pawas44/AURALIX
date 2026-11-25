@@ -103,15 +103,24 @@ object RecommendationRanker {
         // Sort descending by score
         val sorted = scoredList.sortedByDescending { it.score }
 
-        // Apply Diversity Controls: enforce maximum tracks per artist
+        // Apply Diversity & Deduplication Controls: enforce maximum tracks per artist and unique song identity
+        val seenCanonicalKeys = mutableSetOf<String>()
+        val seenVideoIds = mutableSetOf<String>()
         val artistCounts = mutableMapOf<String, Int>()
         val diverseList = mutableListOf<ScoredTrack>()
 
         for (item in sorted) {
-            val art = profile.extractArtist(item.track).lowercase()
+            val track = item.track
+            if (track.id.isBlank() || track.id in seenVideoIds) continue
+            val identity = SongDeduplicationEngine.getCanonicalIdentity(track)
+            if (identity.canonicalKey in seenCanonicalKeys) continue
+
+            val art = identity.normalizedArtist.ifBlank { profile.extractArtist(track).lowercase() }
             val count = artistCounts.getOrDefault(art, 0)
             if (count < maxPerArtist) {
                 diverseList.add(item)
+                seenVideoIds.add(track.id)
+                seenCanonicalKeys.add(identity.canonicalKey)
                 artistCounts[art] = count + 1
             }
         }

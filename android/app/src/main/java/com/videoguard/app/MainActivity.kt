@@ -76,6 +76,7 @@ class MainActivity : ComponentActivity() {
         }
 
         PlaybackController.init(this)
+        com.videoguard.app.data.AlbumArtworkResolver.init(this)
         com.videoguard.app.data.AuthManager.init(this)
         com.videoguard.app.data.GoogleDriveBackupEngine.init(this)
         com.videoguard.app.data.ListenTogetherEngine.init(this)

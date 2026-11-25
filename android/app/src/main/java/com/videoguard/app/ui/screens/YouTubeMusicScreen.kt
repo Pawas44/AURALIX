@@ -73,6 +73,11 @@ fun YouTubeMusicScreen(
     var showSettingsSheet by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
     val albumsList = remember(userPlaylists.size, userHistory.size) { AlbumDataRepository.getAllAlbums() }
+    val madeForYouList = remember(smartFeed.madeForYou) {
+        com.videoguard.app.recommendation.SongDeduplicationEngine.ensureNoConsecutiveDuplicates(
+            com.videoguard.app.recommendation.SongDeduplicationEngine.deduplicate(smartFeed.madeForYou)
+        )
+    }
 
     // Re-fetch music feed whenever mood changes
     LaunchedEffect(selectedMood) {
@@ -141,8 +146,7 @@ fun YouTubeMusicScreen(
             }
         }
 
-        // Section 1: Made For You (Personalized Quick Picks)
-        val madeForYouList = smartFeed.madeForYou
+        // Section 1: Made For You (Personalized Quick Picks - strictly deduplicated)
         item {
             Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
                 Row(
@@ -1176,8 +1180,20 @@ private fun HomeAlbumCard(
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF22232E))
         ) {
+            val resolvedCover = remember(album.id, album.coverUrl) {
+                com.videoguard.app.data.AlbumArtworkResolver.resolveArtwork(
+                    albumId = album.id,
+                    title = album.title,
+                    artist = album.artist,
+                    primaryUrl = album.coverUrl,
+                    tracks = album.tracks
+                )
+            }
             AsyncImage(
-                model = album.coverUrl,
+                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                    .data(resolvedCover.ifBlank { album.coverUrl })
+                    .crossfade(true)
+                    .build(),
                 contentDescription = album.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()

@@ -70,6 +70,21 @@ fun MusicLibraryScreen(
     val playlists by UserDataRepository.playlists.collectAsState()
     val history by UserDataRepository.history.collectAsState()
     val offlineTracks by UserDataRepository.offlineTracks.collectAsState()
+    val smartFeed by com.videoguard.app.recommendation.RecommendationEngine.feedState.collectAsState()
+
+    val mfyItems = remember(smartFeed.madeForYou, history) {
+        if (smartFeed.madeForYou.isNotEmpty()) {
+            com.videoguard.app.recommendation.SongDeduplicationEngine.ensureNoConsecutiveDuplicates(
+                com.videoguard.app.recommendation.SongDeduplicationEngine.deduplicate(smartFeed.madeForYou)
+            ).take(10)
+        } else {
+            com.videoguard.app.recommendation.SongDeduplicationEngine.deduplicateAndFill(
+                primaryTracks = history.reversed(),
+                candidatePool = history,
+                targetCount = 10
+            )
+        }
+    }
 
     var selectedFilter by remember { mutableStateOf("All") }
     val scope = rememberCoroutineScope()
@@ -1046,8 +1061,8 @@ fun MusicLibraryScreen(
                 }
             }
 
-            // 4. Made For You / Smart Recommendations
-            if ((selectedFilter == "All" || selectedFilter == "Made For You") && history.isNotEmpty()) {
+            // 4. Made For You / Smart Recommendations (Strictly deduplicated)
+            if ((selectedFilter == "All" || selectedFilter == "Made For You") && (mfyItems.isNotEmpty() || history.isNotEmpty())) {
                 item {
                     Column(
                         modifier = Modifier
@@ -1066,7 +1081,7 @@ fun MusicLibraryScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(history.shuffled().take(8)) { track ->
+                            items(mfyItems, key = { "mfy_${it.id}" }) { track ->
                                 Column(
                                     modifier = Modifier
                                         .width(120.dp)
@@ -2157,8 +2172,20 @@ private fun AlbumLibraryCard(
                 .clip(RoundedCornerShape(12.dp))
                 .background(Color(0xFF22232E))
         ) {
+            val resolvedCover = remember(album.id, album.coverUrl) {
+                com.videoguard.app.data.AlbumArtworkResolver.resolveArtwork(
+                    albumId = album.id,
+                    title = album.title,
+                    artist = album.artist,
+                    primaryUrl = album.coverUrl,
+                    tracks = album.tracks
+                )
+            }
             AsyncImage(
-                model = album.coverUrl,
+                model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                    .data(resolvedCover.ifBlank { album.coverUrl })
+                    .crossfade(true)
+                    .build(),
                 contentDescription = album.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()

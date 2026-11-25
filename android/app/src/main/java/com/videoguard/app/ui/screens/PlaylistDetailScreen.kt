@@ -66,6 +66,35 @@ fun PlaylistDetailScreen(
         mutableStateOf(if (isDownloads) offlineTracks else (repoPlaylist?.videos?.takeIf { it.isNotEmpty() } ?: initialPlaylist?.videos ?: emptyList()))
     }
 
+    val albumArtist = remember(playlist.description, playlist.title) {
+        playlist.description.substringAfter("• ").substringBefore(" •").trim().ifBlank { playlist.title }
+    }
+
+    var dynamicCoverUrl by remember(playlistId) {
+        mutableStateOf(
+            com.videoguard.app.data.AlbumArtworkResolver.resolveArtwork(
+                albumId = playlistId,
+                title = playlist.title,
+                artist = albumArtist,
+                primaryUrl = playlist.customCoverUrl,
+                tracks = dynamicVideos
+            )
+        )
+    }
+
+    LaunchedEffect(dynamicVideos, playlist.customCoverUrl) {
+        val resolved = com.videoguard.app.data.AlbumArtworkResolver.resolveArtwork(
+            albumId = playlistId,
+            title = playlist.title,
+            artist = albumArtist,
+            primaryUrl = playlist.customCoverUrl?.ifBlank { null } ?: dynamicCoverUrl.ifBlank { null },
+            tracks = dynamicVideos
+        )
+        if (resolved.isNotBlank() && resolved != dynamicCoverUrl) {
+            dynamicCoverUrl = resolved
+        }
+    }
+
     LaunchedEffect(repoPlaylist?.videos, offlineTracks) {
         if (isDownloads) {
             dynamicVideos = offlineTracks
@@ -113,9 +142,20 @@ fun PlaylistDetailScreen(
         }
         if (online.isNotEmpty()) {
             dynamicVideos = online
+            val resolvedCover = com.videoguard.app.data.AlbumArtworkResolver.resolveArtwork(
+                albumId = playlistId,
+                title = playlist.title,
+                artist = albumArtist,
+                primaryUrl = playlist.customCoverUrl,
+                tracks = online
+            )
+            if (resolvedCover.isNotBlank()) {
+                dynamicCoverUrl = resolvedCover
+                com.videoguard.app.data.AlbumArtworkResolver.cacheAlbumArtwork(playlistId, playlist.title, albumArtist, resolvedCover)
+            }
             val updatedPl = playlist.copy(
                 videos = online,
-                customCoverUrl = playlist.customCoverUrl ?: online.firstOrNull()?.thumbnailUrl
+                customCoverUrl = resolvedCover.ifBlank { playlist.customCoverUrl ?: online.firstOrNull()?.thumbnailUrl }
             )
             // Only update in repository if this playlist has already been explicitly saved in the user's library
             if (UserDataRepository.playlists.value.any { it.id == playlistId }) {
@@ -216,26 +256,34 @@ fun PlaylistDetailScreen(
                             modifier = Modifier
                                 .size(110.dp)
                                 .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF222222)),
+                                .background(Color(0xFF1E1F29)),
                             contentAlignment = Alignment.Center
                         ) {
-                            val coverUrl = playlist.customCoverUrl ?: currentVideos.firstOrNull()?.thumbnailUrl
-                            if (!coverUrl.isNullOrBlank()) {
+                            val activeCover = dynamicCoverUrl.ifBlank {
+                                playlist.customCoverUrl?.ifBlank { null }
+                                    ?: currentVideos.firstOrNull { it.thumbnailUrl.isNotBlank() }?.thumbnailUrl
+                                    ?: ""
+                            }
+                            if (activeCover.isNotBlank()) {
                                 AsyncImage(
-                                    model = coverUrl,
+                                    model = coil.request.ImageRequest.Builder(context)
+                                        .data(activeCover)
+                                        .crossfade(true)
+                                        .build(),
                                     contentDescription = playlist.title,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
                                 Icon(
-                                    imageVector = when (playlist.iconType) {
-                                        "like" -> Icons.Default.ThumbUp
-                                        "watch_later" -> Icons.Default.WatchLater
+                                    imageVector = when {
+                                        isAlbumPlaylist || playlist.iconType == "album" -> Icons.Default.Album
+                                        playlist.iconType == "like" -> Icons.Default.ThumbUp
+                                        playlist.iconType == "watch_later" -> Icons.Default.WatchLater
                                         else -> Icons.Default.PlaylistPlay
                                     },
                                     contentDescription = null,
-                                    tint = Color.White,
+                                    tint = Color(0xFFA1A1AA),
                                     modifier = Modifier.size(40.dp)
                                 )
                             }
