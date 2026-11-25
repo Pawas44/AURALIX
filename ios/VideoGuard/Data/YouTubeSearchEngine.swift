@@ -144,6 +144,8 @@ struct YouTubeSearchEngine {
         req.setValue("67", forHTTPHeaderField: "X-YouTube-Client-Name")
         req.setValue("1.20240101.01.00", forHTTPHeaderField: "X-YouTube-Client-Version")
 
+        // Search YouTube Music without restrictive params so that official music videos,
+        // singles, hip hop releases, and songs are all returned
         let payload: [String: Any] = [
             "context": [
                 "client": [
@@ -153,8 +155,7 @@ struct YouTubeSearchEngine {
                     "gl": "IN"
                 ]
             ],
-            "query": trimmed,
-            "params": "EgWKAQIIAWoSEAQQAxAFEAoQCRAVEA4QEBAR"
+            "query": trimmed
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
@@ -162,14 +163,15 @@ struct YouTubeSearchEngine {
             let (data, resp) = try await URLSession.shared.data(for: req)
             if let http = resp as? HTTPURLResponse, http.statusCode == 200,
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                return parseMusicSearchResponse(json: json)
+                return parseMusicSearchResponse(json: json, query: trimmed)
             }
         } catch {}
         return []
     }
 
-    private static func parseMusicSearchResponse(json: [String: Any]) -> [VideoItem] {
+    private static func parseMusicSearchResponse(json: [String: Any], query: String) -> [VideoItem] {
         var outList: [VideoItem] = []
+        var seenIds = Set<String>()
         guard let contents = json["contents"] as? [String: Any],
               let tabbed = contents["tabbedSearchResultsRenderer"] as? [String: Any],
               let tabs = tabbed["tabs"] as? [[String: Any]],
@@ -180,6 +182,81 @@ struct YouTubeSearchEngine {
         }
 
         for shelf in shelves {
+            // 1. Top Result Card (musicCardShelfRenderer)
+            if let card = shelf["musicCardShelfRenderer"] as? [String: Any] {
+                var vid = ((card["onTap"] as? [String: Any])?["watchEndpoint"] as? [String: Any])?["videoId"] as? String ?? ""
+                if vid.isEmpty {
+                    let runs0 = (card["title"] as? [String: Any])?["runs"] as? [[String: Any]]
+                    vid = ((runs0?.first?["navigationEndpoint"] as? [String: Any])?["watchEndpoint"] as? [String: Any])?["videoId"] as? String ?? ""
+                }
+                if !vid.isEmpty, vid.count == 11, seenIds.insert(vid).inserted {
+                    let rawTitle = (((card["title"] as? [String: Any])?["runs"] as? [[String: Any]])?.first?["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !rawTitle.isEmpty {
+                        var artist = "YouTube Music"
+                        var duration = "3:30"
+                        if let subRuns = (card["subtitle"] as? [String: Any])?["runs"] as? [[String: Any]] {
+                            var parts: [String] = []
+                            var cur = ""
+                            for r in subRuns {
+                                let txt = (r["text"] as? String ?? "")
+                                if txt == " • " || txt == "•" {
+                                    if !cur.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                        parts.append(cur.trimmingCharacters(in: .whitespacesAndNewlines))
+                                        cur = ""
+                                    }
+                                } else {
+                                    cur += txt
+                                }
+                            }
+                            if !cur.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                parts.append(cur.trimmingCharacters(in: .whitespacesAndNewlines))
+                            }
+                            if !parts.isEmpty {
+                                if parts[0].lowercased() == "video" || parts[0].lowercased() == "song" {
+                                    if parts.count > 1 { artist = parts[1] }
+                                } else {
+                                    artist = parts[0]
+                                }
+                                if let last = parts.last, last.range(of: #"^\d{1,2}:\d{2}"#, options: .regularExpression) != nil {
+                                    duration = last
+                                }
+                            }
+                        }
+
+                        var thumb = "https://img.youtube.com/vi/\(vid)/hqdefault.jpg"
+                        if let thumbs = (((card["thumbnail"] as? [String: Any])?["musicThumbnailRenderer"] as? [String: Any])?["thumbnail"] as? [String: Any])?["thumbnails"] as? [[String: Any]],
+                           let u = thumbs.last?["url"] as? String, !u.isEmpty {
+                            thumb = u.hasPrefix("//") ? "https:\(u)" : u
+                        }
+                        if thumb.contains("=w") && thumb.contains("-h") {
+                            thumb = thumb.replacingOccurrences(of: #"=w\d+-h\d+"#, with: "=w544-h544", options: .regularExpression)
+                        }
+
+                        outList.append(
+                            VideoItem(
+                                id: vid,
+                                title: rawTitle,
+                                channelName: artist,
+                                channelAvatarUrl: thumb,
+                                subscriberCount: "Top Result",
+                                thumbnailUrl: thumb,
+                                views: "Top Result",
+                                uploadTime: "YouTube Music",
+                                duration: duration,
+                                description: "\(rawTitle) - \(artist)",
+                                likes: "100K",
+                                isMusicTrack: true,
+                                artist: artist,
+                                album: "Single",
+                                lyrics: "",
+                                category: "Music"
+                            )
+                        )
+                    }
+                }
+            }
+
+            // 2. Shelves of responsive list items
             let items: [[String: Any]]
             if let msr = shelf["musicShelfRenderer"] as? [String: Any],
                let c = msr["contents"] as? [[String: Any]] {
@@ -200,7 +277,7 @@ struct YouTubeSearchEngine {
                    let runs = ((firstCol["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"] as? [String: Any])?["runs"] as? [[String: Any]] {
                     vid = ((runs.first?["navigationEndpoint"] as? [String: Any])?["watchEndpoint"] as? [String: Any])?["videoId"] as? String ?? ""
                 }
-                guard !vid.isEmpty, vid.count == 11 else { continue }
+                guard !vid.isEmpty, vid.count == 11, seenIds.insert(vid).inserted else { continue }
 
                 var title = ""
                 if let firstCol = flexCols.first,
@@ -232,13 +309,19 @@ struct YouTubeSearchEngine {
                         parts.append(curPart.trimmingCharacters(in: .whitespacesAndNewlines))
                     }
 
+                    if parts.first?.lowercased() == "artist" { continue }
+
                     if parts.count >= 3 {
-                        artist = parts[0]
+                        artist = (parts[0] == "Song" || parts[0] == "Video") ? parts[1] : parts[0]
                         album = parts[1]
-                        duration = parts[2]
+                        if let last = parts.last, last.range(of: #"^\d{1,2}:\d{2}"#, options: .regularExpression) != nil {
+                            duration = last
+                        }
                     } else if parts.count == 2 {
-                        artist = parts[0]
-                        duration = parts[1]
+                        artist = (parts[0] == "Song" || parts[0] == "Video") ? parts[1] : parts[0]
+                        if let last = parts.last, last.range(of: #"^\d{1,2}:\d{2}"#, options: .regularExpression) != nil {
+                            duration = last
+                        }
                     } else if parts.count == 1 {
                         artist = parts[0]
                     }
@@ -261,8 +344,8 @@ struct YouTubeSearchEngine {
                         channelAvatarUrl: thumb,
                         subscriberCount: "Song Track",
                         thumbnailUrl: thumb,
-                        views: "Official Song",
-                        uploadTime: "YouTube Music",
+                        views: "Song",
+                        uploadTime = "YouTube Music",
                         duration: duration,
                         description: "\(title) - \(artist)",
                         likes: "100K",
@@ -275,7 +358,36 @@ struct YouTubeSearchEngine {
                 )
             }
         }
-        return outList
+
+        let qLower = query.lowercased()
+        let hasLiveInQuery = qLower.contains("live")
+        let livePattern = #"(?i)\b(live\s+from|live\s+concert|live\s+performance|stage\s+performance|performing\s+live|on\s+stage|in\s+concert|live\s+at)\b|\((live)\)|\[(live)\]"#
+        let disqualifiedPattern = #"(?i)\b(reaction|reacting|interview|podcast|review|vlog|behind the scenes|making of|teaser|trailer|promo|glimpse)\b"#
+
+        let cleaned = outList.filter { item in
+            let t = item.title.lowercased()
+            if !qLower.contains("reaction") && !qLower.contains("interview") && !qLower.contains("podcast") {
+                if let r = try? NSRegularExpression(pattern: disqualifiedPattern),
+                   r.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil {
+                    return false
+                }
+            }
+            return true
+        }
+
+        if !hasLiveInQuery, let liveRegex = try? NSRegularExpression(pattern: livePattern) {
+            let nonLive = cleaned.filter { item in
+                let t = item.title.lowercased()
+                return liveRegex.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) == nil
+            }
+            let live = cleaned.filter { item in
+                let t = item.title.lowercased()
+                return liveRegex.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil
+            }
+            return nonLive + live
+        }
+
+        return cleaned
     }
 
     static func getRelatedVideos(video: VideoItem, isMusicOnly: Bool = false) async -> [VideoItem] {
@@ -418,20 +530,36 @@ struct YouTubeSearchEngine {
         }
 
         if isMusic && !results.isEmpty {
-            let pattern = #"(?i)\b(official\s+video|official\s+music\s+video|music\s+video|video\s+song|full\s+video|live\s+performance|live\s+concert|stage\s+performance|live\s+at)\b|\[(official\s+video|music\s+video|video|live)\]|\((official\s+video|music\s+video|video|live)\)"#
-            if let regex = try? NSRegularExpression(pattern: pattern) {
-                let pureSongs = results.filter { item in
-                    let range = NSRange(item.title.startIndex..., in: item.title)
-                    return regex.firstMatch(in: item.title, range: range) == nil
+            let qLower = query.lowercased()
+            let hasLiveInQuery = qLower.contains("live")
+            let livePattern = #"(?i)\b(live\s+from|live\s+concert|live\s+performance|stage\s+performance|performing\s+live|on\s+stage|in\s+concert|live\s+at)\b|\((live)\)|\[(live)\]"#
+            let disqualifiedPattern = #"(?i)\b(reaction|reacting|interview|podcast|review|vlog|behind the scenes|making of|teaser|trailer|promo|glimpse)\b"#
+
+            let filtered = results.filter { item in
+                let t = item.title.lowercased()
+                if !qLower.contains("reaction") && !qLower.contains("interview") && !qLower.contains("podcast") {
+                    if let r = try? NSRegularExpression(pattern: disqualifiedPattern),
+                       r.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil {
+                        return false
+                    }
                 }
-                let videoItems = results.filter { item in
-                    let range = NSRange(item.title.startIndex..., in: item.title)
-                    return regex.firstMatch(in: item.title, range: range) != nil
+                return true
+            }
+
+            if !hasLiveInQuery, let liveRegex = try? NSRegularExpression(pattern: livePattern) {
+                let nonLive = filtered.filter { item in
+                    let t = item.title.lowercased()
+                    return liveRegex.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) == nil
                 }
-                if !pureSongs.isEmpty {
-                    return pureSongs + videoItems
+                let live = filtered.filter { item in
+                    let t = item.title.lowercased()
+                    return liveRegex.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil
+                }
+                if !nonLive.isEmpty {
+                    return nonLive + live
                 }
             }
+            return filtered
         }
 
         return results

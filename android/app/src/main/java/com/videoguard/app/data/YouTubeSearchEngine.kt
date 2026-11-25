@@ -109,6 +109,8 @@ object YouTubeSearchEngine {
                 doOutput = true
             }
 
+            // Do not use restrictive params so all official releases, official videos,
+            // and songs across Indian, Hip Hop, and Indie tracks are returned
             val payload = JSONObject().apply {
                 put("context", JSONObject().apply {
                     put("client", JSONObject().apply {
@@ -119,7 +121,6 @@ object YouTubeSearchEngine {
                     })
                 })
                 put("query", query)
-                put("params", "EgWKAQIIAWoSEAQQAxAFEAoQCRAVEA4QEBAR")
             }
 
             conn.outputStream.use { os ->
@@ -129,7 +130,7 @@ object YouTubeSearchEngine {
             if (conn.responseCode == 200) {
                 val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
                 val root = JSONObject(jsonStr)
-                parseMusicSearchResponse(root, outList)
+                parseMusicSearchResponse(root, outList, query)
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -137,7 +138,7 @@ object YouTubeSearchEngine {
         outList
     }
 
-    private fun parseMusicSearchResponse(root: JSONObject, outList: MutableList<VideoItem>) {
+    private fun parseMusicSearchResponse(root: JSONObject, outList: MutableList<VideoItem>, query: String) {
         val tabs = root.optJSONObject("contents")
             ?.optJSONObject("tabbedSearchResultsRenderer")
             ?.optJSONArray("tabs")
@@ -147,8 +148,94 @@ object YouTubeSearchEngine {
             ?.optJSONObject("sectionListRenderer")
             ?.optJSONArray("contents") ?: return
 
+        val seenIds = mutableSetOf<String>()
+
         for (i in 0 until tab0.length()) {
             val shelfObj = tab0.optJSONObject(i) ?: continue
+
+            // 1. Top Result Card (musicCardShelfRenderer)
+            val card = shelfObj.optJSONObject("musicCardShelfRenderer")
+            if (card != null) {
+                var vid = card.optJSONObject("onTap")?.optJSONObject("watchEndpoint")?.optString("videoId") ?: ""
+                if (vid.isBlank()) {
+                    val runs0 = card.optJSONObject("title")?.optJSONArray("runs")
+                    vid = runs0?.optJSONObject(0)?.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("watchEndpoint")?.optString("videoId") ?: ""
+                }
+                if (vid.isNotBlank() && vid.length == 11 && seenIds.add(vid)) {
+                    val rawTitle = card.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")?.trim() ?: ""
+                    if (rawTitle.isNotBlank()) {
+                        val subRuns = card.optJSONObject("subtitle")?.optJSONArray("runs")
+                        var artist = "YouTube Music"
+                        var duration = "3:30"
+                        var album = "Single"
+
+                        if (subRuns != null) {
+                            val subParts = mutableListOf<String>()
+                            var cur = StringBuilder()
+                            for (r in 0 until subRuns.length()) {
+                                val txt = subRuns.optJSONObject(r)?.optString("text") ?: ""
+                                if (txt == " • " || txt == "•") {
+                                    if (cur.isNotBlank()) {
+                                        subParts.add(cur.toString().trim())
+                                        cur = StringBuilder()
+                                    }
+                                } else {
+                                    cur.append(txt)
+                                }
+                            }
+                            if (cur.isNotBlank()) subParts.add(cur.toString().trim())
+
+                            if (subParts.isNotEmpty()) {
+                                val first = subParts[0]
+                                if (first.equals("Video", ignoreCase = true) || first.equals("Song", ignoreCase = true)) {
+                                    if (subParts.size > 1) artist = subParts[1]
+                                } else {
+                                    artist = subParts[0]
+                                }
+                                val last = subParts.last()
+                                if (last.matches(Regex("""^\d{1,2}:\d{2}(?::\d{2})?$"""))) {
+                                    duration = last
+                                }
+                            }
+                        }
+
+                        var thumb = "https://img.youtube.com/vi/$vid/hqdefault.jpg"
+                        val thumbs = card.optJSONObject("thumbnail")?.optJSONObject("musicThumbnailRenderer")
+                            ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+                        if (thumbs != null && thumbs.length() > 0) {
+                            val lastUrl = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url") ?: ""
+                            if (lastUrl.isNotBlank()) {
+                                thumb = if (lastUrl.startsWith("//")) "https:$lastUrl" else lastUrl
+                            }
+                        }
+                        thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, vid)
+
+                        outList.add(
+                            VideoItem(
+                                id = vid,
+                                title = rawTitle,
+                                channelName = artist,
+                                channelAvatarUrl = thumb,
+                                subscriberCount = "Top Result",
+                                thumbnailUrl = thumb,
+                                views = "Top Result",
+                                uploadTime = "YouTube Music",
+                                duration = duration,
+                                description = "$rawTitle - $artist",
+                                likes = "100K",
+                                isMusicTrack = true,
+                                artist = artist,
+                                album = album,
+                                lyrics = "",
+                                category = "Music"
+                            )
+                        )
+                    }
+                }
+            }
+
+            // 2. Shelves of responsive list items
             val shelfRenderer = shelfObj.optJSONObject("musicShelfRenderer")
             val itemSectionRenderer = shelfObj.optJSONObject("itemSectionRenderer")
             val contents = shelfRenderer?.optJSONArray("contents")
@@ -168,7 +255,7 @@ object YouTubeSearchEngine {
                     vid = runs0?.optJSONObject(0)?.optJSONObject("navigationEndpoint")
                         ?.optJSONObject("watchEndpoint")?.optString("videoId") ?: ""
                 }
-                if (vid.isBlank() || vid.length != 11) continue
+                if (vid.isBlank() || vid.length != 11 || !seenIds.add(vid)) continue
 
                 var title = ""
                 if (flexCols.length() > 0) {
@@ -205,13 +292,20 @@ object YouTubeSearchEngine {
                             parts.add(curPart.toString().trim())
                         }
 
+                        // Skip pure artist profile items with no track duration
+                        if (parts.isNotEmpty() && parts[0].equals("Artist", ignoreCase = true)) {
+                            continue
+                        }
+
                         if (parts.size >= 3) {
-                            artist = parts[0]
+                            artist = if (parts[0] in listOf("Song", "Video")) parts[1] else parts[0]
                             album = parts[1]
-                            duration = parts[2]
+                            val last = parts.last()
+                            if (last.matches(Regex("""^\d{1,2}:\d{2}(?::\d{2})?$"""))) duration = last
                         } else if (parts.size == 2) {
-                            artist = parts[0]
-                            duration = parts[1]
+                            artist = if (parts[0] in listOf("Song", "Video")) parts[1] else parts[0]
+                            val last = parts.last()
+                            if (last.matches(Regex("""^\d{1,2}:\d{2}(?::\d{2})?$"""))) duration = last
                         } else if (parts.size == 1) {
                             artist = parts[0]
                         }
@@ -239,7 +333,7 @@ object YouTubeSearchEngine {
                         channelAvatarUrl = thumb,
                         subscriberCount = "Song Track",
                         thumbnailUrl = thumb,
-                        views = "Official Song",
+                        views = "Song",
                         uploadTime = "YouTube Music",
                         duration = duration,
                         description = "$title - $artist",
@@ -252,6 +346,31 @@ object YouTubeSearchEngine {
                     )
                 )
             }
+        }
+
+        // Intelligently filter out live concerts & reactions unless query specifically asked for them
+        val qLower = query.lowercase()
+        val hasLiveInQuery = qLower.contains("live")
+        val livePattern = Regex("""(?i)\b(live\s+from|live\s+concert|live\s+performance|stage\s+performance|performing\s+live|on\s+stage|in\s+concert|live\s+at)\b|\((live)\)|\[(live)\]""")
+        val disqualifiedPattern = Regex("""(?i)\b(reaction|reacting|interview|podcast|review|vlog|behind the scenes|making of|teaser|trailer|promo|glimpse)\b""")
+
+        val cleaned = outList.filter { item ->
+            val t = item.title.lowercase()
+            if (!qLower.contains("reaction") && !qLower.contains("interview") && !qLower.contains("podcast") && disqualifiedPattern.containsMatchIn(t)) {
+                false
+            } else {
+                true
+            }
+        }
+
+        if (!hasLiveInQuery) {
+            val nonLive = cleaned.filter { !livePattern.containsMatchIn(it.title) }
+            val live = cleaned.filter { livePattern.containsMatchIn(it.title) }
+            outList.clear()
+            outList.addAll(nonLive + live)
+        } else {
+            outList.clear()
+            outList.addAll(cleaned)
         }
     }
 
@@ -356,12 +475,30 @@ object YouTubeSearchEngine {
         }
 
         if (isMusic && results.isNotEmpty()) {
-            val avoidableRegex = Regex(
-                "(?i)\\b(official\\s+video|official\\s+music\\s+video|music\\s+video|video\\s+song|full\\s+video|live\\s+performance|live\\s+concert|stage\\s+performance|live\\s+at)\\b|\\[(official\\s+video|music\\s+video|video|live)\\]|\\((official\\s+video|music\\s+video|video|live)\\)"
+            val qLower = query.lowercase()
+            val hasLiveInQuery = qLower.contains("live")
+            val liveRegex = Regex(
+                "(?i)\\b(live\\s+from|live\\s+concert|live\\s+performance|stage\\s+performance|performing\\s+live|on\\s+stage|in\\s+concert|live\\s+at)\\b|\\[(live)\\]|\\((live)\\)"
             )
-            val pureSongs = results.filter { !avoidableRegex.containsMatchIn(it.title) }
-            val videoItems = results.filter { avoidableRegex.containsMatchIn(it.title) }
-            return if (pureSongs.isNotEmpty()) (pureSongs + videoItems) else results
+            val nonMusicRegex = Regex(
+                "(?i)\\b(reaction|reacting|interview|podcast|review|vlog|behind the scenes|making of|teaser|trailer|promo|glimpse)\\b"
+            )
+
+            val filtered = results.filter { item ->
+                val t = item.title.lowercase()
+                if (!qLower.contains("reaction") && !qLower.contains("interview") && nonMusicRegex.containsMatchIn(t)) {
+                    false
+                } else {
+                    true
+                }
+            }
+
+            if (!hasLiveInQuery) {
+                val studioReleases = filtered.filter { !liveRegex.containsMatchIn(it.title) }
+                val liveVersions = filtered.filter { liveRegex.containsMatchIn(it.title) }
+                return if (studioReleases.isNotEmpty()) (studioReleases + liveVersions) else filtered
+            }
+            return filtered
         }
 
         return results
