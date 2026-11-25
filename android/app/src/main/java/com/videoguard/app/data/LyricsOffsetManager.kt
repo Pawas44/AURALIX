@@ -1,5 +1,7 @@
 package com.videoguard.app.data
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.SharedPreferences
 
@@ -59,6 +61,25 @@ object LyricsOffsetManager {
 
     fun resetOffset(videoId: String) {
         prefs?.edit()?.remove("offset_$videoId")?.apply()
+    }
+
+    fun copyLyricsToClipboard(context: Context, lyrics: LyricsResult?, trackTitle: String, artist: String): Boolean {
+        if (lyrics == null) return false
+        return try {
+            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
+            val textToCopy = if (lyrics.lines.isNotEmpty()) {
+                lyrics.lines.joinToString("\n") { it.text }
+            } else {
+                lyrics.plainLyrics
+            }
+            if (textToCopy.isBlank()) return false
+            val label = "Lyrics - $trackTitle"
+            val clip = ClipData.newPlainText(label, textToCopy)
+            clipboard.setPrimaryClip(clip)
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     /**

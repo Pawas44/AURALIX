@@ -58,6 +58,7 @@ jobs:
             echo "- **☕ Authentic Buy Me a Coffee & UPI Support**: Official coral orange BMC widget button and native UPI app chooser with direct deep links."
             echo "- **📱 Smooth Swipe-Down Player Gesture**: High-priority vertical drag gesture to seamlessly minimize the full-screen music player."
             echo "- **🧠 Spotify-Level Intelligent Music Recommendation Engine**: Integrated local-first adaptive recommendation system including **Made For You**, **Discover Weekly** (~30 songs, 40% familiar + 60% discovery, weekly auto-refresh), **Daily Mixes (Mix 1-5)**, **Because You Listened To**, **Your Most Played**, **Continue Listening**, and **Hidden Gems** with cross-section deduplication."
+            echo "- **🎤 Real-Time Spotify-Style Synchronized Lyrics (Android & iOS)**: Smooth luminous line highlighting, tap-to-seek playback, manual drag detection with floating 'Sync' snap back, LRCLIB integration with smart multi-source fallback, persistent disk caching, and timing offset fine-tuning."
             echo "- **📊 Dynamic Music Taste Profile**: Real-time behavioral tracking (completed songs, replays, skips, likes, playlist additions) with weighted scoring formulas and local persistence."
             echo "- **🔍 Music Discovery Interactions**: Interactive 'Why am I seeing this song?' transparent explanation sheet, 'Start radio (More like this)', and 'Not interested / Hide this song' dynamic filtering."
             echo "- **🟢 Spotify Link-Only Music Importer**: Clean, instant Spotify playlist link importer that enriches user taste profile."
@@ -90,6 +91,7 @@ jobs:
   build-ios:
     name: Build iOS IPA
     runs-on: macos-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout Repository
@@ -137,14 +139,14 @@ jobs:
           TAG="v1.0.${{ github.run_number }}"
           cp ios/VideoGuard.ipa AURALIX.ipa
 
-          for i in {1..12}; do
+          for i in {1..30}; do
             if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
               echo "Release $TAG found! Uploading AURALIX.ipa..."
               gh release upload "$TAG" AURALIX.ipa --clobber --repo "${{ github.repository }}"
               echo "Uploaded AURALIX.ipa successfully!"
               exit 0
             fi
-            echo "Release $TAG not found yet. Retrying in 10s... ($i/12)"
+            echo "Release $TAG not found yet. Retrying in 10s... ($i/30)"
             sleep 10
           done
 

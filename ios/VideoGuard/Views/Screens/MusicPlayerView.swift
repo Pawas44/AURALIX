@@ -30,6 +30,9 @@ struct MusicPlayerView: View {
         case settings
         case addToPlaylist
         case jam
+        case lyricsSettings
+        case searchLyrics
+        case addCustomLyrics
 
         var id: String { rawValue }
     }
@@ -43,6 +46,11 @@ struct MusicPlayerView: View {
     @State private var isLoadingLyrics = false
     @State private var wavePhase = false
     @State private var dragOffset: CGFloat = 0
+    @State private var showInPlayerLyrics = false
+    @State private var lyricsOffsetMs: Double = 0.0
+    @State private var romanizeMode: LyricsRomanizeMode = .both
+    @State private var forcePlainLyricsView = false
+    @State private var lyricsRetryTrigger: Int = 0
 
     private var queueTracks: [VideoItem] {
         let queue = playbackService.playbackQueue
@@ -86,60 +94,177 @@ struct MusicPlayerView: View {
 
                     Spacer(minLength: 6)
 
-                    // Square Artwork + High Quality Audio Visualizer
-                    VStack(spacing: 12) {
-                        AsyncImage(url: URL(string: track.thumbnailUrl)) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            case .failure:
-                                ZStack {
+                    // Square Artwork OR In-Player Synchronized Lyrics Card
+                    if showInPlayerLyrics {
+                        ZStack(alignment: .top) {
+                            // Blurred Background Poster
+                            AsyncImage(url: URL(string: track.thumbnailUrl)) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                default:
                                     Rectangle().fill(AppTheme.ytMusicCardBg)
-                                    Image(systemName: "music.note")
-                                        .font(.system(size: 40))
-                                        .foregroundColor(.white.opacity(0.35))
                                 }
-                            case .empty:
-                                Rectangle().fill(AppTheme.ytMusicCardBg)
-                            @unknown default:
-                                Rectangle().fill(AppTheme.ytMusicCardBg)
                             }
+                            .frame(width: artSize, height: artSize)
+                            .blur(radius: 20)
+                            .overlay(Color.black.opacity(0.68))
+
+                            // Synchronized Lyrics View
+                            SpotifySyncedLyricsView(
+                                lyrics: lyricsResult,
+                                isLoading: isLoadingLyrics,
+                                track: track,
+                                currentTimeSeconds: isUserScrubbing ? scrubPosition : playbackService.currentTimeSeconds,
+                                lyricsOffsetMs: lyricsOffsetMs,
+                                romanizeMode: romanizeMode,
+                                forcePlainView: forcePlainLyricsView,
+                                onSeek: { posSec in playbackService.seekTo(seconds: posSec) },
+                                onRetry: { lyricsRetryTrigger += 1 },
+                                onSearchManually: { activeSheet = .searchLyrics },
+                                onAddLyrics: { activeSheet = .addCustomLyrics },
+                                onOpenSettings: { activeSheet = .lyricsSettings },
+                                onClose: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { showInPlayerLyrics = false } }
+                            )
+                            .padding(.top, 38)
+
+                            // Minimal Floating Top Bar
+                            HStack {
+                                let sourceLabel = lyricsResult?.source.isEmpty == false ? lyricsResult!.source : "LRCLIB"
+                                let isSyncedLyrics = lyricsResult?.isSynced == true && !forcePlainLyricsView
+                                HStack(spacing: 5) {
+                                    Circle()
+                                        .fill(isSyncedLyrics ? Color(hex: 0x1DB954) : Color(hex: 0xFFFFB300))
+                                        .frame(width: 6, height: 6)
+                                    Text(isSyncedLyrics ? "\(sourceLabel) • Synced" : sourceLabel)
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.white.opacity(0.85))
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.black.opacity(0.6))
+                                .clipShape(Capsule())
+                                .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
+
+                                Spacer()
+
+                                Button(action: {
+                                    let nextMode: LyricsRomanizeMode
+                                    switch romanizeMode {
+                                    case .both: nextMode = .romanized
+                                    case .romanized: nextMode = .native
+                                    case .native: nextMode = .both
+                                    }
+                                    romanizeMode = nextMode
+                                    LyricsEngine.shared.setRomanizeMode(nextMode)
+                                }) {
+                                    Text(romanizeMode.displayLabel)
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(romanizeMode != .native ? Color(hex: 0x3EA6FF) : .white.opacity(0.85))
+                                        .padding(.horizontal, 7)
+                                        .padding(.vertical, 4)
+                                        .background(romanizeMode != .native ? Color(hex: 0x1E3A5F) : Color.black.opacity(0.6))
+                                        .clipShape(Capsule())
+                                        .overlay(Capsule().stroke(romanizeMode != .native ? Color(hex: 0x3EA6FF).opacity(0.6) : Color.white.opacity(0.15), lineWidth: 1))
+                                }
+
+                                Button(action: { activeSheet = .lyricsSettings }) {
+                                    Image(systemName: "slider.horizontal.3")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(lyricsOffsetMs != 0.0 ? Color(hex: 0xFFFFC107) : .white)
+                                        .frame(width: 26, height: 26)
+                                        .background(lyricsOffsetMs != 0.0 ? Color(hex: 0x2C2416) : Color.black.opacity(0.6))
+                                        .clipShape(Circle())
+                                        .overlay(Circle().stroke(lyricsOffsetMs != 0.0 ? Color(hex: 0xFFFFB300) : Color.white.opacity(0.15), lineWidth: 1))
+                                }
+
+                                Button(action: {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                        showInPlayerLyrics = false
+                                    }
+                                }) {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .frame(width: 26, height: 26)
+                                        .background(Color.black.opacity(0.6))
+                                        .clipShape(Circle())
+                                        .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                                }
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.top, 8)
                         }
                         .frame(width: artSize, height: artSize)
                         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                                .strokeBorder(Color.white.opacity(0.15), lineWidth: 1)
                         )
-                        .shadow(color: Color(hex: 0xFF1744, alpha: 0.35), radius: 22, x: 0, y: 10)
-
-                        // Animated Visualizer
-                        if isPlaying {
-                            HStack(spacing: 4) {
-                                let activeHeights: [CGFloat] = [14, 7, 16, 9, 13]
-                                let restHeights: [CGFloat] = [5, 14, 6, 13, 7]
-                                ForEach(0..<5, id: \.self) { idx in
-                                    RoundedRectangle(cornerRadius: 2)
-                                        .fill(AppTheme.ytMusicRedAccent)
-                                        .frame(width: 3, height: wavePhase ? activeHeights[idx] : restHeights[idx])
+                        .shadow(color: Color.black.opacity(0.4), radius: 18, x: 0, y: 8)
+                    } else {
+                        VStack(spacing: 12) {
+                            AsyncImage(url: URL(string: track.thumbnailUrl)) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                case .failure:
+                                    ZStack {
+                                        Rectangle().fill(AppTheme.ytMusicCardBg)
+                                        Image(systemName: "music.note")
+                                            .font(.system(size: 40))
+                                            .foregroundColor(.white.opacity(0.35))
+                                    }
+                                case .empty:
+                                    Rectangle().fill(AppTheme.ytMusicCardBg)
+                                @unknown default:
+                                    Rectangle().fill(AppTheme.ytMusicCardBg)
                                 }
-                                Text("High Quality Audio")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(Color(hex: 0xAAAAAA))
-                                    .padding(.leading, 6)
                             }
-                            .frame(height: 16)
-                            .animation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true), value: wavePhase)
-                        } else {
-                            Color.clear.frame(height: 16)
+                            .frame(width: artSize, height: artSize)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                            )
+                            .shadow(color: Color(hex: 0xFF1744, alpha: 0.35), radius: 22, x: 0, y: 10)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                    showInPlayerLyrics = true
+                                }
+                            }
+
+                            // Animated Visualizer
+                            if isPlaying {
+                                HStack(spacing: 4) {
+                                    let activeHeights: [CGFloat] = [14, 7, 16, 9, 13]
+                                    let restHeights: [CGFloat] = [5, 14, 6, 13, 7]
+                                    ForEach(0..<5, id: \.self) { idx in
+                                        RoundedRectangle(cornerRadius: 2)
+                                            .fill(AppTheme.ytMusicRedAccent)
+                                            .frame(width: 3, height: wavePhase ? activeHeights[idx] : restHeights[idx])
+                                    }
+                                    Text("High Quality Audio")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(Color(hex: 0xAAAAAA))
+                                        .padding(.leading, 6)
+                                }
+                                .frame(height: 16)
+                                .animation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true), value: wavePhase)
+                            } else {
+                                Color.clear.frame(height: 16)
+                            }
                         }
                     }
 
                     Spacer(minLength: 8)
 
-                    // Title & Like / Dislike Section
+                    // Title & Action Icons Section
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(track.title)
@@ -171,10 +296,15 @@ struct MusicPlayerView: View {
                                 .frame(width: 34, height: 34)
                         }
 
-                        Button(action: { userData.toggleDislike(track.id) }) {
-                            Image(systemName: userData.isDisliked(track.id) ? "hand.thumbsdown.fill" : "hand.thumbsdown")
+                        // Lyrics Toggle Button
+                        Button(action: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                showInPlayerLyrics.toggle()
+                            }
+                        }) {
+                            Image(systemName: showInPlayerLyrics ? "music.note.list" : "music.note")
                                 .font(.system(size: 20))
-                                .foregroundColor(userData.isDisliked(track.id) ? AppTheme.ytMusicRedAccent : .white)
+                                .foregroundColor(showInPlayerLyrics ? Color(hex: 0x3EA6FF) : .white)
                                 .frame(width: 34, height: 34)
                         }
 
@@ -239,7 +369,9 @@ struct MusicPlayerView: View {
         .ignoresSafeArea()
         .onAppear { wavePhase = true }
         .onDisappear { dragOffset = 0 }
-        .task(id: track.id) {
+        .task(id: "\(track.id)_\(lyricsRetryTrigger)") {
+            lyricsOffsetMs = LyricsEngine.shared.getOffsetMs(videoId: track.id)
+            romanizeMode = LyricsEngine.shared.getRomanizeMode()
             isLoadingLyrics = true
             lyricsResult = await LyricsEngine.shared.getLyrics(
                 trackTitle: track.title,
@@ -264,6 +396,52 @@ struct MusicPlayerView: View {
                 }
             case .jam:
                 ListenTogetherSheet()
+            case .lyricsSettings:
+                LyricsSettingsSheet(
+                    track: track,
+                    lyrics: lyricsResult,
+                    lyricsOffsetMs: $lyricsOffsetMs,
+                    forcePlainView: $forcePlainLyricsView,
+                    onDismiss: { activeSheet = nil },
+                    onSearchAlternative: { activeSheet = .searchLyrics },
+                    onAddCustom: { activeSheet = .addCustomLyrics },
+                    onCopyLyrics: {
+                        let ok = LyricsEngine.shared.copyLyricsToClipboard(
+                            lyrics: lyricsResult,
+                            trackTitle: track.title,
+                            artist: track.artist.isEmpty ? track.channelName : track.artist
+                        )
+                        if ok {
+                            downloadToastText = "Lyrics copied to clipboard!"
+                        }
+                        activeSheet = nil
+                    }
+                )
+                .presentationDetents([.medium, .large])
+            case .searchLyrics:
+                SearchLyricsSheet(
+                    initialQuery: track.title,
+                    onSelect: { selected in
+                        lyricsResult = selected
+                        LyricsEngine.shared.saveLyricsToDisk(videoId: track.id, result: selected)
+                        activeSheet = nil
+                        downloadToastText = "Lyrics updated!"
+                    },
+                    onDismiss: { activeSheet = nil }
+                )
+                .presentationDetents([.medium, .large])
+            case .addCustomLyrics:
+                AddCustomLyricsSheet(
+                    track: track,
+                    durationSeconds: Int(playbackService.durationSeconds),
+                    onSave: { customRes in
+                        lyricsResult = customRes
+                        activeSheet = nil
+                        downloadToastText = "Custom lyrics saved and synchronized!"
+                    },
+                    onDismiss: { activeSheet = nil }
+                )
+                .presentationDetents([.large])
             }
         }
         .overlay(alignment: .top) {
@@ -645,32 +823,23 @@ struct MusicPlayerView: View {
                         .padding(.vertical, 6)
 
                     case .lyrics:
-                        if isLoadingLyrics {
-                            HStack {
-                                Spacer()
-                                ProgressView()
-                                    .tint(AppTheme.ytMusicRedAccent)
-                                Spacer()
-                            }
-                            .padding(.top, 40)
-                        } else if let lyrics = lyricsResult, !lyrics.lines.isEmpty {
-                            SyncedLyricsView(
-                                lyrics: lyrics,
-                                currentTimeSeconds: playbackService.currentTimeSeconds,
-                                isUserScrubbing: isUserScrubbing,
-                                scrubPosition: scrubPosition,
-                                onSeek: { targetSec in
-                                    playbackService.seekTo(seconds: targetSec)
-                                }
-                            )
-                        } else {
-                            Text(track.lyrics.isEmpty ? "Lyrics are not currently available for this track." : track.lyrics)
-                                .font(.system(size: 15))
-                                .foregroundColor(Color(hex: 0xEEEEEE))
-                                .lineSpacing(6)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(16)
-                        }
+                        SpotifySyncedLyricsView(
+                            lyrics: lyricsResult,
+                            isLoading: isLoadingLyrics,
+                            track: track,
+                            currentTimeSeconds: isUserScrubbing ? scrubPosition : playbackService.currentTimeSeconds,
+                            lyricsOffsetMs: lyricsOffsetMs,
+                            romanizeMode: romanizeMode,
+                            forcePlainView: forcePlainLyricsView,
+                            onSeek: { targetSec in
+                                playbackService.seekTo(seconds: targetSec)
+                            },
+                            onRetry: { lyricsRetryTrigger += 1 },
+                            onSearchManually: { activeSheet = .searchLyrics },
+                            onAddLyrics: { activeSheet = .addCustomLyrics },
+                            onOpenSettings: { activeSheet = .lyricsSettings }
+                        )
+                        .frame(minHeight: 280)
 
                     case .related:
                         VStack(alignment: .leading, spacing: 6) {
@@ -734,103 +903,4 @@ private struct RoundedCornerShape: Shape {
     }
 }
 
-private struct SyncedLyricsView: View {
-    let lyrics: LyricsResult
-    let currentTimeSeconds: Double
-    let isUserScrubbing: Bool
-    let scrubPosition: Double
-    let onSeek: (Double) -> Void
 
-    @State private var showRomanized: Bool = false
-
-    private var hasRomanizableLines: Bool {
-        lyrics.lines.contains { $0.romanizedText != nil }
-    }
-
-    var body: some View {
-        let currentMs = (isUserScrubbing ? scrubPosition : currentTimeSeconds) * 1000.0
-        let activeIdx = lyrics.isSynced ? (lyrics.lines.lastIndex(where: { $0.timestampMs <= currentMs }) ?? 0) : -1
-
-        VStack(spacing: 0) {
-            // Romanization Toggle bar if applicable
-            if hasRomanizableLines {
-                HStack {
-                    Spacer()
-                    Button(action: { showRomanized.toggle() }) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "character.book.closed")
-                                .font(.system(size: 11))
-                            Text(showRomanized ? "Show Original" : "Romanize / English")
-                                .font(.system(size: 11, weight: .bold))
-                        }
-                        .foregroundColor(showRomanized ? .black : .white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(showRomanized ? Color.white : Color.white.opacity(0.12))
-                        .clipShape(Capsule())
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
-                }
-            }
-
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        ForEach(0..<lyrics.lines.count, id: \.self) { idx in
-                            let line = lyrics.lines[idx]
-                            LyricsLineRow(
-                                line: line,
-                                showRomanized: showRomanized,
-                                isActive: idx == activeIdx && lyrics.isSynced,
-                                isSynced: lyrics.isSynced,
-                                onTap: { onSeek(line.timestampMs / 1000.0) }
-                            )
-                            .id(idx)
-                        }
-                    }
-                    .padding(16)
-                }
-                .onChange(of: activeIdx) { newIdx in
-                    if newIdx >= 0 && lyrics.isSynced {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                            proxy.scrollTo(max(0, newIdx - 1), anchor: .top)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-private struct LyricsLineRow: View {
-    let line: LyricLine
-    let showRomanized: Bool
-    let isActive: Bool
-    let isSynced: Bool
-    let onTap: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            let primaryText = showRomanized && line.romanizedText != nil ? line.romanizedText! : line.text
-            Text(primaryText)
-                .font(.system(size: isActive ? 18 : 15, weight: isActive ? .heavy : .regular))
-                .foregroundColor(isActive ? .white : Color(hex: 0x777777))
-                .lineSpacing(4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            if showRomanized && line.romanizedText != nil {
-                Text(line.text)
-                    .font(.system(size: 11))
-                    .foregroundColor(isActive ? Color.white.opacity(0.6) : Color(hex: 0x555555))
-                    .lineLimit(1)
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if isSynced {
-                onTap()
-            }
-        }
-    }
-}

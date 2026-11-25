@@ -65,6 +65,7 @@
 		VG000056 /* TransliterationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00057 /* TransliterationEngine.swift */; };
 		VG000057 /* PlaylistShareEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00058 /* PlaylistShareEngine.swift */; };
 		VG000058 /* PlaylistOptionsBottomSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00059 /* PlaylistOptionsBottomSheet.swift */; };
+		VG000059 /* SpotifySyncedLyricsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00060 /* SpotifySyncedLyricsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -128,6 +129,7 @@
 		VGF00057 /* TransliterationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransliterationEngine.swift; sourceTree = "<group>"; };
 		VGF00058 /* PlaylistShareEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistShareEngine.swift; sourceTree = "<group>"; };
 		VGF00059 /* PlaylistOptionsBottomSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistOptionsBottomSheet.swift; sourceTree = "<group>"; };
+		VGF00060 /* SpotifySyncedLyricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifySyncedLyricsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -249,6 +251,7 @@
 				VGF00040 /* ListenTogetherSheet.swift */,
 				VGF00041 /* FloatingReactionsOverlay.swift */,
 				VGF00059 /* PlaylistOptionsBottomSheet.swift */,
+				VGF00060 /* SpotifySyncedLyricsView.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -405,6 +408,7 @@
 				VG000056 /* TransliterationEngine.swift in Sources */,
 				VG000057 /* PlaylistShareEngine.swift in Sources */,
 				VG000058 /* PlaylistOptionsBottomSheet.swift in Sources */,
+				VG000059 /* SpotifySyncedLyricsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

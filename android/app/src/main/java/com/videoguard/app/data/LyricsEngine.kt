@@ -21,7 +21,8 @@ data class LyricsResult(
     val plainLyrics: String,
     val isSynced: Boolean,
     val isEstimated: Boolean = false,
-    val confidenceScore: Int = 100
+    val confidenceScore: Int = 100,
+    val source: String = "LRCLIB"
 )
 
 object LyricsEngine {
@@ -66,6 +67,7 @@ object LyricsEngine {
             val isSynced = json.optBoolean("isSynced", false)
             val isEstimated = json.optBoolean("isEstimated", false)
             val confidenceScore = json.optInt("confidenceScore", 100)
+            val source = json.optString("source", if (isEstimated) "Estimated Sync" else "LRCLIB")
             val plainLyrics = json.optString("plainLyrics", "")
             val linesArray = json.optJSONArray("lines") ?: JSONArray()
             val lines = mutableListOf<LyricLine>()
@@ -85,7 +87,8 @@ object LyricsEngine {
                     plainLyrics = plainLyrics,
                     isSynced = isSynced,
                     isEstimated = isEstimated,
-                    confidenceScore = confidenceScore
+                    confidenceScore = confidenceScore,
+                    source = source
                 )
             } else null
         } catch (e: Exception) {
@@ -103,6 +106,7 @@ object LyricsEngine {
                 put("isSynced", result.isSynced)
                 put("isEstimated", result.isEstimated)
                 put("confidenceScore", result.confidenceScore)
+                put("source", result.source)
                 put("plainLyrics", result.plainLyrics)
                 val linesArray = JSONArray()
                 for (line in result.lines) {
@@ -281,7 +285,7 @@ object LyricsEngine {
             // If candidate is not already timestamped, apply Duration-Aware Sync
             return@withContext if (!bestCandidate.isSynced && bestCandidate.plainLyrics.isNotBlank()) {
                 val durationSynced = LyricsSyncEngine.calculateEstimatedSync(bestCandidate.plainLyrics, durationSeconds)
-                cacheAndReturn(durationSynced)
+                cacheAndReturn(durationSynced.copy(source = "LRCLIB (Estimated)"))
             } else {
                 cacheAndReturn(bestCandidate)
             }
@@ -397,6 +401,26 @@ object LyricsEngine {
         } else null
     }
 
+    fun saveUserCustomLyrics(context: Context, videoId: String, rawText: String, durationSeconds: Int): LyricsResult {
+        val parsedLines = LyricsSyncEngine.parseLrcText(rawText)
+        val result = if (parsedLines.isNotEmpty()) {
+            LyricsResult(
+                lines = parsedLines,
+                plainLyrics = rawText,
+                isSynced = true,
+                isEstimated = false,
+                confidenceScore = 100,
+                source = "Custom (Synced)"
+            )
+        } else {
+            val durationSynced = LyricsSyncEngine.calculateEstimatedSync(rawText, durationSeconds)
+            durationSynced.copy(confidenceScore = 100, source = "Custom (Plain)")
+        }
+        memoryCache.clear()
+        saveLyricsToDisk(context, videoId, result)
+        return result
+    }
+
     fun parseCustomLrc(synced: String, plain: String): LyricsResult {
         if (synced.isNotBlank()) {
             val lines = LyricsSyncEngine.parseLrcText(synced)
@@ -406,11 +430,12 @@ object LyricsEngine {
                     plainLyrics = plain,
                     isSynced = true,
                     isEstimated = false,
-                    confidenceScore = 100
+                    confidenceScore = 100,
+                    source = "LRCLIB (Synced)"
                 )
             }
         }
-        return autoSyncPlainLyrics(plain, 0)
+        return autoSyncPlainLyrics(plain, 0).copy(source = "LRCLIB (Plain)")
     }
 
     private fun parseLrcResponse(json: JSONObject, durationSeconds: Int = 0, confidenceScore: Int = 100): LyricsResult? {
@@ -425,14 +450,15 @@ object LyricsEngine {
                     plainLyrics = plain,
                     isSynced = true,
                     isEstimated = false,
-                    confidenceScore = confidenceScore
+                    confidenceScore = confidenceScore,
+                    source = "LRCLIB"
                 )
             }
         }
 
         if (plain.isNotBlank()) {
             val durationResult = LyricsSyncEngine.calculateEstimatedSync(plain, durationSeconds)
-            return durationResult.copy(confidenceScore = confidenceScore)
+            return durationResult.copy(confidenceScore = confidenceScore, source = "LRCLIB (Estimated)")
         }
 
         return null
@@ -522,7 +548,7 @@ object LyricsEngine {
                 val lyricsText = sb.toString().trim()
                 if (lyricsText.isNotBlank()) {
                     val synced = LyricsSyncEngine.calculateEstimatedSync(lyricsText, durationSeconds)
-                    return synced.copy(confidenceScore = 80)
+                    return synced.copy(confidenceScore = 80, source = "YouTube Music")
                 }
             }
             null

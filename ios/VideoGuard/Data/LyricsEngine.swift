@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct LyricLine: Identifiable, Equatable {
     var id: String { "\(timestampMs)_\(text)" }
@@ -7,10 +10,37 @@ struct LyricLine: Identifiable, Equatable {
     var romanizedText: String? = nil
 }
 
-struct LyricsResult {
+struct LyricsResult: Equatable {
     let lines: [LyricLine]
     let plainLyrics: String
     let isSynced: Bool
+    var isEstimated: Bool = false
+    var confidenceScore: Int = 100
+    var source: String = "LRCLIB"
+}
+
+struct LyricsSearchResultItem: Identifiable, Equatable {
+    let id: Int
+    let trackName: String
+    let artistName: String
+    let durationSeconds: Int
+    let isSynced: Bool
+    let syncedLyrics: String
+    let plainLyrics: String
+}
+
+enum LyricsRomanizeMode: String, CaseIterable {
+    case both = "BOTH"
+    case romanized = "ROMANIZED"
+    case native = "NATIVE"
+
+    var displayLabel: String {
+        switch self {
+        case .both: return "ABC: Both"
+        case .romanized: return "ABC: Roman"
+        case .native: return "ABC: Off"
+        }
+    }
 }
 
 final class LyricsEngine {
@@ -19,6 +49,15 @@ final class LyricsEngine {
     private let lock = NSLock()
 
     private init() {}
+
+    private var cacheDirectory: URL? {
+        let urls = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
+        guard let dir = urls.first?.appendingPathComponent("lyrics_cache") else { return nil }
+        if !FileManager.default.fileExists(atPath: dir.path) {
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+        return dir
+    }
 
     private func getCached(key: String) -> LyricsResult? {
         lock.lock()
@@ -33,27 +72,241 @@ final class LyricsEngine {
         memoryCache[key] = result
     }
 
+    // MARK: - Timing Offsets (UserDefaults)
+
+    func getOffsetMs(videoId: String) -> Double {
+        UserDefaults.standard.double(forKey: "lyrics_offset_\(videoId)")
+    }
+
+    func setOffsetMs(videoId: String, offsetMs: Double) {
+        UserDefaults.standard.set(offsetMs, forKey: "lyrics_offset_\(videoId)")
+    }
+
+    func adjustOffsetMs(videoId: String, deltaMs: Double) -> Double {
+        let current = getOffsetMs(videoId: videoId)
+        let updated = min(max(current + deltaMs, -10000.0), 10000.0)
+        setOffsetMs(videoId: videoId, offsetMs: updated)
+        return updated
+    }
+
+    func resetOffset(videoId: String) {
+        UserDefaults.standard.removeObject(forKey: "lyrics_offset_\(videoId)")
+    }
+
+    func getRomanizeMode() -> LyricsRomanizeMode {
+        let str = UserDefaults.standard.string(forKey: "lyrics_romanize_mode") ?? LyricsRomanizeMode.both.rawValue
+        return LyricsRomanizeMode(rawValue: str) ?? .both
+    }
+
+    func setRomanizeMode(_ mode: LyricsRomanizeMode) {
+        UserDefaults.standard.set(mode.rawValue, forKey: "lyrics_romanize_mode")
+    }
+
+    // MARK: - Clipboard & User Custom Lyrics
+
+    func copyLyricsToClipboard(lyrics: LyricsResult?, trackTitle: String, artist: String) -> Bool {
+        guard let lyrics = lyrics else { return false }
+        let textToCopy: String
+        if !lyrics.lines.isEmpty {
+            textToCopy = lyrics.lines.map { $0.text }.joined(separator: "\n")
+        } else {
+            textToCopy = lyrics.plainLyrics
+        }
+        guard !textToCopy.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        #if canImport(UIKit)
+        UIPasteboard.general.string = textToCopy
+        return true
+        #else
+        return false
+        #endif
+    }
+
+    func saveUserCustomLyrics(videoId: String, rawText: String, durationSeconds: Int) -> LyricsResult {
+        let parsedLines = parseLrcText(rawText)
+        let res: LyricsResult
+        if !parsedLines.isEmpty {
+            res = LyricsResult(
+                lines: parsedLines,
+                plainLyrics: rawText,
+                isSynced: true,
+                isEstimated: false,
+                confidenceScore: 100,
+                source: "Custom (Synced)"
+            )
+        } else {
+            let estimated = calculateEstimatedSync(plain: rawText, durationSeconds: durationSeconds)
+            res = LyricsResult(
+                lines: estimated.lines,
+                plainLyrics: rawText,
+                isSynced: true,
+                isEstimated: true,
+                confidenceScore: 100,
+                source: "Custom (Paced)"
+            )
+        }
+        setCached(key: videoId, result: res)
+        saveLyricsToDisk(videoId: videoId, result: res)
+        return res
+    }
+
+    func parseCustomLrc(synced: String, plain: String) -> LyricsResult {
+        if !synced.isEmpty {
+            let lines = parseLrcText(synced)
+            if !lines.isEmpty {
+                return LyricsResult(
+                    lines: lines,
+                    plainLyrics: plain,
+                    isSynced: true,
+                    isEstimated: false,
+                    confidenceScore: 100,
+                    source: "LRCLIB (Synced)"
+                )
+            }
+        }
+        let estimated = calculateEstimatedSync(plain: plain, durationSeconds: 0)
+        return LyricsResult(
+            lines: estimated.lines,
+            plainLyrics: plain,
+            isSynced: false,
+            isEstimated: false,
+            confidenceScore: 70,
+            source: "LRCLIB (Plain)"
+        )
+    }
+
+    // MARK: - Search Alternatives
+
+    func searchAlternativeLyrics(query: String) async -> [LyricsSearchResultItem] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty,
+              let encQ = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://lrclib.net/api/search?q=\(encQ)") else {
+            return []
+        }
+        var req = URLRequest(url: url, timeoutInterval: 6.0)
+        req.setValue("AURALIX-Music/1.0 (iOS)", forHTTPHeaderField: "User-Agent")
+
+        guard let (data, response) = try? await URLSession.shared.data(for: req),
+              let httpRes = response as? HTTPURLResponse, httpRes.statusCode == 200,
+              let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else {
+            return []
+        }
+
+        var results: [LyricsSearchResultItem] = []
+        for (idx, item) in arr.prefix(12).enumerated() {
+            let tName = (item["trackName"] as? String) ?? ""
+            let aName = (item["artistName"] as? String) ?? ""
+            let dur = Int((item["duration"] as? Double) ?? 0)
+            let syn = (item["syncedLyrics"] as? String) ?? ""
+            let pl = (item["plainLyrics"] as? String) ?? ""
+            if !syn.isEmpty || !pl.isEmpty {
+                results.append(
+                    LyricsSearchResultItem(
+                        id: (item["id"] as? Int) ?? idx,
+                        trackName: tName,
+                        artistName: aName,
+                        durationSeconds: dur,
+                        isSynced: !syn.isEmpty,
+                        syncedLyrics: syn,
+                        plainLyrics: pl
+                    )
+                )
+            }
+        }
+        return results
+    }
+
+    // MARK: - Disk Caching
+
+    func getLyricsFromDisk(videoId: String) -> LyricsResult? {
+        guard !videoId.isEmpty, let dir = cacheDirectory else { return nil }
+        let file = dir.appendingPathComponent("\(videoId).json")
+        guard let data = try? Data(contentsOf: file),
+              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        let isSynced = (json["isSynced"] as? Bool) ?? false
+        let isEstimated = (json["isEstimated"] as? Bool) ?? false
+        let confidenceScore = (json["confidenceScore"] as? Int) ?? 100
+        let source = (json["source"] as? String) ?? (isEstimated ? "Estimated Sync" : "LRCLIB")
+        let plainLyrics = (json["plainLyrics"] as? String) ?? ""
+        let rawLines = (json["lines"] as? [[String: Any]]) ?? []
+        let lines = rawLines.compactMap { d -> LyricLine? in
+            guard let text = d["text"] as? String else { return nil }
+            let ts = (d["timestampMs"] as? Double) ?? 0.0
+            let rom = d["romanizedText"] as? String
+            return LyricLine(timestampMs: ts, text: text, romanizedText: rom)
+        }
+        if !lines.isEmpty || !plainLyrics.isEmpty {
+            return LyricsResult(
+                lines: lines,
+                plainLyrics: plainLyrics,
+                isSynced: isSynced,
+                isEstimated: isEstimated,
+                confidenceScore: confidenceScore,
+                source: source
+            )
+        }
+        return nil
+    }
+
+    func saveLyricsToDisk(videoId: String, result: LyricsResult) {
+        guard !videoId.isEmpty, let dir = cacheDirectory else { return }
+        let file = dir.appendingPathComponent("\(videoId).json")
+        let linesArray = result.lines.map { l -> [String: Any] in
+            var d: [String: Any] = ["timestampMs": l.timestampMs, "text": l.text]
+            if let r = l.romanizedText { d["romanizedText"] = r }
+            return d
+        }
+        let json: [String: Any] = [
+            "isSynced": result.isSynced,
+            "isEstimated": result.isEstimated,
+            "confidenceScore": result.confidenceScore,
+            "source": result.source,
+            "plainLyrics": result.plainLyrics,
+            "lines": linesArray
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: json, options: []) {
+            try? data.write(to: file)
+        }
+    }
+
+    // MARK: - Main Lyrics Fetching with Fallbacks
+
     func getLyrics(
         trackTitle: String,
         artistName: String,
         durationSeconds: Int = 0,
         videoId: String = ""
     ) async -> LyricsResult? {
-        let extracted = SongMetadataExtractor.extractSongMetadata(from: trackTitle, uploader: artistName)
+        let extracted = SongMetadataExtractor.extract(title: trackTitle, rawArtist: artistName)
         let cleanTitle = !extracted.songTitle.isEmpty ? extracted.songTitle : cleanTrackName(trackTitle)
         let cleanArtist = !extracted.primaryArtist.isEmpty ? extracted.primaryArtist : cleanArtistName(artistName)
         let cacheKey = "\(cleanTitle.lowercased())_\(cleanArtist.lowercased())_\(videoId)"
 
+        // 1. In-memory Cache check
         if let cached = getCached(key: cacheKey) {
             return cached
         }
 
+        // 2. Persistent Disk Cache check (offline songs)
+        if !videoId.isEmpty, let fromDisk = getLyricsFromDisk(videoId: videoId) {
+            setCached(key: cacheKey, result: fromDisk)
+            return fromDisk
+        }
+
+        let cacheAndReturn: (LyricsResult) -> LyricsResult = { res in
+            self.setCached(key: cacheKey, result: res)
+            if !videoId.isEmpty {
+                self.saveLyricsToDisk(videoId: videoId, result: res)
+            }
+            return res
+        }
+
         var result: LyricsResult? = nil
 
-        // 1. Direct LRCLib GET endpoint (without strict duration constraint first)
+        // Priority 1: Direct LRCLib GET endpoint
         result = await tryGetLrc(title: cleanTitle, artist: cleanArtist, duration: 0)
 
-        // 1b. If not found or not synced, try with duration if available
+        // Priority 1b: If not synced, try with duration
         if (result == nil || result?.isSynced == false) && durationSeconds > 0 {
             let durResult = await tryGetLrc(title: cleanTitle, artist: cleanArtist, duration: durationSeconds)
             if durResult?.isSynced == true {
@@ -61,22 +314,7 @@ final class LyricsEngine {
             }
         }
 
-        // 1c. If YouTube title has "Artist - Track" format
-        if (result == nil || result?.isSynced == false) && trackTitle.contains(" - ") {
-            let parts = trackTitle.components(separatedBy: " - ")
-            if parts.count >= 2 {
-                let guessedArtist = cleanArtistName(parts[0])
-                let guessedTitle = cleanTrackName(parts[1])
-                let alt = await tryGetLrc(title: guessedTitle, artist: guessedArtist, duration: 0)
-                if alt?.isSynced == true {
-                    result = alt
-                } else if result == nil {
-                    result = alt
-                }
-            }
-        }
-
-        // 2. LRCLib Search: query = title + artist
+        // Priority 2: LRCLib Search: query = title + artist
         if result == nil || result?.isSynced == false {
             let q = "\(cleanTitle) \(cleanArtist)".trimmingCharacters(in: .whitespacesAndNewlines)
             if !q.isEmpty {
@@ -90,18 +328,77 @@ final class LyricsEngine {
             }
         }
 
-        // 3. Fallback to Official YouTube Music Native Lyrics if LRCLib did not provide synced lyrics
+        // Priority 3: Fallback to YouTube Music Official Native Lyrics
         if (result == nil || result?.isSynced == false) && !videoId.isEmpty {
-            if let ytmLyrics = await fetchYouTubeMusicOfficialLyrics(videoId: videoId) {
+            if let ytmLyrics = await fetchYouTubeMusicOfficialLyrics(videoId: videoId, durationSeconds: durationSeconds) {
                 result = ytmLyrics
             }
         }
 
-        setCached(key: cacheKey, result: result)
-        return result
+        // If only plain lyrics were found, calculate musical pacing
+        if let candidate = result {
+            if !candidate.isSynced && !candidate.plainLyrics.isEmpty {
+                let paced = calculateEstimatedSync(plain: candidate.plainLyrics, durationSeconds: durationSeconds)
+                return cacheAndReturn(paced)
+            } else {
+                return cacheAndReturn(candidate)
+            }
+        }
+
+        return nil
     }
 
-    func fetchYouTubeMusicOfficialLyrics(videoId: String) async -> LyricsResult? {
+    func calculateEstimatedSync(plain: String, durationSeconds: Int) -> LyricsResult {
+        let rawLines = plain.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("[") && !$0.hasPrefix("Source:") }
+
+        guard !rawLines.isEmpty else {
+            return LyricsResult(lines: [], plainLyrics: plain, isSynced: false, isEstimated: false, confidenceScore: 0, source: "Empty")
+        }
+
+        guard durationSeconds > 30 else {
+            let lines = rawLines.map { text in
+                let rom = TransliterationEngine.shared.canRomanize(text) ? TransliterationEngine.shared.romanize(text) : nil
+                return LyricLine(timestampMs: 0, text: text, romanizedText: rom)
+            }
+            return LyricsResult(lines: lines, plainLyrics: plain, isSynced: false, isEstimated: false, confidenceScore: 50, source: "Plain Text")
+        }
+
+        let totalMs = Double(durationSeconds * 1000)
+        let introMs = min(max(totalMs * 0.07, 6000), 18000)
+        let outroMs = min(max(totalMs * 0.06, 5000), 15000)
+        let availableMs = max(totalMs - introMs - outroMs, 10000)
+
+        let lineWeights = rawLines.map { line -> Double in
+            let charWeight = Double(line.count)
+            let wordCount = Double(line.components(separatedBy: .whitespaces).count)
+            return max(charWeight + (wordCount * 3.0), 10.0)
+        }
+        let totalWeight = lineWeights.reduce(0, +)
+
+        var currentMs = introMs
+        var lines: [LyricLine] = []
+
+        for (idx, text) in rawLines.enumerated() {
+            let fraction = lineWeights[idx] / totalWeight
+            let durationForLine = fraction * availableMs
+            let rom = TransliterationEngine.shared.canRomanize(text) ? TransliterationEngine.shared.romanize(text) : nil
+            lines.append(LyricLine(timestampMs: currentMs, text: text, romanizedText: rom))
+            currentMs += durationForLine
+        }
+
+        return LyricsResult(
+            lines: lines,
+            plainLyrics: plain,
+            isSynced: true,
+            isEstimated: true,
+            confidenceScore: 75,
+            source: "Estimated Pacing"
+        )
+    }
+
+    func fetchYouTubeMusicOfficialLyrics(videoId: String, durationSeconds: Int = 0) async -> LyricsResult? {
         guard !videoId.isEmpty else { return nil }
         guard let nextUrl = URL(string: "https://music.youtube.com/youtubei/v1/next") else { return nil }
 
@@ -207,13 +504,15 @@ final class LyricsEngine {
             }
             let trimmed = plainText.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
-                let rawLines = trimmed.components(separatedBy: .newlines)
-                let lines = rawLines.enumerated().compactMap { idx, line -> LyricLine? in
-                    let l = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !l.isEmpty else { return nil }
-                    return LyricLine(timestampMs: Double(idx * 3000), text: l)
-                }
-                return LyricsResult(lines: lines, plainLyrics: trimmed, isSynced: false)
+                let paced = calculateEstimatedSync(plain: trimmed, durationSeconds: durationSeconds)
+                return LyricsResult(
+                    lines: paced.lines,
+                    plainLyrics: trimmed,
+                    isSynced: true,
+                    isEstimated: true,
+                    confidenceScore: 80,
+                    source: "YouTube Music"
+                )
             }
         }
 
@@ -240,7 +539,7 @@ final class LyricsEngine {
               let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             return nil
         }
-        return parseLrcResponse(json)
+        return parseLrcResponse(json, source: "LRCLIB")
     }
 
     private func trySearchLrc(query: String, expectedTitle: String, expectedArtist: String) async -> LyricsResult? {
@@ -280,9 +579,7 @@ final class LyricsEngine {
                     shareSignificantWord(resArtist, expArtistClean)
             }
 
-            if !artistMatches {
-                continue
-            }
+            if !artistMatches { continue }
 
             let hasSynced = !((item["syncedLyrics"] as? String) ?? "").isEmpty
             let hasPlain = !((item["plainLyrics"] as? String) ?? "").isEmpty
@@ -301,7 +598,7 @@ final class LyricsEngine {
         }
 
         if let best = bestCandidate {
-            return parseLrcResponse(best)
+            return parseLrcResponse(best, source: "LRCLIB")
         }
         return nil
     }
@@ -314,14 +611,21 @@ final class LyricsEngine {
         return w1.contains { w2.contains($0) }
     }
 
-    private func parseLrcResponse(_ json: [String: Any]) -> LyricsResult? {
+    private func parseLrcResponse(_ json: [String: Any], source: String = "LRCLIB") -> LyricsResult? {
         let synced = (json["syncedLyrics"] as? String) ?? ""
         let plain = (json["plainLyrics"] as? String) ?? ""
 
         if !synced.isEmpty {
             let lines = parseLrcText(synced)
             if !lines.isEmpty {
-                return LyricsResult(lines: lines, plainLyrics: plain, isSynced: true)
+                return LyricsResult(
+                    lines: lines,
+                    plainLyrics: plain,
+                    isSynced: true,
+                    isEstimated: false,
+                    confidenceScore: 100,
+                    source: source
+                )
             }
         }
 
@@ -333,13 +637,20 @@ final class LyricsEngine {
                 let romanized = TransliterationEngine.shared.canRomanize(trimmed) ? TransliterationEngine.shared.romanize(trimmed) : nil
                 return LyricLine(timestampMs: Double(idx * 3000), text: trimmed, romanizedText: romanized)
             }
-            return LyricsResult(lines: parsedLines, plainLyrics: plain, isSynced: false)
+            return LyricsResult(
+                lines: parsedLines,
+                plainLyrics: plain,
+                isSynced: false,
+                isEstimated: false,
+                confidenceScore: 70,
+                source: "\(source) (Plain)"
+            )
         }
 
         return nil
     }
 
-    private func parseLrcText(_ lrc: String) -> [LyricLine] {
+    func parseLrcText(_ lrc: String) -> [LyricLine] {
         var lines: [LyricLine] = []
         let pattern = "\\[(\\d{2}):(\\d{2}(?:\\.\\d+)?)\\](.*)"
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
@@ -354,6 +665,9 @@ final class LyricsEngine {
                 let secStr = nsStr.substring(with: m.range(at: 2))
                 let text = nsStr.substring(with: m.range(at: 3)).trimmingCharacters(in: .whitespacesAndNewlines)
 
+                // Skip header tags
+                if text.hasPrefix("[") && text.hasSuffix("]") { continue }
+
                 let min = Double(minStr) ?? 0.0
                 let sec = Double(secStr) ?? 0.0
                 let ms = (min * 60.0 + sec) * 1000.0
@@ -367,19 +681,15 @@ final class LyricsEngine {
 
     private func cleanTrackName(_ name: String) -> String {
         var res = name
-        // Remove bracketed info
         if let regex = try? NSRegularExpression(pattern: "(?i)\\[.*?\\]|\\(.*?\\)") {
             res = regex.stringByReplacingMatches(in: res, range: NSRange(location: 0, length: (res as NSString).length), withTemplate: "")
         }
-        // Remove boilerplate keywords
         if let regex = try? NSRegularExpression(pattern: "(?i)\\b(official music video|official video|music video|lyric video|visualizer|official audio|audio|video|4k|hd|remastered|lyrics|prod\\. by.*)\\b") {
             res = regex.stringByReplacingMatches(in: res, range: NSRange(location: 0, length: (res as NSString).length), withTemplate: "")
         }
-        // Remove feat.
         if let regex = try? NSRegularExpression(pattern: "(?i)\\b(ft\\.?|feat\\.?|featuring)\\s+[^|\\-]+") {
             res = regex.stringByReplacingMatches(in: res, range: NSRange(location: 0, length: (res as NSString).length), withTemplate: "")
         }
-        // Remove pipe
         if let regex = try? NSRegularExpression(pattern: "\\|.*$") {
             res = regex.stringByReplacingMatches(in: res, range: NSRange(location: 0, length: (res as NSString).length), withTemplate: "")
         }
