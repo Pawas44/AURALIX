@@ -214,7 +214,7 @@ struct SearchScreenView: View {
                                                         year: "Album",
                                                         trackCount: 0
                                                     )
-                                                    onPlaylistClick(AlbumDataRepository.toUserPlaylist(album))
+                                                    onPlaylistClick?(AlbumDataRepository.shared.toUserPlaylist(album: album))
                                                 } else {
                                                     onVideoSelected(topMatch, filteredSongs)
                                                 }
