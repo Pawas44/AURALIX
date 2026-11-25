@@ -79,7 +79,7 @@ final class PlaylistShareEngine {
             var vo: [String: Any] = [
                 "i": v.id,
                 "t": v.title,
-                "a": v.artist?.isEmpty == false ? v.artist! : v.channelName,
+                "a": !v.artist.isEmpty ? v.artist : v.channelName,
                 "d": v.duration
             ]
             if !v.thumbnailUrl.isEmpty {

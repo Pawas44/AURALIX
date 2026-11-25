@@ -28,7 +28,7 @@ struct PlaylistOptionsBottomSheet: View {
                     AsyncImage(url: URL(string: coverUrl)) { img in
                         img.resizable().aspectRatio(contentMode: .fill)
                     } placeholder: {
-                        Rectangle().fill(Color(0xFF2A2A32))
+                        Rectangle().fill(Color(hex: 0xFF2A2A32))
                     }
                     .frame(width: 56, height: 56)
                     .cornerRadius(8)
@@ -37,13 +37,13 @@ struct PlaylistOptionsBottomSheet: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(LinearGradient(
-                                colors: [Color(0xFF4C1D95), Color(0xFF1E1B4B)],
+                                colors: [Color(hex: 0xFF4C1D95), Color(hex: 0xFF1E1B4B)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ))
                         Image(systemName: playlist.iconType == "like" ? "heart.fill" : "music.note.list")
                             .font(.system(size: 24))
-                            .foregroundColor(Color(0xFFC4B5FD))
+                            .foregroundColor(Color(hex: 0xFFC4B5FD))
                     }
                     .frame(width: 56, height: 56)
                 }
@@ -56,7 +56,7 @@ struct PlaylistOptionsBottomSheet: View {
                     
                     Text("\(playlist.videos.count) songs")
                         .font(.system(size: 13, weight: .regular))
-                        .foregroundColor(Color(0xFF9E9EA7))
+                        .foregroundColor(Color(hex: 0xFF9E9EA7))
                 }
                 
                 Spacer()
@@ -136,12 +136,12 @@ struct PlaylistOptionsBottomSheet: View {
                         HStack(spacing: 16) {
                             Image(systemName: "trash")
                                 .font(.system(size: 20, weight: .light))
-                                .foregroundColor(Color(0xFFF87171))
+                                .foregroundColor(Color(hex: 0xFFF87171))
                                 .frame(width: 28, height: 28)
                             
                             Text("Delete Playlist")
                                 .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(Color(0xFFF87171))
+                                .foregroundColor(Color(hex: 0xFFF87171))
                             
                             Spacer()
                         }
@@ -186,7 +186,7 @@ struct PlaylistOptionsBottomSheet: View {
             Spacer().frame(height: 24)
         }
         .background(
-            Color(0xFF14131A)
+            Color(hex: 0xFF14131A)
                 .ignoresSafeArea()
         )
         .cornerRadius(24, corners: [.topLeft, .topRight])

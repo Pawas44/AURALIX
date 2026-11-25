@@ -8,6 +8,45 @@ struct SongIdentity {
 }
 
 struct SongDeduplicationEngine {
+    static let shared = SongDeduplicationEngine()
+
+    func getCanonicalIdentity(track: VideoItem) -> SongIdentity {
+        Self.getCanonicalIdentity(track: track)
+    }
+
+    func getCanonicalIdentity(_ track: VideoItem) -> SongIdentity {
+        Self.getCanonicalIdentity(track: track)
+    }
+
+    func deduplicate(_ tracks: [VideoItem]) -> [VideoItem] {
+        Self.deduplicate(tracks)
+    }
+
+    func deduplicateAndFill(
+        primaryTracks: [VideoItem],
+        candidatePool: [VideoItem],
+        targetCount: Int,
+        excludedKeys: Set<String> = []
+    ) -> [VideoItem] {
+        Self.deduplicateAndFill(
+            primaryTracks: primaryTracks,
+            candidatePool: candidatePool,
+            targetCount: targetCount,
+            excludedKeys: excludedKeys
+        )
+    }
+
+    func ensureNoConsecutiveDuplicates(_ tracks: [VideoItem]) -> [VideoItem] {
+        Self.ensureNoConsecutiveDuplicates(tracks)
+    }
+
+    func areDuplicateSongs(_ a: VideoItem, _ b: VideoItem) -> Bool {
+        Self.areDuplicateSongs(a, b)
+    }
+
+    static func getCanonicalIdentity(_ track: VideoItem) -> SongIdentity {
+        getCanonicalIdentity(track: track)
+    }
 
     static func getCanonicalIdentity(track: VideoItem) -> SongIdentity {
         var spotifyId = ""

@@ -1,6 +1,11 @@
 import Foundation
 
 struct SongSimilarityEngine {
+    static let shared = SongSimilarityEngine()
+
+    func computeSimilarity(_ trackA: VideoItem, _ trackB: VideoItem) -> Double {
+        Self.computeSimilarity(trackA, trackB)
+    }
 
     private static let genreClusters = [
         "pop", "hip hop", "rock", "desi", "lofi", "edm", "r&b", "punjabi", "classical", "indie", "electronic", "bollywood"

@@ -7,6 +7,23 @@ struct ScoredTrack {
 }
 
 struct RecommendationRanker {
+    static let shared = RecommendationRanker()
+
+    func rank(
+        candidates: [VideoItem],
+        recentHistory: [VideoItem],
+        likedTracks: [VideoItem],
+        discoveryFactor: Double = 0.25,
+        maxPerArtist: Int = 2
+    ) -> [ScoredTrack] {
+        Self.rank(
+            candidates: candidates,
+            recentHistory: recentHistory,
+            likedTracks: likedTracks,
+            discoveryFactor: discoveryFactor,
+            maxPerArtist: maxPerArtist
+        )
+    }
 
     static func rank(
         candidates: [VideoItem],
