@@ -210,9 +210,9 @@ struct SearchScreenView: View {
                                                         id: topMatch.id,
                                                         title: topMatch.title,
                                                         artist: topMatch.artist.isEmpty ? topMatch.channelName : topMatch.artist,
+                                                        coverUrl: topMatch.thumbnailUrl,
                                                         year: "Album",
-                                                        trackCount: 0,
-                                                        artworkUrl: topMatch.thumbnailUrl
+                                                        trackCount: 0
                                                     )
                                                     onPlaylistClick(AlbumDataRepository.toUserPlaylist(album))
                                                 } else {

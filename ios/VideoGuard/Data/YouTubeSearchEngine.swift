@@ -207,6 +207,7 @@ struct YouTubeSearchEngine {
                     if !rawTitle.isEmpty {
                         var artist = "YouTube Music"
                         var duration = isAlbum ? "Album" : "3:30"
+                        var isCardVideo = false
                         if let subRuns = (card["subtitle"] as? [String: Any])?["runs"] as? [[String: Any]] {
                             var parts: [String] = []
                             var cur = ""
@@ -225,6 +226,7 @@ struct YouTubeSearchEngine {
                                 parts.append(cur.trimmingCharacters(in: .whitespacesAndNewlines))
                             }
                             if !parts.isEmpty {
+                                isCardVideo = parts[0].lowercased() == "video"
                                 if parts[0].lowercased() == "video" || parts[0].lowercased() == "song" || parts[0].lowercased() == "album" {
                                     if parts.count > 1 { artist = parts[1] }
                                 } else {
@@ -251,7 +253,7 @@ struct YouTubeSearchEngine {
                                 channelAvatarUrl: thumb,
                                 subscriberCount: "Top Result",
                                 thumbnailUrl: thumb,
-                                views: isAlbum ? "Album" : "Top Result",
+                                views: isAlbum ? "Album" : (isCardVideo ? "Video" : "Song"),
                                 uploadTime: "YouTube Music",
                                 duration: duration,
                                 description: "\(rawTitle) - \(artist)",
@@ -300,6 +302,7 @@ struct YouTubeSearchEngine {
                 var artist = "YouTube Music"
                 var album = "Single"
                 var duration = "3:30"
+                var isItemVideo = false
 
                 if flexCols.count > 1,
                    let runs = ((flexCols[1]["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"] as? [String: Any])?["runs"] as? [[String: Any]] {
@@ -321,6 +324,8 @@ struct YouTubeSearchEngine {
                     }
 
                     if parts.first?.lowercased() == "artist" { continue }
+
+                    isItemVideo = parts.first?.lowercased() == "video"
 
                     if parts.count >= 3 {
                         artist = (parts[0] == "Song" || parts[0] == "Video") ? parts[1] : parts[0]
@@ -344,16 +349,15 @@ struct YouTubeSearchEngine {
                     thumb = u.hasPrefix("//") ? "https:\(u)" : u
                 }
                 thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, videoId: vid)
-
                 outList.append(
                     VideoItem(
                         id: vid,
                         title: title,
                         channelName: artist,
                         channelAvatarUrl: thumb,
-                        subscriberCount: "Song Track",
+                        subscriberCount: isItemVideo ? "Music Video" : "Song Track",
                         thumbnailUrl: thumb,
-                        views: "Song",
+                        views: isItemVideo ? "Video" : "Song",
                         uploadTime: "YouTube Music",
                         duration: duration,
                         description: "\(title) - \(artist)",
@@ -384,6 +388,7 @@ struct YouTubeSearchEngine {
             return true
         }
 
+        var baseList = cleaned
         if !hasLiveInQuery, let liveRegex = try? NSRegularExpression(pattern: livePattern) {
             let nonLive = cleaned.filter { item in
                 let t = item.title.lowercased()
@@ -393,10 +398,42 @@ struct YouTubeSearchEngine {
                 let t = item.title.lowercased()
                 return liveRegex.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) != nil
             }
-            return nonLive + live
+            baseList = nonLive + live
         }
 
-        return cleaned
+        // In Music Mode: If Top Result is a Video and a clean audio Song track exists ("bina video wala"),
+        // promote the clean audio Song track to index 0 so Top Result displays the official studio song.
+        let videoPattern = #"(?i)\b(official\s+video|official\s+music\s+video|music\s+video|video\s+song|full\s+video)\b|\((official\s+video|music\s+video)\)|\[(official\s+video|music\s+video)\]"#
+        if baseList.count > 1 {
+            let first = baseList[0]
+            let firstIsVideo = first.views.lowercased() == "video" ||
+                first.title.range(of: videoPattern, options: .regularExpression) != nil
+
+            if firstIsVideo {
+                let cleanFirstTitle = first.title.replacingOccurrences(of: videoPattern, with: "", options: .regularExpression)
+                    .lowercased()
+                let cleanWords = cleanFirstTitle.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 2 }
+
+                if let betterIdx = baseList.indices.dropFirst().first(where: { idx in
+                    let cand = baseList[idx]
+                    let isAudio = cand.views.lowercased() == "song" &&
+                        cand.category != "Channel" &&
+                        cand.title.range(of: videoPattern, options: .regularExpression) == nil
+                    guard isAudio else { return false }
+                    let candLower = cand.title.lowercased()
+                    let matchesTitle = cleanWords.contains { candLower.contains($0) } || candLower.contains(cleanFirstTitle)
+                    let matchesArtist = !cand.channelName.isEmpty && first.channelName.lowercased().contains(cand.channelName.lowercased())
+                    return matchesTitle || matchesArtist
+                }) {
+                    var audioTrack = baseList.remove(at: betterIdx)
+                    audioTrack.subscriberCount = "Top Result"
+                    audioTrack.views = "Top Result"
+                    baseList.insert(audioTrack, at: 0)
+                }
+            }
+        }
+
+        return baseList
     }
 
     static func getRelatedVideos(video: VideoItem, isMusicOnly: Bool = false) async -> [VideoItem] {

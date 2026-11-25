@@ -180,6 +180,7 @@ object YouTubeSearchEngine {
                         var artist = "YouTube Music"
                         var duration = if (isAlbum) "Album" else "3:30"
                         var album = if (isAlbum) rawTitle else "Single"
+                        var isCardVideo = false
 
                         if (subRuns != null) {
                             val subParts = mutableListOf<String>()
@@ -197,6 +198,7 @@ object YouTubeSearchEngine {
                             }
                             if (cur.isNotBlank()) subParts.add(cur.toString().trim())
 
+                            isCardVideo = subParts.isNotEmpty() && subParts[0].equals("Video", ignoreCase = true)
                             if (subParts.isNotEmpty()) {
                                 val first = subParts[0]
                                 if (first.equals("Video", ignoreCase = true) || first.equals("Song", ignoreCase = true) || first.equals("Album", ignoreCase = true)) {
@@ -230,7 +232,7 @@ object YouTubeSearchEngine {
                                 channelAvatarUrl = thumb,
                                 subscriberCount = "Top Result",
                                 thumbnailUrl = thumb,
-                                views = if (isAlbum) "Album" else "Top Result",
+                                views = if (isAlbum) "Album" else if (isCardVideo) "Video" else "Song",
                                 uploadTime = "YouTube Music",
                                 duration = duration,
                                 description = "$rawTitle - $artist",
@@ -280,6 +282,7 @@ object YouTubeSearchEngine {
                 var artist = "YouTube Music"
                 var album = "Single"
                 var duration = "3:30"
+                var isItemVideo = false
 
                 if (flexCols.length() > 1) {
                     val runs1 = flexCols.optJSONObject(1)
@@ -308,6 +311,7 @@ object YouTubeSearchEngine {
                             continue
                         }
 
+                        isItemVideo = parts.isNotEmpty() && parts[0].equals("Video", ignoreCase = true)
                         if (parts.size >= 3) {
                             artist = if (parts[0] in listOf("Song", "Video")) parts[1] else parts[0]
                             album = parts[1]
@@ -342,9 +346,9 @@ object YouTubeSearchEngine {
                         title = title,
                         channelName = artist,
                         channelAvatarUrl = thumb,
-                        subscriberCount = "Song Track",
+                        subscriberCount = if (isItemVideo) "Music Video" else "Song Track",
                         thumbnailUrl = thumb,
-                        views = "Song",
+                        views = if (isItemVideo) "Video" else "Song",
                         uploadTime = "YouTube Music",
                         duration = duration,
                         description = "$title - $artist",
@@ -374,15 +378,52 @@ object YouTubeSearchEngine {
             }
         }
 
-        if (!hasLiveInQuery) {
+        val baseList = if (!hasLiveInQuery) {
             val nonLive = cleaned.filter { !livePattern.containsMatchIn(it.title) }
             val live = cleaned.filter { livePattern.containsMatchIn(it.title) }
-            outList.clear()
-            outList.addAll(nonLive + live)
+            (nonLive + live).toMutableList()
         } else {
-            outList.clear()
-            outList.addAll(cleaned)
+            cleaned.toMutableList()
         }
+
+        // In Music Mode: If Top Result is a Video and a clean audio Song track exists ("bina video wala"),
+        // promote the clean audio Song track to index 0 so Top Result displays the official studio song.
+        val videoPattern = Regex("""(?i)\b(official\s+video|official\s+music\s+video|music\s+video|video\s+song|full\s+video)\b|\((official\s+video|music\s+video)\)|\[(official\s+video|music\s+video)\]""")
+        if (baseList.size > 1) {
+            val first = baseList[0]
+            val firstIsVideo = first.views.equals("Video", ignoreCase = true) ||
+                videoPattern.containsMatchIn(first.title)
+
+            if (firstIsVideo) {
+                val cleanFirstTitle = first.title.lowercase()
+                    .replace(videoPattern, "")
+                    .replace(Regex("""[^a-zA-Z0-9\s]"""), " ")
+                    .trim()
+                val cleanWords = cleanFirstTitle.split(Regex("""\s+""")).filter { it.length > 2 }
+
+                val betterIdx = baseList.indices.drop(1).firstOrNull { idx ->
+                    val cand = baseList[idx]
+                    val isAudio = cand.views.equals("Song", ignoreCase = true) &&
+                        !videoPattern.containsMatchIn(cand.title) &&
+                        cand.category != "Channel"
+
+                    if (isAudio) {
+                        val candLower = cand.title.lowercase()
+                        val matchesTitle = cleanWords.any { word -> candLower.contains(word) } || candLower.contains(cleanFirstTitle)
+                        val matchesArtist = cand.channelName.isNotBlank() && first.channelName.contains(cand.channelName, ignoreCase = true)
+                        matchesTitle || matchesArtist
+                    } else false
+                }
+
+                if (betterIdx != null && betterIdx > 0) {
+                    val audioTrack = baseList.removeAt(betterIdx)
+                    baseList.add(0, audioTrack.copy(subscriberCount = "Top Result", views = "Top Result"))
+                }
+            }
+        }
+
+        outList.clear()
+        outList.addAll(baseList)
     }
 
     private fun parseSearchResults(html: String, isMusic: Boolean, query: String = ""): List<VideoItem> {
