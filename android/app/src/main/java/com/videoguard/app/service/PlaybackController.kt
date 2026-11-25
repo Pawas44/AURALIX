@@ -105,6 +105,15 @@ object PlaybackController {
         }
     }
 
+    fun invalidateResolvedSpotifyId(spotifyId: String, title: String? = null, artist: String? = null) {
+        spotifyResolvedCache.remove(spotifyId)
+        if (!title.isNullOrBlank()) {
+            val cleanTitle = title.trim().lowercase()
+            val cleanArtist = (artist?.split(",")?.firstOrNull()?.trim() ?: artist?.trim() ?: "").lowercase()
+            spotifyResolvedCache.remove("${cleanTitle}_${cleanArtist}")
+        }
+    }
+
     // Listener to dispatch JavaScript commands directly to the active YouTube WebView
     private var webViewCommandListener: ((String) -> Unit)? = null
 
@@ -442,6 +451,8 @@ object PlaybackController {
         com.videoguard.app.recommendation.RecommendationEngine.init(context)
         com.videoguard.app.audio.EqualizerEngine.init(context)
         com.videoguard.app.data.GhostCacheEngine.init(context)
+        com.videoguard.app.data.SpotifyArtworkResolver.init(context)
+        com.videoguard.app.data.ManualMatchRepository.init(context)
         registerNoisyReceiver()
         startCallMonitor()
     }
@@ -513,7 +524,9 @@ object PlaybackController {
             com.videoguard.app.data.AuthManager.logout(ctx)
             return
         }
-        val resolvedId = getResolvedSpotifyId(track.id)
+        val sId = track.spotifyTrackId.ifBlank { track.id.removePrefix("spotify_") }
+        val manualYtId = com.videoguard.app.data.ManualMatchRepository.getManualMatch(sId, track.title, track.artist)
+        val resolvedId = manualYtId ?: getResolvedSpotifyId(track.id)
         val isOffline = com.videoguard.app.data.UserDataRepository.isDownloaded(track.id) ||
                 (resolvedId != null && com.videoguard.app.data.UserDataRepository.isDownloaded(resolvedId))
 
@@ -524,7 +537,18 @@ object PlaybackController {
             val cachedId = resolvedId ?: spotifyResolvedCache[cacheKey]
 
             if (cachedId != null && cachedId.length == 11) {
-                val targetTrack = track.copy(id = cachedId)
+                val finalThumb = com.videoguard.app.data.SpotifyArtworkResolver.resolveArtwork(
+                    originalArtworkUrl = track.originalArtworkUrl.ifBlank { track.thumbnailUrl },
+                    spotifyId = sId,
+                    title = track.title,
+                    artist = track.artist,
+                    youtubeVideoId = cachedId
+                )
+                val targetTrack = track.copy(
+                    id = cachedId,
+                    thumbnailUrl = finalThumb,
+                    matchedYouTubeId = cachedId
+                )
                 val updatedQueue = if (queue.isNotEmpty()) queue.map { if (it.id == track.id) targetTrack else it } else emptyList()
                 playTrack(targetTrack, updatedQueue)
                 return
@@ -533,42 +557,42 @@ object PlaybackController {
             _currentTrack.value = track
             _isPlaying.value = true
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
+                val durSec = com.videoguard.app.data.YouTubeMatchScorer.parseDurationSec(track.duration)
+                val meta = com.videoguard.app.data.ImportTrackMeta(
+                    title = track.originalTitle.ifBlank { track.title },
+                    artist = track.originalArtist.ifBlank { track.artist },
+                    album = track.album,
+                    durationSeconds = durSec,
+                    spotifyId = sId,
+                    coverUrl = track.originalArtworkUrl.ifBlank { track.thumbnailUrl }
+                )
 
-                // High-precision resolution: MusicImportEngine validates title, artist, and duration
-                val resolved = com.videoguard.app.data.MusicImportEngine.resolveSingleTrack(track.title, track.artist)
-                    ?: run {
-                        // Resilient fallback with strict title matching to prevent playing unrelated songs
-                        val cleanTarget = cleanSongTitle(cleanTitle)
-                        val d1 = async {
-                            try {
-                                com.videoguard.app.data.YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true)
-                                    .firstOrNull { cand ->
-                                        cand.id.length == 11 && !cand.id.startsWith("search_") &&
-                                        (cleanSongTitle(cand.title).contains(cleanTarget) || cleanTarget.contains(cleanSongTitle(cand.title)))
-                                    }
-                            } catch (e: Exception) { null }
-                        }
-                        val d2 = async {
-                            try {
-                                com.videoguard.app.data.YouTubeSearchEngine.searchVideos(query, isMusicOnly = true)
-                                    .firstOrNull { cand ->
-                                        cand.id.length == 11 &&
-                                        (cleanSongTitle(cand.title).contains(cleanTarget) || cleanTarget.contains(cleanSongTitle(cand.title)))
-                                    }
-                            } catch (e: Exception) { null }
-                        }
-                        d1.await() ?: d2.await()
-                    }
+                // High-precision resolution via centralized SongMatchingRepository
+                val resolved = com.videoguard.app.data.SongMatchingRepository.resolveTrack(meta)
 
                 if (resolved != null && resolved.id.length == 11) {
                     spotifyResolvedCache[track.id] = resolved.id
                     spotifyResolvedCache[cacheKey] = resolved.id
 
+                    val finalThumb = com.videoguard.app.data.SpotifyArtworkResolver.resolveArtwork(
+                        originalArtworkUrl = track.originalArtworkUrl.ifBlank { track.thumbnailUrl },
+                        spotifyId = sId,
+                        title = track.title,
+                        artist = track.artist,
+                        youtubeThumbnailUrl = resolved.thumbnailUrl,
+                        youtubeVideoId = resolved.id
+                    )
+
                     val targetTrack = track.copy(
                         id = resolved.id,
                         duration = if (track.duration != "0:00" && track.duration.isNotBlank()) track.duration else resolved.duration,
-                        thumbnailUrl = if (track.thumbnailUrl.isNotBlank() && !track.thumbnailUrl.contains("default")) track.thumbnailUrl else resolved.thumbnailUrl
+                        thumbnailUrl = finalThumb,
+                        originalTitle = track.originalTitle.ifBlank { track.title },
+                        originalArtist = track.originalArtist.ifBlank { track.artist },
+                        originalArtworkUrl = track.originalArtworkUrl.ifBlank { track.thumbnailUrl },
+                        spotifyTrackId = sId,
+                        matchedYouTubeId = resolved.id,
+                        matchedYouTubeTitle = resolved.matchedYouTubeTitle
                     )
                     try {
                         com.videoguard.app.data.UserDataRepository.updateTrackInPlaylists(track.id, targetTrack)
@@ -650,16 +674,44 @@ object PlaybackController {
                         val cTitle = upNext.title.trim()
                         val cArtist = upNext.artist.split(",").firstOrNull()?.trim() ?: upNext.artist.trim()
                         val k = "${cTitle.lowercase()}_${cArtist.lowercase()}"
-                        if (!spotifyResolvedCache.containsKey(upNext.id) && !spotifyResolvedCache.containsKey(k)) {
-                            val q = if (cArtist.isNotBlank()) "$cTitle $cArtist" else cTitle
+                        val sIdNext = upNext.spotifyTrackId.ifBlank { upNext.id.removePrefix("spotify_") }
+                        val manualOverride = com.videoguard.app.data.ManualMatchRepository.getManualMatch(sIdNext, upNext.title, upNext.artist)
+                        if (manualOverride != null && manualOverride.length == 11) {
+                            spotifyResolvedCache[upNext.id] = manualOverride
+                            spotifyResolvedCache[k] = manualOverride
+                        } else if (!spotifyResolvedCache.containsKey(upNext.id) && !spotifyResolvedCache.containsKey(k)) {
                             try {
-                                val found = com.videoguard.app.data.YouTubeSyncEngine.searchVideosInnerTube(q, filterToVideos = true)
-                                    .firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
-                                    ?: com.videoguard.app.data.YouTubeSearchEngine.searchVideos(q, isMusicOnly = true).firstOrNull { it.id.length == 11 }
+                                val durSec = com.videoguard.app.data.YouTubeMatchScorer.parseDurationSec(upNext.duration)
+                                val meta = com.videoguard.app.data.ImportTrackMeta(
+                                    title = upNext.originalTitle.ifBlank { upNext.title },
+                                    artist = upNext.originalArtist.ifBlank { upNext.artist },
+                                    album = upNext.album,
+                                    durationSeconds = durSec,
+                                    spotifyId = sIdNext,
+                                    coverUrl = upNext.originalArtworkUrl.ifBlank { upNext.thumbnailUrl }
+                                )
+                                val found = com.videoguard.app.data.SongMatchingRepository.resolveTrack(meta)
                                 if (found != null && found.id.length == 11) {
                                     spotifyResolvedCache[upNext.id] = found.id
                                     spotifyResolvedCache[k] = found.id
-                                    val resolved = upNext.copy(id = found.id)
+                                    val finalThumb = com.videoguard.app.data.SpotifyArtworkResolver.resolveArtwork(
+                                        originalArtworkUrl = upNext.originalArtworkUrl.ifBlank { upNext.thumbnailUrl },
+                                        spotifyId = sIdNext,
+                                        title = upNext.title,
+                                        artist = upNext.artist,
+                                        youtubeThumbnailUrl = found.thumbnailUrl,
+                                        youtubeVideoId = found.id
+                                    )
+                                    val resolved = upNext.copy(
+                                        id = found.id,
+                                        thumbnailUrl = finalThumb,
+                                        originalTitle = upNext.originalTitle.ifBlank { upNext.title },
+                                        originalArtist = upNext.originalArtist.ifBlank { upNext.artist },
+                                        originalArtworkUrl = upNext.originalArtworkUrl.ifBlank { upNext.thumbnailUrl },
+                                        spotifyTrackId = sIdNext,
+                                        matchedYouTubeId = found.id,
+                                        matchedYouTubeTitle = found.matchedYouTubeTitle
+                                    )
                                     com.videoguard.app.data.UserDataRepository.updateTrackInPlaylists(upNext.id, resolved)
                                 }
                             } catch (e: Exception) {}

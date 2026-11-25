@@ -550,21 +550,26 @@ object UserDataRepository {
             if (cachedResolved != null && cachedResolved.length == 11) {
                 targetVideo = targetVideo.copy(id = cachedResolved)
             } else {
-                val cleanTitle = targetVideo.title.trim()
-                val cleanArtist = targetVideo.artist.split(",").firstOrNull()?.trim() ?: targetVideo.artist.trim()
-                val query = if (cleanArtist.isNotBlank()) "$cleanTitle $cleanArtist" else cleanTitle
-                val best = try {
-                    YouTubeSyncEngine.searchVideosInnerTube(query, filterToVideos = true).firstOrNull { it.id.length == 11 && !it.id.startsWith("search_") }
-                } catch (e: Exception) { null }
-                    ?: YouTubeSearchEngine.searchVideos(query, isMusicOnly = true).firstOrNull { it.id.length == 11 }
-                    ?: MusicImportEngine.resolveSingleTrack(targetVideo.title, targetVideo.artist)
-
-                if (best != null && best.id.length == 11) {
-                    com.videoguard.app.service.PlaybackController.cacheResolvedSpotifyId(video.id, best.id, video.title, video.artist)
+                val durSec = YouTubeMatchScorer.parseDurationSec(targetVideo.duration)
+                val sId = targetVideo.spotifyTrackId.ifBlank { targetVideo.id.removePrefix("spotify_") }
+                val meta = ImportTrackMeta(
+                    title = targetVideo.originalTitle.ifBlank { targetVideo.title },
+                    artist = targetVideo.originalArtist.ifBlank { targetVideo.artist },
+                    album = targetVideo.album,
+                    durationSeconds = durSec,
+                    spotifyId = sId,
+                    coverUrl = targetVideo.originalArtworkUrl.ifBlank { targetVideo.thumbnailUrl }
+                )
+                val resolved = SongMatchingRepository.resolveTrack(meta)
+                if (resolved != null && resolved.id.length == 11) {
+                    com.videoguard.app.service.PlaybackController.cacheResolvedSpotifyId(video.id, resolved.id, targetVideo.title, targetVideo.artist)
                     targetVideo = targetVideo.copy(
-                        id = best.id,
-                        duration = if (targetVideo.duration != "0:00" && targetVideo.duration.isNotBlank()) targetVideo.duration else best.duration,
-                        thumbnailUrl = if (targetVideo.thumbnailUrl.isNotBlank() && !targetVideo.thumbnailUrl.contains("default")) targetVideo.thumbnailUrl else best.thumbnailUrl
+                        id = resolved.id,
+                        duration = if (targetVideo.duration != "0:00" && targetVideo.duration.isNotBlank()) targetVideo.duration else resolved.duration,
+                        thumbnailUrl = if (targetVideo.thumbnailUrl.isNotBlank() && !targetVideo.thumbnailUrl.contains("default")) targetVideo.thumbnailUrl else resolved.thumbnailUrl,
+                        originalArtworkUrl = targetVideo.originalArtworkUrl.ifBlank { resolved.originalArtworkUrl },
+                        matchedYouTubeId = resolved.id,
+                        matchedYouTubeTitle = resolved.matchedYouTubeTitle
                     )
                 }
             }
@@ -1614,6 +1619,13 @@ object UserDataRepository {
         put("lyrics", v.lyrics)
         put("category", v.category)
         put("mood", v.mood)
+        put("channelId", v.channelId)
+        put("originalTitle", v.originalTitle)
+        put("originalArtist", v.originalArtist)
+        put("originalArtworkUrl", v.originalArtworkUrl)
+        put("spotifyTrackId", v.spotifyTrackId)
+        put("matchedYouTubeId", v.matchedYouTubeId)
+        put("matchedYouTubeTitle", v.matchedYouTubeTitle)
     }
 
     fun jsonToVideo(obj: JSONObject): VideoItem = VideoItem(
@@ -1633,7 +1645,14 @@ object UserDataRepository {
         album = obj.optString("album", ""),
         lyrics = obj.optString("lyrics", ""),
         category = obj.optString("category", "All"),
-        mood = obj.optString("mood", "Energize")
+        mood = obj.optString("mood", "Energize"),
+        channelId = obj.optString("channelId", ""),
+        originalTitle = obj.optString("originalTitle", ""),
+        originalArtist = obj.optString("originalArtist", ""),
+        originalArtworkUrl = obj.optString("originalArtworkUrl", ""),
+        spotifyTrackId = obj.optString("spotifyTrackId", ""),
+        matchedYouTubeId = obj.optString("matchedYouTubeId", ""),
+        matchedYouTubeTitle = obj.optString("matchedYouTubeTitle", "")
     )
 
     fun restoreFullData(restoredHistory: List<VideoItem>, restoredPlaylists: List<UserPlaylist>) {

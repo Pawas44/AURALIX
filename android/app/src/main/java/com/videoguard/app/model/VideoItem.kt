@@ -18,5 +18,11 @@ data class VideoItem(
     val lyrics: String = "",
     val category: String = "All",
     val mood: String = "Energize",
-    val channelId: String = ""
+    val channelId: String = "",
+    val originalTitle: String = "",
+    val originalArtist: String = "",
+    val originalArtworkUrl: String = "",
+    val spotifyTrackId: String = "",
+    val matchedYouTubeId: String = "",
+    val matchedYouTubeTitle: String = ""
 )

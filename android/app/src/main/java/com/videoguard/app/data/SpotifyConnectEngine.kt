@@ -496,6 +496,9 @@ object SpotifyConnectEngine {
             val durStr = if (meta.durationSeconds > 0) {
                 "${meta.durationSeconds / 60}:${String.format(java.util.Locale.US, "%02d", meta.durationSeconds % 60)}"
             } else "3:30"
+            if (meta.coverUrl.isNotBlank()) {
+                SpotifyArtworkResolver.cacheArtwork(meta.spotifyId, meta.coverUrl, meta.title, meta.artist)
+            }
             VideoItem(
                 id = sId,
                 title = meta.title,
@@ -509,7 +512,11 @@ object SpotifyConnectEngine {
                 isMusicTrack = true,
                 artist = meta.artist,
                 album = meta.album.ifBlank { "Spotify" },
-                category = "Music"
+                category = "Music",
+                originalTitle = meta.title,
+                originalArtist = meta.artist,
+                originalArtworkUrl = meta.coverUrl,
+                spotifyTrackId = meta.spotifyId
             )
         }
 

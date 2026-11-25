@@ -21,7 +21,8 @@ data class ImportTrackMeta(
     val album: String = "",
     val durationSeconds: Int = 0,
     val spotifyId: String = "",
-    val coverUrl: String = ""
+    val coverUrl: String = "",
+    val featuredArtists: List<String> = emptyList()
 )
 
 data class ImportProgress(
@@ -144,7 +145,7 @@ object MusicImportEngine {
     private const val YTM_SONGS_FILTER = "EgWKAQIIAWoKEAkQChAFEAMQBA=="
     private const val YT_VIDEO_FILTER = "EgIQAQ=="
 
-    private suspend fun searchInnerTubeDirect(
+    suspend fun searchInnerTubeDirect(
         query: String,
         useMusicApi: Boolean,
         params: String? = null
@@ -611,86 +612,26 @@ object MusicImportEngine {
     }
 
     private suspend fun resolveTrackOnYouTube(meta: ImportTrackMeta): VideoItem? {
-        try {
-            val queries = searchQueries(meta)
-
-            // 1. YouTube Music Official Songs Catalog (ByTune method: exact studio audio tracks)
-            for (q in queries) {
-                val results = searchInnerTubeDirect(q, useMusicApi = true, params = YTM_SONGS_FILTER)
-                val matched = bestMatch(meta, results)
-                if (matched != null) return matched
-            }
-
-            // 2. YouTube Music Catalog without songs filter (in case songs filter hid a regional track)
-            for (q in queries) {
-                val fallbackYtm = searchInnerTubeDirect(q, useMusicApi = true, params = "")
-                val matched = bestMatch(meta, fallbackYtm)
-                if (matched != null) return matched
-            }
-
-            // 3. Regular YouTube Search via InnerTube WEB client ("${query} official audio")
-            for (q in queries) {
-                val ytResults = searchInnerTubeDirect("$q official audio", useMusicApi = false, params = YT_VIDEO_FILTER)
-                val matched = bestMatch(meta, ytResults)
-                if (matched != null) return matched
-            }
-
-            // 4. Secondary search for "${meta.title} ${meta.artist}"
-            for (q in queries) {
-                val fallbackResults = searchInnerTubeDirect(q, useMusicApi = false, params = "")
-                val matched = bestMatch(meta, fallbackResults)
-                if (matched != null) return matched
-            }
-
-            // 5. YouTubeSyncEngine search fallback (reliable Web client used across app)
-            for (q in queries) {
-                try {
-                    val syncResults = YouTubeSyncEngine.searchVideosInnerTube(q, filterToVideos = true)
-                    val matched = bestMatch(meta, syncResults)
-                    if (matched != null) return matched
-                } catch (e: Exception) {}
-            }
-
-            // 6. YouTubeSearchEngine fallback
-            for (q in queries) {
-                val engineResults = YouTubeSearchEngine.searchVideos(q, isMusicOnly = true)
-                val matched = bestMatch(meta, engineResults)
-                if (matched != null) return matched
-            }
-
-            // 7. Free YouTube web scraping
-            for (q in queries) {
-                val webResults = searchYouTubeFreeWeb(q)
-                val matched = bestMatch(meta, webResults)
-                if (matched != null) return matched
-            }
-
-            // 8. Resilient catalog fallback: Top search result on YouTube Music / YouTube with basic title relevance
-            for (q in queries) {
-                val emergencyResults = searchInnerTubeDirect(q, useMusicApi = true, params = YTM_SONGS_FILTER)
-                    .ifEmpty { searchInnerTubeDirect(q, useMusicApi = false, params = "") }
-                for (cand in emergencyResults) {
-                    if (cand.id.length != 11) continue
-                    if (versionMarks(meta.title) != versionMarks(cand.title)) continue
-                    val wt = titleWords(meta.title)
-                    val wc = titleWords(cand.title)
-                    val sim = similarity(wt, wc)
-                    if (sim >= 0.45f || wc.contains(wt) || wt.contains(wc)) {
-                        return cand
-                    }
-                }
-            }
-
-            return null
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return null
-        }
+        return SongMatchingRepository.resolveTrack(meta)
     }
 
-    suspend fun resolveSingleTrack(title: String, artist: String): VideoItem? = withContext(Dispatchers.IO) {
-        val meta = ImportTrackMeta(title = title, artist = artist)
-        resolveTrackOnYouTube(meta)
+    suspend fun resolveSingleTrack(
+        title: String,
+        artist: String,
+        album: String = "",
+        durationSeconds: Int = 0,
+        spotifyId: String = "",
+        coverUrl: String = ""
+    ): VideoItem? = withContext(Dispatchers.IO) {
+        val meta = ImportTrackMeta(
+            title = title,
+            artist = artist,
+            album = album,
+            durationSeconds = durationSeconds,
+            spotifyId = spotifyId,
+            coverUrl = coverUrl
+        )
+        SongMatchingRepository.resolveTrack(meta)
     }
 
     private suspend fun matchTracksWithYouTube(
@@ -720,13 +661,14 @@ object MusicImportEngine {
                 val cleanArtist = meta.artist.ifBlank { resolved?.artist ?: "" }
                 val cleanAlbum = if (meta.album.isNotBlank()) meta.album else (resolved?.album ?: "Single")
 
-                val finalThumb = if (meta.coverUrl.isNotBlank()) {
-                    meta.coverUrl
-                } else if (resolved != null && resolved.thumbnailUrl.isNotBlank() && !resolved.thumbnailUrl.contains("unsplash")) {
-                    resolved.thumbnailUrl
-                } else {
-                    "https://img.youtube.com/vi/${resolved?.id ?: "default"}/hqdefault.jpg"
-                }
+                val finalThumb = SpotifyArtworkResolver.resolveArtwork(
+                    originalArtworkUrl = meta.coverUrl,
+                    spotifyId = meta.spotifyId,
+                    title = cleanTitle,
+                    artist = cleanArtist,
+                    youtubeThumbnailUrl = resolved?.thumbnailUrl ?: "",
+                    youtubeVideoId = resolved?.id ?: ""
+                )
 
                 if (resolved != null && resolved.id.length == 11) {
                     matchedVideos.add(
@@ -735,7 +677,13 @@ object MusicImportEngine {
                             artist = cleanArtist,
                             album = cleanAlbum,
                             thumbnailUrl = finalThumb,
-                            channelAvatarUrl = finalThumb
+                            channelAvatarUrl = finalThumb,
+                            originalTitle = meta.title,
+                            originalArtist = meta.artist,
+                            originalArtworkUrl = meta.coverUrl,
+                            spotifyTrackId = meta.spotifyId,
+                            matchedYouTubeId = resolved.id,
+                            matchedYouTubeTitle = resolved.title
                         )
                     )
                 } else {
@@ -761,7 +709,13 @@ object MusicImportEngine {
                             isMusicTrack = true,
                             artist = cleanArtist,
                             album = cleanAlbum,
-                            category = "Music"
+                            category = "Music",
+                            originalTitle = meta.title,
+                            originalArtist = meta.artist,
+                            originalArtworkUrl = meta.coverUrl,
+                            spotifyTrackId = meta.spotifyId,
+                            matchedYouTubeId = "",
+                            matchedYouTubeTitle = ""
                         )
                     )
                 }

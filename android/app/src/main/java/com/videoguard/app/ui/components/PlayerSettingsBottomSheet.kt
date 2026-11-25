@@ -27,7 +27,8 @@ import com.videoguard.app.service.PlaybackController
 @Composable
 fun PlayerSettingsBottomSheet(
     onDismiss: () -> Unit,
-    onOpenJam: (() -> Unit)? = null
+    onOpenJam: (() -> Unit)? = null,
+    onOpenMatchSource: (() -> Unit)? = null
 ) {
     val isBackgroundPlay by PlaybackController.isBackgroundPlayEnabled.collectAsState()
     val isLoopEnabled by PlaybackController.isLoopEnabled.collectAsState()
@@ -266,6 +267,16 @@ fun PlayerSettingsBottomSheet(
                     title = "Stats & video info",
                     subtitle = "Resolution, ID, codec & channel",
                     onClick = { showStatsDialog = true }
+                )
+                HorizontalDivider(color = Color.White.copy(alpha = 0.06f), thickness = 0.8.dp, modifier = Modifier.padding(vertical = 4.dp))
+                SettingsRow(
+                    icon = Icons.Default.SwapHoriz,
+                    title = "Match playback source",
+                    subtitle = "Change or fix matched YouTube video for this song",
+                    onClick = {
+                        onDismiss()
+                        onOpenMatchSource?.invoke()
+                    }
                 )
             }
 

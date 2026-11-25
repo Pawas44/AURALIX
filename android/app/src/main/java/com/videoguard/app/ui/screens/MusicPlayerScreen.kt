@@ -279,6 +279,7 @@ fun MusicPlayerScreen(
     var isSearchingCustomLyrics by remember { mutableStateOf(false) }
     var customLyricsResults by remember { mutableStateOf<List<com.videoguard.app.data.LyricsSearchResultItem>>(emptyList()) }
     var lyricsRetryTrigger by remember(track.id) { mutableStateOf(0) }
+    var showMatchSourceSheet by remember { mutableStateOf(false) }
 
     LaunchedEffect(track.id, lyricsRetryTrigger) {
         lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.getOffsetMs(track.id)
@@ -286,8 +287,8 @@ fun MusicPlayerScreen(
         lyricsResult = null
         try {
             lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
-                trackTitle = track.title,
-                artistName = track.artist,
+                trackTitle = track.originalTitle.ifBlank { track.title },
+                artistName = track.originalArtist.ifBlank { track.artist },
                 durationSeconds = duration.toInt(),
                 videoId = track.id,
                 context = context,
@@ -1803,7 +1804,18 @@ fun MusicPlayerScreen(
             onOpenJam = {
                 showSettingsSheet = false
                 showListenTogetherSheet = true
+            },
+            onOpenMatchSource = {
+                showSettingsSheet = false
+                showMatchSourceSheet = true
             }
+        )
+    }
+
+    if (showMatchSourceSheet) {
+        com.videoguard.app.ui.components.MatchSourceBottomSheet(
+            track = track,
+            onDismiss = { showMatchSourceSheet = false }
         )
     }
 
