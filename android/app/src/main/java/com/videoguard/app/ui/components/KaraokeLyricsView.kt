@@ -23,6 +23,9 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -63,6 +66,8 @@ fun KaraokeLyricsView(
     lyricsOffsetMs: Long = 0L,
     romanizeMode: LyricsRomanizeMode,
     onSeekTo: (Float) -> Unit,
+    onRetry: (() -> Unit)? = null,
+    onSearchManually: (() -> Unit)? = null,
     onCreateLyricsCard: ((List<String>) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -363,6 +368,37 @@ fun KaraokeLyricsView(
                             }
                         }
                     }
+
+                    // Approximate Sync Badge when lyrics timing is estimated from song duration
+                    if (lyrics.isEstimated && !isSelectionMode) {
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0x66181A26),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(top = 8.dp, end = 16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Schedule,
+                                    contentDescription = null,
+                                    tint = Color(0xFFA1A1AA),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = "Approx. Sync",
+                                    color = Color(0xFFA1A1AA),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
                 }
             }
             else -> {
@@ -382,21 +418,62 @@ fun KaraokeLyricsView(
                         .padding(20.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.MusicNote,
                             contentDescription = null,
                             tint = Color.White.copy(alpha = 0.35f),
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(36.dp)
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = displayPlain,
-                            color = Color.White.copy(alpha = 0.75f),
-                            fontSize = 14.sp,
+                            text = if (track.lyrics.isBlank()) "Lyrics not found" else displayPlain,
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
                             textAlign = TextAlign.Center
                         )
-                        if (track.lyrics.isNotBlank()) {
+                        if (track.lyrics.isBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Couldn't match verified lyrics for this track",
+                                color = Color.White.copy(alpha = 0.45f),
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(18.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                if (onRetry != null) {
+                                    OutlinedButton(
+                                        onClick = onRetry,
+                                        shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                                if (onSearchManually != null) {
+                                    OutlinedButton(
+                                        onClick = onSearchManually,
+                                        shape = RoundedCornerShape(16.dp),
+                                        border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.6f)),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC084FC)),
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Search Lyrics", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+                        } else {
                             Spacer(modifier = Modifier.height(16.dp))
                             Button(
                                 onClick = {

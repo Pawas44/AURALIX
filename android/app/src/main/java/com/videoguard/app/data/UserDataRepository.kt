@@ -714,11 +714,12 @@ object UserDataRepository {
             }
             val fetchedLyrics = LyricsEngine.getLyrics(
                 trackTitle = targetVideo.title,
-                artistName = targetVideo.artist.ifBlank { targetVideo.channelName },
+                artistName = targetVideo.artist,
                 durationSeconds = durSec,
                 videoId = targetVideo.id,
                 context = context,
-                description = targetVideo.description
+                description = targetVideo.description,
+                channelName = targetVideo.channelName
             )
             if (fetchedLyrics != null) {
                 LyricsEngine.saveLyricsToDisk(context, targetVideo.id, fetchedLyrics)

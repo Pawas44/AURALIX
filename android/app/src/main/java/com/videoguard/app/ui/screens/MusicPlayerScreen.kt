@@ -278,18 +278,22 @@ fun MusicPlayerScreen(
     var customLyricsQuery by remember { mutableStateOf("") }
     var isSearchingCustomLyrics by remember { mutableStateOf(false) }
     var customLyricsResults by remember { mutableStateOf<List<com.videoguard.app.data.LyricsSearchResultItem>>(emptyList()) }
+    var lyricsRetryTrigger by remember(track.id) { mutableStateOf(0) }
 
-    LaunchedEffect(track.id) {
+    LaunchedEffect(track.id, lyricsRetryTrigger) {
         lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.getOffsetMs(track.id)
         isLoadingLyrics = true
+        lyricsResult = null
         try {
             lyricsResult = com.videoguard.app.data.LyricsEngine.getLyrics(
                 trackTitle = track.title,
-                artistName = track.artist.ifBlank { track.channelName },
+                artistName = track.artist,
                 durationSeconds = duration.toInt(),
                 videoId = track.id,
                 context = context,
-                description = track.description
+                description = track.description,
+                channelName = track.channelName,
+                album = track.album
             )
         } catch (e: Exception) {
             lyricsResult = null
@@ -866,6 +870,13 @@ fun MusicPlayerScreen(
                                 romanizeMode = romanizeMode,
                                 onSeekTo = { posSec ->
                                     com.videoguard.app.service.PlaybackController.seekTo(posSec)
+                                },
+                                onRetry = {
+                                    lyricsRetryTrigger++
+                                },
+                                onSearchManually = {
+                                    customLyricsQuery = track.title
+                                    showWrongLyricsDialog = true
                                 },
                                 onCreateLyricsCard = { lines ->
                                     selectedLyricsLinesForCard = lines
