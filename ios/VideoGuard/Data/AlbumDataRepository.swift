@@ -353,7 +353,7 @@ final class AlbumDataRepository {
     }
 
     func getOrFetchAlbumTracks(albumId: String, albumTitle: String = "") async -> [VideoItem] {
-        if let existing = albums.first(where: { $0.id == albumId }) {
+        if let existing = getAllAlbums().first(where: { $0.id == albumId }) {
             return await getOrFetchAlbumTracks(album: existing)
         }
         let album = AlbumItem(id: albumId, title: albumTitle.isEmpty ? "Album" : albumTitle, artist: "Various Artists", coverUrl: "")

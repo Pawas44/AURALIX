@@ -43,6 +43,15 @@ object YouTubeSearchEngine {
             return@withContext if (isMusicOnly) VideoRepository.getMusicTracks() else VideoRepository.sampleVideos
         }
 
+        // When in Music Mode, prioritize genuine Songs (Audio tracks) via YouTube Music Songs API
+        // This avoids Music Videos, Live stage performances, skits, dialogues and cover versions.
+        if (isMusicOnly) {
+            val musicSongs = searchYouTubeMusicSongs(query.trim())
+            if (musicSongs.isNotEmpty()) {
+                return@withContext musicSongs
+            }
+        }
+
         val searchQuery = if (isMusicOnly && !query.lowercase().contains("song") && !query.lowercase().contains("music")) {
             "$query song"
         } else {
@@ -81,6 +90,169 @@ object YouTubeSearchEngine {
 
         // Fallback to local filtering if online fails or returns empty
         if (isMusicOnly) VideoRepository.searchMusic(query) else VideoRepository.searchVideos(query)
+    }
+
+    suspend fun searchYouTubeMusicSongs(query: String): List<VideoItem> = withContext(Dispatchers.IO) {
+        val outList = mutableListOf<VideoItem>()
+        try {
+            val url = URL("https://music.youtube.com/youtubei/v1/search?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8")
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 7000
+                readTimeout = 7000
+                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                setRequestProperty("Origin", "https://music.youtube.com")
+                setRequestProperty("Referer", "https://music.youtube.com/")
+                setRequestProperty("X-YouTube-Client-Name", "67")
+                setRequestProperty("X-YouTube-Client-Version", "1.20240101.01.00")
+                doOutput = true
+            }
+
+            val payload = JSONObject().apply {
+                put("context", JSONObject().apply {
+                    put("client", JSONObject().apply {
+                        put("clientName", "WEB_REMIX")
+                        put("clientVersion", "1.20240101.01.00")
+                        put("hl", "en")
+                        put("gl", "IN")
+                    })
+                })
+                put("query", query)
+                put("params", "EgWKAQIIAWoSEAQQAxAFEAoQCRAVEA4QEBAR")
+            }
+
+            conn.outputStream.use { os ->
+                os.write(payload.toString().toByteArray(Charsets.UTF_8))
+            }
+
+            if (conn.responseCode == 200) {
+                val jsonStr = conn.inputStream.bufferedReader().use { it.readText() }
+                val root = JSONObject(jsonStr)
+                parseMusicSearchResponse(root, outList)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        outList
+    }
+
+    private fun parseMusicSearchResponse(root: JSONObject, outList: MutableList<VideoItem>) {
+        val tabs = root.optJSONObject("contents")
+            ?.optJSONObject("tabbedSearchResultsRenderer")
+            ?.optJSONArray("tabs")
+        val tab0 = tabs?.optJSONObject(0)
+            ?.optJSONObject("tabRenderer")
+            ?.optJSONObject("content")
+            ?.optJSONObject("sectionListRenderer")
+            ?.optJSONArray("contents") ?: return
+
+        for (i in 0 until tab0.length()) {
+            val shelfObj = tab0.optJSONObject(i) ?: continue
+            val shelfRenderer = shelfObj.optJSONObject("musicShelfRenderer")
+            val itemSectionRenderer = shelfObj.optJSONObject("itemSectionRenderer")
+            val contents = shelfRenderer?.optJSONArray("contents")
+                ?: itemSectionRenderer?.optJSONArray("contents")
+                ?: continue
+
+            for (j in 0 until contents.length()) {
+                val itemObj = contents.optJSONObject(j) ?: continue
+                val resp = itemObj.optJSONObject("musicResponsiveListItemRenderer") ?: continue
+                var vid = resp.optJSONObject("playlistItemData")?.optString("videoId") ?: ""
+                val flexCols = resp.optJSONArray("flexColumns") ?: continue
+
+                if (vid.isBlank() && flexCols.length() > 0) {
+                    val runs0 = flexCols.optJSONObject(0)
+                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        ?.optJSONObject("text")?.optJSONArray("runs")
+                    vid = runs0?.optJSONObject(0)?.optJSONObject("navigationEndpoint")
+                        ?.optJSONObject("watchEndpoint")?.optString("videoId") ?: ""
+                }
+                if (vid.isBlank() || vid.length != 11) continue
+
+                var title = ""
+                if (flexCols.length() > 0) {
+                    val runs0 = flexCols.optJSONObject(0)
+                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        ?.optJSONObject("text")?.optJSONArray("runs")
+                    title = runs0?.optJSONObject(0)?.optString("text")?.trim() ?: ""
+                }
+                if (title.isBlank()) continue
+
+                var artist = "YouTube Music"
+                var album = "Single"
+                var duration = "3:30"
+
+                if (flexCols.length() > 1) {
+                    val runs1 = flexCols.optJSONObject(1)
+                        ?.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                        ?.optJSONObject("text")?.optJSONArray("runs")
+                    if (runs1 != null) {
+                        val parts = mutableListOf<String>()
+                        var curPart = StringBuilder()
+                        for (r in 0 until runs1.length()) {
+                            val txt = runs1.optJSONObject(r)?.optString("text") ?: ""
+                            if (txt == " • " || txt == "•") {
+                                if (curPart.isNotBlank()) {
+                                    parts.add(curPart.toString().trim())
+                                    curPart = StringBuilder()
+                                }
+                            } else {
+                                curPart.append(txt)
+                            }
+                        }
+                        if (curPart.isNotBlank()) {
+                            parts.add(curPart.toString().trim())
+                        }
+
+                        if (parts.size >= 3) {
+                            artist = parts[0]
+                            album = parts[1]
+                            duration = parts[2]
+                        } else if (parts.size == 2) {
+                            artist = parts[0]
+                            duration = parts[1]
+                        } else if (parts.size == 1) {
+                            artist = parts[0]
+                        }
+                    }
+                }
+
+                var thumb = "https://img.youtube.com/vi/$vid/hqdefault.jpg"
+                val thumbs = resp.optJSONObject("thumbnail")
+                    ?.optJSONObject("musicThumbnailRenderer")
+                    ?.optJSONObject("thumbnail")
+                    ?.optJSONArray("thumbnails")
+                if (thumbs != null && thumbs.length() > 0) {
+                    val lastUrl = thumbs.optJSONObject(thumbs.length() - 1)?.optString("url") ?: ""
+                    if (lastUrl.isNotBlank()) {
+                        thumb = if (lastUrl.startsWith("//")) "https:$lastUrl" else lastUrl
+                    }
+                }
+                thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, vid)
+
+                outList.add(
+                    VideoItem(
+                        id = vid,
+                        title = title,
+                        channelName = artist,
+                        channelAvatarUrl = thumb,
+                        subscriberCount = "Song Track",
+                        thumbnailUrl = thumb,
+                        views = "Official Song",
+                        uploadTime = "YouTube Music",
+                        duration = duration,
+                        description = "$title - $artist",
+                        likes = "100K",
+                        isMusicTrack = true,
+                        artist = artist,
+                        album = album,
+                        lyrics = "",
+                        category = "Music"
+                    )
+                )
+            }
+        }
     }
 
     private fun parseSearchResults(html: String, isMusic: Boolean, query: String = ""): List<VideoItem> {
@@ -181,6 +353,15 @@ object YouTubeSearchEngine {
                     )
                 )
             }
+        }
+
+        if (isMusic && results.isNotEmpty()) {
+            val avoidableRegex = Regex(
+                "(?i)\\b(official\\s+video|official\\s+music\\s+video|music\\s+video|video\\s+song|full\\s+video|live\\s+performance|live\\s+concert|stage\\s+performance|live\\s+at)\\b|\\[(official\\s+video|music\\s+video|video|live)\\]|\\((official\\s+video|music\\s+video|video|live)\\)"
+            )
+            val pureSongs = results.filter { !avoidableRegex.containsMatchIn(it.title) }
+            val videoItems = results.filter { avoidableRegex.containsMatchIn(it.title) }
+            return if (pureSongs.isNotEmpty()) (pureSongs + videoItems) else results
         }
 
         return results

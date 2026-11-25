@@ -77,6 +77,15 @@ struct YouTubeSearchEngine {
             return isMusicOnly ? VideoRepository.getMusicTracks() : VideoRepository.sampleVideos
         }
 
+        // When in Music Mode, prioritize genuine Songs (Audio tracks) via YouTube Music Songs API
+        // This avoids Music Videos, Live stage performances, skits, dialogues and cover versions.
+        if isMusicOnly {
+            let musicSongs = await searchYouTubeMusicSongs(query: trimmed)
+            if !musicSongs.isEmpty {
+                return musicSongs
+            }
+        }
+
         let searchQuery: String
         if isMusicOnly && !trimmed.lowercased().contains("song") && !trimmed.lowercased().contains("music") {
             searchQuery = "\(trimmed) song"
@@ -116,6 +125,157 @@ struct YouTubeSearchEngine {
         }
 
         return isMusicOnly ? VideoRepository.searchMusic(query: trimmed) : VideoRepository.searchVideos(query: trimmed)
+    }
+
+    static func searchYouTubeMusicSongs(query: String) async -> [VideoItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+
+        guard let url = URL(string: "https://music.youtube.com/youtubei/v1/search?key=\(YouTubeSyncEngine.innerTubeApiKey)") else {
+            return []
+        }
+
+        var req = URLRequest(url: url, timeoutInterval: 8.0)
+        req.httpMethod = "POST"
+        req.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        req.setValue(YouTubeSyncEngine.desktopUA, forHTTPHeaderField: "User-Agent")
+        req.setValue("https://music.youtube.com", forHTTPHeaderField: "Origin")
+        req.setValue("https://music.youtube.com/", forHTTPHeaderField: "Referer")
+        req.setValue("67", forHTTPHeaderField: "X-YouTube-Client-Name")
+        req.setValue("1.20240101.01.00", forHTTPHeaderField: "X-YouTube-Client-Version")
+
+        let payload: [String: Any] = [
+            "context": [
+                "client": [
+                    "clientName": "WEB_REMIX",
+                    "clientVersion": "1.20240101.01.00",
+                    "hl": "en",
+                    "gl": "IN"
+                ]
+            ],
+            "query": trimmed,
+            "params": "EgWKAQIIAWoSEAQQAxAFEAoQCRAVEA4QEBAR"
+        ]
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            if let http = resp as? HTTPURLResponse, http.statusCode == 200,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                return parseMusicSearchResponse(json: json)
+            }
+        } catch {}
+        return []
+    }
+
+    private static func parseMusicSearchResponse(json: [String: Any]) -> [VideoItem] {
+        var outList: [VideoItem] = []
+        guard let contents = json["contents"] as? [String: Any],
+              let tabbed = contents["tabbedSearchResultsRenderer"] as? [String: Any],
+              let tabs = tabbed["tabs"] as? [[String: Any]],
+              let tab0 = tabs.first?["tabRenderer"] as? [String: Any],
+              let tabContent = tab0["content"] as? [String: Any],
+              let shelves = (tabContent["sectionListRenderer"] as? [String: Any])?["contents"] as? [[String: Any]] else {
+            return []
+        }
+
+        for shelf in shelves {
+            let items: [[String: Any]]
+            if let msr = shelf["musicShelfRenderer"] as? [String: Any],
+               let c = msr["contents"] as? [[String: Any]] {
+                items = c
+            } else if let isr = shelf["itemSectionRenderer"] as? [String: Any],
+                      let c = isr["contents"] as? [[String: Any]] {
+                items = c
+            } else {
+                continue
+            }
+
+            for item in items {
+                guard let resp = item["musicResponsiveListItemRenderer"] as? [String: Any] else { continue }
+                var vid = (resp["playlistItemData"] as? [String: Any])?["videoId"] as? String ?? ""
+                let flexCols = resp["flexColumns"] as? [[String: Any]] ?? []
+
+                if vid.isEmpty, let firstCol = flexCols.first,
+                   let runs = ((firstCol["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"] as? [String: Any])?["runs"] as? [[String: Any]] {
+                    vid = ((runs.first?["navigationEndpoint"] as? [String: Any])?["watchEndpoint"] as? [String: Any])?["videoId"] as? String ?? ""
+                }
+                guard !vid.isEmpty, vid.count == 11 else { continue }
+
+                var title = ""
+                if let firstCol = flexCols.first,
+                   let runs = ((firstCol["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"] as? [String: Any])?["runs"] as? [[String: Any]] {
+                    title = (runs.first?["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                guard !title.isEmpty else { continue }
+
+                var artist = "YouTube Music"
+                var album = "Single"
+                var duration = "3:30"
+
+                if flexCols.count > 1,
+                   let runs = ((flexCols[1]["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"] as? [String: Any])?["runs"] as? [[String: Any]] {
+                    var parts: [String] = []
+                    var curPart = ""
+                    for r in runs {
+                        let txt = (r["text"] as? String ?? "")
+                        if txt == " • " || txt == "•" {
+                            if !curPart.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                parts.append(curPart.trimmingCharacters(in: .whitespacesAndNewlines))
+                                curPart = ""
+                            }
+                        } else {
+                            curPart += txt
+                        }
+                    }
+                    if !curPart.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        parts.append(curPart.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+
+                    if parts.count >= 3 {
+                        artist = parts[0]
+                        album = parts[1]
+                        duration = parts[2]
+                    } else if parts.count == 2 {
+                        artist = parts[0]
+                        duration = parts[1]
+                    } else if parts.count == 1 {
+                        artist = parts[0]
+                    }
+                }
+
+                var thumb = "https://img.youtube.com/vi/\(vid)/hqdefault.jpg"
+                if let thumbs = (((resp["thumbnail"] as? [String: Any])?["musicThumbnailRenderer"] as? [String: Any])?["thumbnail"] as? [String: Any])?["thumbnails"] as? [[String: Any]],
+                   let u = thumbs.last?["url"] as? String, !u.isEmpty {
+                    thumb = u.hasPrefix("//") ? "https:\(u)" : u
+                }
+                if thumb.contains("=w") && thumb.contains("-h") {
+                    thumb = thumb.replacingOccurrences(of: #"=w\d+-h\d+"#, with: "=w544-h544", options: .regularExpression)
+                }
+
+                outList.append(
+                    VideoItem(
+                        id: vid,
+                        title: title,
+                        channelName: artist,
+                        channelAvatarUrl: thumb,
+                        subscriberCount: "Song Track",
+                        thumbnailUrl: thumb,
+                        views: "Official Song",
+                        uploadTime: "YouTube Music",
+                        duration: duration,
+                        description: "\(title) - \(artist)",
+                        likes: "100K",
+                        isMusicTrack: true,
+                        artist: artist,
+                        album: album,
+                        lyrics: "",
+                        category: "Music"
+                    )
+                )
+            }
+        }
+        return outList
     }
 
     static func getRelatedVideos(video: VideoItem, isMusicOnly: Bool = false) async -> [VideoItem] {
@@ -253,6 +413,23 @@ struct YouTubeSearchEngine {
                             if results.count >= 15 { break }
                         }
                     }
+                }
+            }
+        }
+
+        if isMusic && !results.isEmpty {
+            let pattern = #"(?i)\b(official\s+video|official\s+music\s+video|music\s+video|video\s+song|full\s+video|live\s+performance|live\s+concert|stage\s+performance|live\s+at)\b|\[(official\s+video|music\s+video|video|live)\]|\((official\s+video|music\s+video|video|live)\)"#
+            if let regex = try? NSRegularExpression(pattern: pattern) {
+                let pureSongs = results.filter { item in
+                    let range = NSRange(item.title.startIndex..., in: item.title)
+                    return regex.firstMatch(in: item.title, range: range) == nil
+                }
+                let videoItems = results.filter { item in
+                    let range = NSRange(item.title.startIndex..., in: item.title)
+                    return regex.firstMatch(in: item.title, range: range) != nil
+                }
+                if !pureSongs.isEmpty {
+                    return pureSongs + videoItems
                 }
             }
         }
