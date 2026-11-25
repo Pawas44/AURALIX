@@ -189,11 +189,20 @@ struct YouTubeSearchEngine {
                     let runs0 = (card["title"] as? [String: Any])?["runs"] as? [[String: Any]]
                     vid = ((runs0?.first?["navigationEndpoint"] as? [String: Any])?["watchEndpoint"] as? [String: Any])?["videoId"] as? String ?? ""
                 }
-                if !vid.isEmpty, vid.count == 11, seenIds.insert(vid).inserted {
+                var isAlbum = false
+                if vid.isEmpty {
+                    let bId = ((card["onTap"] as? [String: Any])?["browseEndpoint"] as? [String: Any])?["browseId"] as? String
+                        ?? (((card["title"] as? [String: Any])?["runs"] as? [[String: Any]])?.first?["navigationEndpoint"] as? [String: Any])?["browseEndpoint"] as? [String: Any]?["browseId"] as? String ?? ""
+                    if bId.hasPrefix("MPREb_") || bId.hasPrefix("OLAK5uy_") || bId.hasPrefix("FEmusic_library_album_") {
+                        vid = bId
+                        isAlbum = true
+                    }
+                }
+                if !vid.isEmpty, (vid.count == 11 || isAlbum), seenIds.insert(vid).inserted {
                     let rawTitle = (((card["title"] as? [String: Any])?["runs"] as? [[String: Any]])?.first?["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     if !rawTitle.isEmpty {
                         var artist = "YouTube Music"
-                        var duration = "3:30"
+                        var duration = isAlbum ? "Album" : "3:30"
                         if let subRuns = (card["subtitle"] as? [String: Any])?["runs"] as? [[String: Any]] {
                             var parts: [String] = []
                             var cur = ""
@@ -212,7 +221,7 @@ struct YouTubeSearchEngine {
                                 parts.append(cur.trimmingCharacters(in: .whitespacesAndNewlines))
                             }
                             if !parts.isEmpty {
-                                if parts[0].lowercased() == "video" || parts[0].lowercased() == "song" {
+                                if parts[0].lowercased() == "video" || parts[0].lowercased() == "song" || parts[0].lowercased() == "album" {
                                     if parts.count > 1 { artist = parts[1] }
                                 } else {
                                     artist = parts[0]
@@ -223,14 +232,12 @@ struct YouTubeSearchEngine {
                             }
                         }
 
-                        var thumb = "https://img.youtube.com/vi/\(vid)/hqdefault.jpg"
+                        var thumb = isAlbum ? "" : "https://i.ytimg.com/vi/\(vid)/hqdefault.jpg"
                         if let thumbs = (((card["thumbnail"] as? [String: Any])?["musicThumbnailRenderer"] as? [String: Any])?["thumbnail"] as? [String: Any])?["thumbnails"] as? [[String: Any]],
                            let u = thumbs.last?["url"] as? String, !u.isEmpty {
                             thumb = u.hasPrefix("//") ? "https:\(u)" : u
                         }
-                        if thumb.contains("=w") && thumb.contains("-h") {
-                            thumb = thumb.replacingOccurrences(of: #"=w\d+-h\d+"#, with: "=w544-h544", options: .regularExpression)
-                        }
+                        thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, videoId: isAlbum ? "" : vid)
 
                         outList.append(
                             VideoItem(
@@ -240,16 +247,16 @@ struct YouTubeSearchEngine {
                                 channelAvatarUrl: thumb,
                                 subscriberCount: "Top Result",
                                 thumbnailUrl: thumb,
-                                views: "Top Result",
+                                views: isAlbum ? "Album" : "Top Result",
                                 uploadTime: "YouTube Music",
                                 duration: duration,
                                 description: "\(rawTitle) - \(artist)",
                                 likes: "100K",
-                                isMusicTrack: true,
+                                isMusicTrack: !isAlbum,
                                 artist: artist,
-                                album: "Single",
+                                album: isAlbum ? rawTitle : "Single",
                                 lyrics: "",
-                                category: "Music"
+                                category: isAlbum ? "Album" : "Music"
                             )
                         )
                     }
@@ -327,14 +334,12 @@ struct YouTubeSearchEngine {
                     }
                 }
 
-                var thumb = "https://img.youtube.com/vi/\(vid)/hqdefault.jpg"
+                var thumb = "https://i.ytimg.com/vi/\(vid)/hqdefault.jpg"
                 if let thumbs = (((resp["thumbnail"] as? [String: Any])?["musicThumbnailRenderer"] as? [String: Any])?["thumbnail"] as? [String: Any])?["thumbnails"] as? [[String: Any]],
                    let u = thumbs.last?["url"] as? String, !u.isEmpty {
                     thumb = u.hasPrefix("//") ? "https:\(u)" : u
                 }
-                if thumb.contains("=w") && thumb.contains("-h") {
-                    thumb = thumb.replacingOccurrences(of: #"=w\d+-h\d+"#, with: "=w544-h544", options: .regularExpression)
-                }
+                thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, videoId: vid)
 
                 outList.append(
                     VideoItem(

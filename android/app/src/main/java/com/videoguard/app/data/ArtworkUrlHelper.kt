@@ -10,40 +10,48 @@ object ArtworkUrlHelper {
     /**
      * Transforms any thumbnail / album art URL into its highest possible reliable resolution.
      * - YouTube Music (Google User Content / GGPHT): Uses =w544-h544-l90-rj (official standard high-res),
-     *   preventing HTTP 403 / 404 rejections caused by =w1200 overscaling.
-     * - YouTube Video Thumbnails: Upgrades hqdefault.jpg / mqdefault.jpg / sddefault.jpg to maxresdefault.jpg
+     *   preventing HTTP 403 / 404 rejections caused by =w1200 overscaling or session query parameters.
+     * - YouTube Video Thumbnails: Returns clean https://i.ytimg.com/vi/<videoId>/hqdefault.jpg
+     *   without expired/session-bound ?sqp= or &rs= query parameters, and avoids 404s from maxresdefault.
      * - Protocol-relative URL conversion (// -> https:)
-     * - Fallback to maxresdefault.jpg if URL is empty and videoId is available
+     * - Fallback to hqdefault.jpg if URL is empty and videoId is available
      */
     fun getHighResArtworkUrl(url: String?, videoId: String = ""): String {
         val raw = url?.trim().orEmpty()
         if (raw.isBlank() || raw.equals("null", ignoreCase = true)) {
-            return if (videoId.isNotBlank()) "https://i.ytimg.com/vi/$videoId/maxresdefault.jpg" else ""
+            return if (videoId.isNotBlank()) "https://i.ytimg.com/vi/$videoId/hqdefault.jpg" else ""
         }
 
         var cleanUrl = if (raw.startsWith("//")) "https:$raw" else raw
 
         // 1. Google User Content / YouTube Music Album Cover CDN
         if (cleanUrl.contains("googleusercontent.com") || cleanUrl.contains("ggpht.com")) {
-            // Replace =w...-h... with official standard high-res =w544-h544-l90-rj
-            if (cleanUrl.contains(Regex("=w\\d+-h\\d+"))) {
-                return cleanUrl.replace(Regex("=w\\d+-h\\d+[^?#]*"), "=w544-h544-l90-rj")
+            val base = cleanUrl.substringBefore("?")
+            if (base.contains(Regex("=w\\d+-h\\d+"))) {
+                return base.replace(Regex("=w\\d+-h\\d+[^?#]*"), "=w544-h544-l90-rj")
             }
-            if (cleanUrl.contains(Regex("=s\\d+"))) {
-                return cleanUrl.replace(Regex("=s\\d+[^?#]*"), "=s544-c-k-no-rj")
+            if (base.contains(Regex("=s\\d+"))) {
+                return base.replace(Regex("=s\\d+[^?#]*"), "=s544-c-k-no-rj")
             }
-            return cleanUrl
+            if (!base.contains("=")) {
+                return "$base=w544-h544-l90-rj"
+            }
+            return base
         }
 
         // 2. YouTube Thumbnail URLs
         if (cleanUrl.contains("ytimg.com") || cleanUrl.contains("youtube.com")) {
-            if (cleanUrl.contains("hqdefault") || cleanUrl.contains("mqdefault") || cleanUrl.contains("sddefault") || cleanUrl.contains("default.jpg")) {
-                return cleanUrl
-                    .replace("hqdefault.jpg", "maxresdefault.jpg")
-                    .replace("mqdefault.jpg", "maxresdefault.jpg")
-                    .replace("sddefault.jpg", "maxresdefault.jpg")
-                    .replace("default.jpg", "maxresdefault.jpg")
+            val extractedId = if (videoId.isNotBlank()) {
+                videoId
+            } else {
+                val match = Regex("""/vi(?:_webp)?/([a-zA-Z0-9_-]{11})/""").find(cleanUrl)
+                match?.groupValues?.get(1).orEmpty()
             }
+
+            if (extractedId.isNotBlank()) {
+                return "https://i.ytimg.com/vi/$extractedId/hqdefault.jpg"
+            }
+            return cleanUrl.substringBefore("?")
         }
 
         return cleanUrl
@@ -52,7 +60,7 @@ object ArtworkUrlHelper {
 
 /**
  * Coil Interceptor that guarantees high-resolution artwork loading with automatic fallback
- * if YouTube returns HTTP 404 for maxresdefault.jpg or Google CDN fails for modified params.
+ * if YouTube or Google CDN fails for modified params.
  */
 class HighQualityArtworkInterceptor : Interceptor {
     override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
@@ -68,43 +76,37 @@ class HighQualityArtworkInterceptor : Interceptor {
 
             val result = chain.proceed(modifiedRequest)
 
-            // If loading the high-res modified URL failed
+            // If loading the modified URL failed
             if (result is ErrorResult) {
                 val currentData = modifiedRequest.data as? String ?: ""
 
-                // 1. Fallback: Retry with original unmodified URL if we modified it
-                if (data != currentData) {
-                    val originalResult = chain.proceed(request.newBuilder().data(data).build())
-                    if (originalResult is SuccessResult) {
-                        return originalResult
+                // 1. Fallback: Retry with clean hqdefault.jpg / mqdefault.jpg if it was ytimg
+                val match = Regex("""/vi(?:_webp)?/([a-zA-Z0-9_-]{11})/""").find(currentData)
+                val vid = match?.groupValues?.get(1)
+                if (!vid.isNullOrBlank()) {
+                    val fallbackHq = "https://i.ytimg.com/vi/$vid/hqdefault.jpg"
+                    if (fallbackHq != currentData) {
+                        val hqResult = chain.proceed(request.newBuilder().data(fallbackHq).build())
+                        if (hqResult is SuccessResult) return hqResult
                     }
+                    val fallbackMq = "https://i.ytimg.com/vi/$vid/mqdefault.jpg"
+                    val mqResult = chain.proceed(request.newBuilder().data(fallbackMq).build())
+                    if (mqResult is SuccessResult) return mqResult
                 }
 
-                // 2. Fallback: For Google User Content / GGPHT, try unscaled raw URL (without '=' sizing params)
+                // 2. Fallback: For Google User Content / GGPHT, try unscaled raw URL
                 if (currentData.contains("googleusercontent.com") || currentData.contains("ggpht.com")) {
                     val rawGoogleUrl = currentData.substringBefore("=")
                     if (rawGoogleUrl.isNotBlank() && rawGoogleUrl != currentData) {
                         val rawResult = chain.proceed(request.newBuilder().data(rawGoogleUrl).build())
-                        if (rawResult is SuccessResult) {
-                            return rawResult
-                        }
+                        if (rawResult is SuccessResult) return rawResult
                     }
                 }
 
-                // 3. Fallback: If maxresdefault failed with 404 (e.g. 360p/480p-only YouTube videos)
-                if (currentData.contains("maxresdefault.jpg")) {
-                    // Try sddefault.jpg (640x480)
-                    val sdUrl = currentData.replace("maxresdefault.jpg", "sddefault.jpg")
-                    val sdResult = chain.proceed(request.newBuilder().data(sdUrl).build())
-                    if (sdResult is SuccessResult) {
-                        return sdResult
-                    }
-                    // Final fallback to hqdefault.jpg (480x360)
-                    val hqUrl = currentData.replace("maxresdefault.jpg", "hqdefault.jpg")
-                    val hqResult = chain.proceed(request.newBuilder().data(hqUrl).build())
-                    if (hqResult is SuccessResult) {
-                        return hqResult
-                    }
+                // 3. Fallback: Retry with original unmodified URL if different
+                if (data != currentData) {
+                    val originalResult = chain.proceed(request.newBuilder().data(data).build())
+                    if (originalResult is SuccessResult) return originalResult
                 }
             }
             return result

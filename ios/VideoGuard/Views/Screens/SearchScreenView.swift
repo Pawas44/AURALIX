@@ -204,13 +204,46 @@ struct SearchScreenView: View {
                                                 .tracking(0.8)
                                                 .padding(.horizontal, 14)
 
-                                            Button(action: { onVideoSelected(topMatch, filteredSongs) }) {
+                                            Button(action: {
+                                                if topMatch.category == "Album" || topMatch.id.hasPrefix("OLAK5uy_") || topMatch.id.hasPrefix("MPREb_") {
+                                                    let album = AlbumItem(
+                                                        id: topMatch.id,
+                                                        title: topMatch.title,
+                                                        artist: topMatch.artist.isEmpty ? topMatch.channelName : topMatch.artist,
+                                                        year: "Album",
+                                                        trackCount: 0,
+                                                        artworkUrl: topMatch.thumbnailUrl
+                                                    )
+                                                    onPlaylistClick(AlbumDataRepository.toUserPlaylist(album))
+                                                } else {
+                                                    onVideoSelected(topMatch, filteredSongs)
+                                                }
+                                            }) {
                                                 let artistName = !topMatch.artist.isEmpty ? topMatch.artist : topMatch.channelName
+                                                let resolvedUrl = ArtworkUrlHelper.getHighResArtworkUrl(topMatch.thumbnailUrl, videoId: topMatch.id)
                                                 HStack(spacing: 14) {
-                                                    AsyncImage(url: URL(string: topMatch.thumbnailUrl)) { img in
-                                                        img.resizable().aspectRatio(contentMode: .fill)
-                                                    } placeholder: {
-                                                        Rectangle().fill(AppTheme.ytMusicCardBg)
+                                                    AsyncImage(url: URL(string: resolvedUrl)) { phase in
+                                                        switch phase {
+                                                        case .success(let img):
+                                                            img.resizable().aspectRatio(contentMode: .fill)
+                                                        case .failure:
+                                                            AsyncImage(url: URL(string: "https://i.ytimg.com/vi/\(topMatch.id)/hqdefault.jpg")) { fbPhase in
+                                                                if let fbImg = fbPhase.image {
+                                                                    fbImg.resizable().aspectRatio(contentMode: .fill)
+                                                                } else {
+                                                                    ZStack {
+                                                                        Rectangle().fill(AppTheme.ytMusicCardBg)
+                                                                        Image(systemName: "music.note")
+                                                                            .font(.system(size: 22))
+                                                                            .foregroundColor(.white.opacity(0.4))
+                                                                    }
+                                                                }
+                                                            }
+                                                        case .empty:
+                                                            Rectangle().fill(AppTheme.ytMusicCardBg)
+                                                        @unknown default:
+                                                            Rectangle().fill(AppTheme.ytMusicCardBg)
+                                                        }
                                                     }
                                                     .frame(width: 64, height: 64)
                                                     .cornerRadius(8)
@@ -221,7 +254,7 @@ struct SearchScreenView: View {
                                                             .font(.system(size: 15, weight: .bold))
                                                             .foregroundColor(.white)
                                                             .lineLimit(1)
-                                                        Text("Song • \(artistName) • \(topMatch.duration)")
+                                                        Text("\(topMatch.category == "Album" ? "Album" : "Song") • \(artistName) • \(topMatch.duration)")
                                                             .font(.system(size: 12))
                                                             .foregroundColor(AppTheme.ytMusicTextSecondary)
                                                             .lineLimit(1)
@@ -233,10 +266,10 @@ struct SearchScreenView: View {
                                                         Circle()
                                                             .fill(Color.white)
                                                             .frame(width: 38, height: 38)
-                                                        Image(systemName: "play.fill")
+                                                        Image(systemName: topMatch.category == "Album" ? "square.stack.fill" : "play.fill")
                                                             .font(.system(size: 15))
                                                             .foregroundColor(.black)
-                                                            .offset(x: 1)
+                                                            .offset(x: topMatch.category == "Album" ? 0 : 1)
                                                     }
                                                 }
                                                 .padding(12)
@@ -295,11 +328,27 @@ struct SearchScreenView: View {
                                         } else {
                                             Button(action: { onVideoSelected(item, filteredSongs) }) {
                                                 let artistName = !item.artist.isEmpty ? item.artist : item.channelName
+                                                let rowThumbUrl = ArtworkUrlHelper.getHighResArtworkUrl(item.thumbnailUrl, videoId: item.id)
                                                 HStack(spacing: 12) {
-                                                    AsyncImage(url: URL(string: item.thumbnailUrl)) { img in
-                                                        img.resizable().aspectRatio(contentMode: .fill)
-                                                    } placeholder: {
-                                                        Rectangle().fill(AppTheme.ytMusicCardBg)
+                                                    AsyncImage(url: URL(string: rowThumbUrl)) { phase in
+                                                        if let img = phase.image {
+                                                            img.resizable().aspectRatio(contentMode: .fill)
+                                                        } else if phase.error != nil {
+                                                            AsyncImage(url: URL(string: "https://i.ytimg.com/vi/\(item.id)/hqdefault.jpg")) { fbPhase in
+                                                                if let fb = fbPhase.image {
+                                                                    fb.resizable().aspectRatio(contentMode: .fill)
+                                                                } else {
+                                                                    ZStack {
+                                                                        Rectangle().fill(AppTheme.ytMusicCardBg)
+                                                                        Image(systemName: "music.note")
+                                                                            .font(.system(size: 18))
+                                                                            .foregroundColor(.white.opacity(0.3))
+                                                                    }
+                                                                }
+                                                            }
+                                                        } else {
+                                                            Rectangle().fill(AppTheme.ytMusicCardBg)
+                                                        }
                                                     }
                                                     .frame(width: 52, height: 52)
                                                     .cornerRadius(6)

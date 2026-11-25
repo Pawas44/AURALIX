@@ -162,13 +162,24 @@ object YouTubeSearchEngine {
                     vid = runs0?.optJSONObject(0)?.optJSONObject("navigationEndpoint")
                         ?.optJSONObject("watchEndpoint")?.optString("videoId") ?: ""
                 }
-                if (vid.isNotBlank() && vid.length == 11 && seenIds.add(vid)) {
+                var isAlbum = false
+                if (vid.isBlank()) {
+                    val browseId = card.optJSONObject("onTap")?.optJSONObject("browseEndpoint")?.optString("browseId")
+                        ?: card.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)
+                            ?.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")?.optString("browseId")
+                        ?: ""
+                    if (browseId.startsWith("MPREb_") || browseId.startsWith("OLAK5uy_") || browseId.startsWith("FEmusic_library_album_")) {
+                        vid = browseId
+                        isAlbum = true
+                    }
+                }
+                if (vid.isNotBlank() && (vid.length == 11 || isAlbum) && seenIds.add(vid)) {
                     val rawTitle = card.optJSONObject("title")?.optJSONArray("runs")?.optJSONObject(0)?.optString("text")?.trim() ?: ""
                     if (rawTitle.isNotBlank()) {
                         val subRuns = card.optJSONObject("subtitle")?.optJSONArray("runs")
                         var artist = "YouTube Music"
-                        var duration = "3:30"
-                        var album = "Single"
+                        var duration = if (isAlbum) "Album" else "3:30"
+                        var album = if (isAlbum) rawTitle else "Single"
 
                         if (subRuns != null) {
                             val subParts = mutableListOf<String>()
@@ -188,7 +199,7 @@ object YouTubeSearchEngine {
 
                             if (subParts.isNotEmpty()) {
                                 val first = subParts[0]
-                                if (first.equals("Video", ignoreCase = true) || first.equals("Song", ignoreCase = true)) {
+                                if (first.equals("Video", ignoreCase = true) || first.equals("Song", ignoreCase = true) || first.equals("Album", ignoreCase = true)) {
                                     if (subParts.size > 1) artist = subParts[1]
                                 } else {
                                     artist = subParts[0]
@@ -200,7 +211,7 @@ object YouTubeSearchEngine {
                             }
                         }
 
-                        var thumb = "https://img.youtube.com/vi/$vid/hqdefault.jpg"
+                        var thumb = if (isAlbum) "" else "https://i.ytimg.com/vi/$vid/hqdefault.jpg"
                         val thumbs = card.optJSONObject("thumbnail")?.optJSONObject("musicThumbnailRenderer")
                             ?.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
                         if (thumbs != null && thumbs.length() > 0) {
@@ -209,7 +220,7 @@ object YouTubeSearchEngine {
                                 thumb = if (lastUrl.startsWith("//")) "https:$lastUrl" else lastUrl
                             }
                         }
-                        thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, vid)
+                        thumb = ArtworkUrlHelper.getHighResArtworkUrl(thumb, if (isAlbum) "" else vid)
 
                         outList.add(
                             VideoItem(
@@ -219,16 +230,16 @@ object YouTubeSearchEngine {
                                 channelAvatarUrl = thumb,
                                 subscriberCount = "Top Result",
                                 thumbnailUrl = thumb,
-                                views = "Top Result",
+                                views = if (isAlbum) "Album" else "Top Result",
                                 uploadTime = "YouTube Music",
                                 duration = duration,
                                 description = "$rawTitle - $artist",
                                 likes = "100K",
-                                isMusicTrack = true,
+                                isMusicTrack = !isAlbum,
                                 artist = artist,
                                 album = album,
                                 lyrics = "",
-                                category = "Music"
+                                category = if (isAlbum) "Album" else "Music"
                             )
                         )
                     }
