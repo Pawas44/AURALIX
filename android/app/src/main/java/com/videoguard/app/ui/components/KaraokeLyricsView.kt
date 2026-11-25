@@ -368,37 +368,6 @@ fun KaraokeLyricsView(
                             }
                         }
                     }
-
-                    // Approximate Sync Badge when lyrics timing is estimated from song duration
-                    if (lyrics.isEstimated && !isSelectionMode) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0x66181A26),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(top = 8.dp, end = 16.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Schedule,
-                                    contentDescription = null,
-                                    tint = Color(0xFFA1A1AA),
-                                    modifier = Modifier.size(11.dp)
-                                )
-                                Text(
-                                    text = "Approx. Sync",
-                                    color = Color(0xFFA1A1AA),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-                    }
                 }
             }
             else -> {

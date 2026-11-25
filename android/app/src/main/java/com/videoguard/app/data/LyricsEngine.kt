@@ -297,11 +297,11 @@ object LyricsEngine {
         return try {
             val encT = URLEncoder.encode(title, "UTF-8")
             val encA = URLEncoder.encode(artist, "UTF-8")
-            var urlStr = "https://lrclib.net/api/get?track_name=$encT&artist_name=$encA"
-            if (duration > 0) {
-                urlStr += "&duration=$duration"
+            // Query by track and artist without strict duration first (avoids 404 from music video intro/outro differences)
+            var jsonStr = httpGet("https://lrclib.net/api/get?track_name=$encT&artist_name=$encA")
+            if (jsonStr.isBlank() && duration > 0) {
+                jsonStr = httpGet("https://lrclib.net/api/get?track_name=$encT&artist_name=$encA&duration=$duration")
             }
-            val jsonStr = httpGet(urlStr)
             if (jsonStr.isNotBlank() && jsonStr.startsWith("{")) {
                 val json = JSONObject(jsonStr)
                 val candTitle = json.optString("trackName", "")
@@ -383,13 +383,16 @@ object LyricsEngine {
                 actualDurationSeconds = actualDuration
             )
 
-            if (scored.isAcceptable && scored.totalConfidenceScore > highestScore) {
-                highestScore = scored.totalConfidenceScore
+            // Give substantial priority to real timestamped synced lyrics over plain text
+            val effectiveScore = scored.totalConfidenceScore + (if (synced.isNotBlank()) 50 else 0)
+
+            if (scored.isAcceptable && effectiveScore > highestScore) {
+                highestScore = effectiveScore
                 bestObj = obj
             }
         }
 
-        return if (bestObj != null && highestScore >= LyricsMatchScorer.MINIMUM_CONFIDENCE_THRESHOLD) {
+        return if (bestObj != null) {
             parseLrcResponse(bestObj, actualDuration, highestScore)
         } else null
     }
