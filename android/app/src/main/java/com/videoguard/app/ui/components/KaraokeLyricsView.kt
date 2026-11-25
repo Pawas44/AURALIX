@@ -11,7 +11,6 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,8 +19,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
@@ -35,10 +34,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -48,24 +45,17 @@ import com.videoguard.app.data.LyricsResult
 import com.videoguard.app.data.LyricsRomanizeMode
 import com.videoguard.app.data.TransliterationEngine
 import com.videoguard.app.model.VideoItem
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
- * Spotify-Inspired Synchronized Real-Time Lyrics View
- *
+ * Transparent Synchronized Karaoke Lyrics View
  * Features:
- * - Real-time audio time-synchronization following current playback.
- * - Bold, luminous active line highlighting with smooth spring animations.
- * - Past lyrics dimmed softly (~0.35f alpha) and upcoming lyrics subtly visible (~0.65f alpha).
- * - Tap any line to seek music playback with subtle haptic tap.
- * - Smart Spotify-style manual scroll detection: pauses auto-scroll while browsing so the view
- *   never wrestles with user gestures.
- * - Floating "Sync with Song" snap button when scrolled away, plus auto-resume after 4s inactivity.
- * - Top and bottom gradient scrims for seamless edge fading.
- * - Multi-line selection support for creating lyrics sharing cards (long-press).
- * - Universal Romanization pronunciation support.
- * - Premium empty state with Retry, Manual Search, and Add Custom Lyrics actions.
+ * - Centered vertical alignment: current playing line stays in the middle
+ * - Smooth spring & easing animations on line changes (scale, color, alpha)
+ * - 100% Transparent background floating seamlessly over the player's blurred artwork
+ * - Tap any line to seek playback (normal mode)
+ * - Long-Press any line to enter Lyrics Selection mode
+ * - Select 2-3 lines with visual highlight and contextual "Create Card" action bar
+ * - Universal Romanization support (Hindi, Punjabi, Korean, Japanese, Russian, etc.)
  */
 @Composable
 fun KaraokeLyricsView(
@@ -78,13 +68,10 @@ fun KaraokeLyricsView(
     onSeekTo: (Float) -> Unit,
     onRetry: (() -> Unit)? = null,
     onSearchManually: (() -> Unit)? = null,
-    onAddLyrics: (() -> Unit)? = null,
     onCreateLyricsCard: ((List<String>) -> Unit)? = null,
-    forcePlainLyricsView: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val view = LocalView.current
-    val coroutineScope = rememberCoroutineScope()
     val adjustedTimeMs = (currentSeconds * 1000).toLong() + lyricsOffsetMs
     val activeIndex = remember(lyrics, adjustedTimeMs) {
         if (lyrics != null && lyrics.isSynced && lyrics.lines.isNotEmpty()) {
@@ -99,29 +86,9 @@ fun KaraokeLyricsView(
     val selectedIndices = remember { mutableStateListOf<Int>() }
     val isSelectionMode = selectedIndices.isNotEmpty()
 
-    // Spotify-like manual scroll detection:
-    // When the user touches / scrolls the list, pause auto-scroll.
-    var isUserInteracting by remember { mutableStateOf(false) }
-    var lastInteractionTime by remember { mutableLongStateOf(0L) }
-
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress) {
-            isUserInteracting = true
-            lastInteractionTime = System.currentTimeMillis()
-        }
-    }
-
-    // Auto-resume tracking after 4 seconds of scroll inactivity
-    LaunchedEffect(isUserInteracting, lastInteractionTime) {
-        if (isUserInteracting) {
-            delay(4000)
-            isUserInteracting = false
-        }
-    }
-
-    // Smoothly animate the active line to the vertical center only when NOT selecting and NOT user-scrolling
-    LaunchedEffect(activeIndex, isUserInteracting, isSelectionMode, forcePlainLyricsView) {
-        if (activeIndex >= 0 && lyrics?.isSynced == true && !forcePlainLyricsView && !isSelectionMode && !isUserInteracting) {
+    // Smoothly animate the active line to the exact vertical center only when NOT selecting
+    LaunchedEffect(activeIndex) {
+        if (activeIndex >= 0 && lyrics?.isSynced == true && !isSelectionMode) {
             listState.animateScrollToItem(activeIndex, scrollOffset = 0)
         }
     }
@@ -132,7 +99,7 @@ fun KaraokeLyricsView(
             .background(Color.Transparent)
     ) {
         val containerHeight = maxHeight
-        val centerPadding = ((containerHeight / 2) - 28.dp).coerceAtLeast(16.dp)
+        val centerPadding = ((containerHeight / 2) - 26.dp).coerceAtLeast(16.dp)
 
         when {
             isLoading -> {
@@ -140,41 +107,28 @@ fun KaraokeLyricsView(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        CircularProgressIndicator(
-                            color = Color(0xFF3EA6FF),
-                            modifier = Modifier.size(34.dp),
-                            strokeWidth = 2.5.dp
-                        )
-                        Text(
-                            text = "Loading lyrics...",
-                            color = Color.White.copy(alpha = 0.65f),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                    CircularProgressIndicator(
+                        color = Color(0xFF3EA6FF),
+                        modifier = Modifier.size(32.dp),
+                        strokeWidth = 2.5.dp
+                    )
                 }
             }
-
             lyrics != null && lyrics.lines.isNotEmpty() -> {
                 Box(modifier = Modifier.fillMaxSize()) {
                     LazyColumn(
                         state = listState,
                         contentPadding = PaddingValues(
-                            top = if (lyrics.isSynced && !forcePlainLyricsView) centerPadding else 24.dp,
-                            bottom = if (isSelectionMode) centerPadding + 70.dp else (if (lyrics.isSynced && !forcePlainLyricsView) centerPadding else 48.dp),
-                            start = 16.dp,
-                            end = 16.dp
+                            top = if (lyrics.isSynced) centerPadding else 24.dp,
+                            bottom = if (isSelectionMode) centerPadding + 70.dp else (if (lyrics.isSynced) centerPadding else 48.dp),
+                            start = 14.dp,
+                            end = 14.dp
                         ),
                         modifier = Modifier.fillMaxSize()
                     ) {
                         itemsIndexed(lyrics.lines) { index, line ->
-                            val isActive = index == activeIndex && lyrics.isSynced && !forcePlainLyricsView && !isSelectionMode
-                            val isPast = index < activeIndex && lyrics.isSynced && !forcePlainLyricsView && !isSelectionMode
-                            val isUpcoming = index > activeIndex && lyrics.isSynced && !forcePlainLyricsView && !isSelectionMode
+                            val isActive = index == activeIndex && lyrics.isSynced && !isSelectionMode
+                            val isPast = index < activeIndex && lyrics.isSynced && !isSelectionMode
                             val isSelected = selectedIndices.contains(index)
 
                             // Determine main text based on Romanization mode
@@ -199,21 +153,21 @@ fun KaraokeLyricsView(
                             val itemColor by animateColorAsState(
                                 targetValue = when {
                                     isSelected -> Color.White
-                                    isActive -> Color.White
-                                    isPast -> Color.White.copy(alpha = 0.35f)
-                                    isUpcoming -> Color.White.copy(alpha = 0.65f)
-                                    else -> Color.White.copy(alpha = 0.90f)
+                                    isActive -> Color(0xFF3EA6FF)
+                                    isPast -> Color.White.copy(alpha = 0.32f)
+                                    !lyrics.isSynced -> Color.White.copy(alpha = 0.92f)
+                                    else -> Color.White.copy(alpha = 0.65f)
                                 },
-                                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+                                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
                                 label = "lyricsColor"
                             )
 
                             val itemScale by animateFloatAsState(
                                 targetValue = when {
                                     isSelected -> 1.05f
-                                    isActive -> 1.04f
-                                    !lyrics.isSynced || forcePlainLyricsView -> 1.0f
-                                    else -> 0.96f
+                                    isActive -> 1.07f
+                                    !lyrics.isSynced -> 1.0f
+                                    else -> 0.94f
                                 },
                                 animationSpec = spring(
                                     dampingRatio = Spring.DampingRatioLowBouncy,
@@ -225,13 +179,13 @@ fun KaraokeLyricsView(
                             val itemAlpha by animateFloatAsState(
                                 targetValue = when {
                                     isSelected -> 1f
-                                    isSelectionMode -> 0.35f
+                                    isSelectionMode -> 0.40f
                                     isActive -> 1f
                                     isPast -> 0.35f
-                                    isUpcoming -> 0.65f
-                                    else -> 0.90f
+                                    !lyrics.isSynced -> 0.95f
+                                    else -> 0.70f
                                 },
-                                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+                                animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
                                 label = "lyricsAlpha"
                             )
 
@@ -277,14 +231,9 @@ fun KaraokeLyricsView(
                                                         selectedIndices.add(index)
                                                     }
                                                 }
-                                            } else if (lyrics.isSynced && !forcePlainLyricsView) {
-                                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                            } else if (lyrics.isSynced) {
                                                 val targetSec = ((line.timestampMs - lyricsOffsetMs) / 1000f).coerceAtLeast(0f)
                                                 onSeekTo(targetSec)
-                                                isUserInteracting = false
-                                                coroutineScope.launch {
-                                                    listState.animateScrollToItem(index, 0)
-                                                }
                                             }
                                         },
                                         onLongClick = {
@@ -295,26 +244,18 @@ fun KaraokeLyricsView(
                                             }
                                         }
                                     )
-                                    .padding(horizontal = 14.dp, vertical = if (isSelected || isActive) 7.dp else 4.dp),
+                                    .padding(horizontal = 14.dp, vertical = if (isSelected || isActive) 8.dp else 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
                                         text = mainText,
                                         color = itemColor,
-                                        fontSize = if (isActive || isSelected) 20.sp else 16.sp,
-                                        lineHeight = if (isActive || isSelected) 27.sp else 22.sp,
+                                        fontSize = if (isActive || isSelected) 19.sp else 16.sp,
+                                        lineHeight = if (isActive || isSelected) 26.sp else 22.sp,
                                         fontWeight = if (isActive || isSelected) FontWeight.ExtraBold else FontWeight.Medium,
-                                        letterSpacing = if (isActive || isSelected) (-0.2).sp else 0.sp,
+                                        letterSpacing = if (isActive || isSelected) (-0.3).sp else 0.sp,
                                         textAlign = TextAlign.Center,
-                                        style = if (isActive) {
-                                            TextStyle(
-                                                shadow = Shadow(
-                                                    color = Color.Black.copy(alpha = 0.85f),
-                                                    blurRadius = 10f
-                                                )
-                                            )
-                                        } else TextStyle.Default,
                                         modifier = Modifier.fillMaxWidth()
                                     )
 
@@ -322,7 +263,7 @@ fun KaraokeLyricsView(
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = effectiveRoman,
-                                            color = if (isActive || isSelected) Color(0xFF93C5FD).copy(alpha = 0.90f) else Color.White.copy(alpha = 0.35f),
+                                            color = if (isActive || isSelected) Color(0xFF93C5FD).copy(alpha = 0.90f) else Color.White.copy(alpha = 0.30f),
                                             fontSize = if (isActive || isSelected) 13.sp else 12.sp,
                                             fontWeight = if (isActive || isSelected) FontWeight.SemiBold else FontWeight.Normal,
                                             textAlign = TextAlign.Center,
@@ -330,77 +271,6 @@ fun KaraokeLyricsView(
                                         )
                                     }
                                 }
-                            }
-                        }
-                    }
-
-                    // Top Gradient Scrim (Smooth edge fading)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(36.dp)
-                            .align(Alignment.TopCenter)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color.Black.copy(alpha = 0.70f), Color.Transparent)
-                                )
-                            )
-                    )
-
-                    // Bottom Gradient Scrim
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(36.dp)
-                            .align(Alignment.BottomCenter)
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color.Transparent, Color.Black.copy(alpha = 0.70f))
-                                )
-                            )
-                    )
-
-                    // Floating "Sync with Song" Snap-Back Button (Spotify-like when user scrolled away)
-                    AnimatedVisibility(
-                        visible = isUserInteracting && activeIndex >= 0 && lyrics.isSynced && !forcePlainLyricsView && !isSelectionMode,
-                        enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
-                        exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { it / 2 },
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(bottom = 16.dp, end = 16.dp)
-                    ) {
-                        Surface(
-                            shape = RoundedCornerShape(20.dp),
-                            color = Color(0xF0181A26),
-                            border = BorderStroke(1.dp, Color(0xFF3EA6FF).copy(alpha = 0.65f)),
-                            shadowElevation = 10.dp,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(20.dp))
-                                .clickable {
-                                    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                                    isUserInteracting = false
-                                    coroutineScope.launch {
-                                        listState.animateScrollToItem(activeIndex, 0)
-                                    }
-                                }
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Schedule,
-                                    contentDescription = "Sync",
-                                    tint = Color(0xFF3EA6FF),
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Text(
-                                    text = "Sync",
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
                             }
                         }
                     }
@@ -500,113 +370,92 @@ fun KaraokeLyricsView(
                     }
                 }
             }
-
             else -> {
-                // Premium Empty State
+                val displayPlain = remember(track.lyrics, romanizeMode) {
+                    if (track.lyrics.isBlank()) {
+                        "Lyrics not available for this track"
+                    } else when (romanizeMode) {
+                        LyricsRomanizeMode.ROMANIZED -> {
+                            TransliterationEngine.romanize(track.lyrics)
+                        }
+                        else -> track.lyrics
+                    }
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(20.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(24.dp),
-                        color = Color(0xD9121320),
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-                        shadowElevation = 14.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(horizontal = 24.dp)
                     ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(22.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF8B5CF6).copy(alpha = 0.20f))
-                                    .border(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.40f), CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MusicNote,
-                                    contentDescription = null,
-                                    tint = Color(0xFFC084FC),
-                                    modifier = Modifier.size(26.dp)
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(14.dp))
-
+                        Icon(
+                            imageVector = Icons.Default.MusicNote,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.35f),
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text(
+                            text = if (track.lyrics.isBlank()) "Lyrics not found" else displayPlain,
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
+                        )
+                        if (track.lyrics.isBlank()) {
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Lyrics Not Available",
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
+                                text = "Couldn't match verified lyrics for this track",
+                                color = Color.White.copy(alpha = 0.45f),
+                                fontSize = 12.sp,
                                 textAlign = TextAlign.Center
                             )
-
-                            Spacer(modifier = Modifier.height(6.dp))
-
-                            Text(
-                                text = "Couldn't match verified lyrics for \"${track.title}\"",
-                                color = Color.White.copy(alpha = 0.55f),
-                                fontSize = 12.sp,
-                                lineHeight = 17.sp,
-                                textAlign = TextAlign.Center,
-                                maxLines = 2
-                            )
-
                             Spacer(modifier = Modifier.height(18.dp))
-
-                            // Action buttons: Retry, Search, Add
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 if (onRetry != null) {
                                     OutlinedButton(
                                         onClick = onRetry,
                                         shape = RoundedCornerShape(16.dp),
                                         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
                                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                                     ) {
-                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(13.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
                                         Text("Retry", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
-
                                 if (onSearchManually != null) {
-                                    Button(
+                                    OutlinedButton(
                                         onClick = onSearchManually,
                                         shape = RoundedCornerShape(16.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A5F)),
-                                        border = BorderStroke(1.dp, Color(0xFF3EA6FF).copy(alpha = 0.5f)),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF3EA6FF), modifier = Modifier.size(13.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Search", color = Color(0xFF3EA6FF), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-
-                                if (onAddLyrics != null) {
-                                    OutlinedButton(
-                                        onClick = onAddLyrics,
-                                        shape = RoundedCornerShape(16.dp),
-                                        border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.5f)),
+                                        border = BorderStroke(1.dp, Color(0xFF8B5CF6).copy(alpha = 0.6f)),
                                         colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC084FC)),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(13.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Add", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Search Lyrics", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = {
+                                    val lines = track.lyrics.lines().filter { it.isNotBlank() }.take(3)
+                                    onCreateLyricsCard?.invoke(lines.ifEmpty { listOf(track.title) })
+                                },
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF8B5CF6).copy(alpha = 0.3f)),
+                                border = BorderStroke(1.dp, Color(0xFFC084FC).copy(alpha = 0.6f))
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color(0xFFC084FC), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Create Card", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }

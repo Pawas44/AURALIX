@@ -273,10 +273,7 @@ fun MusicPlayerScreen(
     var lyricsOffsetMs by remember(track.id) {
         mutableLongStateOf(com.videoguard.app.data.LyricsOffsetManager.getOffsetMs(track.id))
     }
-    var showLyricsSettingsSheet by remember { mutableStateOf(false) }
-    var showAddLyricsDialog by remember { mutableStateOf(false) }
-    var customLyricsInputText by remember { mutableStateOf("") }
-    var forcePlainLyricsView by remember { mutableStateOf(false) }
+    var showSyncTuner by remember { mutableStateOf(false) }
     var showWrongLyricsDialog by remember { mutableStateOf(false) }
     var customLyricsQuery by remember { mutableStateOf("") }
     var isSearchingCustomLyrics by remember { mutableStateOf(false) }
@@ -825,178 +822,238 @@ fun MusicPlayerScreen(
         ) {
             if (showInPlayerLyrics) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 20.dp, vertical = 6.dp)
-                        .shadow(
-                            elevation = 20.dp,
-                            shape = RoundedCornerShape(22.dp),
-                            spotColor = extractedPalette.primary.copy(alpha = 0.50f)
-                        )
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(Color(0xFF101018))
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // 1. Song's Album Poster in background
-                    AsyncImage(
-                        model = com.videoguard.app.data.ArtworkUrlHelper.getHighResArtworkUrl(track.thumbnailUrl, track.id),
-                        contentDescription = track.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-
-                    // 2. Dark translucent scrim so lyrics are crisp and high-contrast
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color(0xDD0B0C14))
-                    )
-
-                    // 3. Real-Time Synchronized Lyrics View
-                    com.videoguard.app.ui.components.KaraokeLyricsView(
-                        lyrics = lyricsResult,
-                        isLoading = isLoadingLyrics,
-                        track = track,
-                        currentSeconds = currentSeconds,
-                        lyricsOffsetMs = lyricsOffsetMs,
-                        romanizeMode = romanizeMode,
-                        onSeekTo = { posSec ->
-                            com.videoguard.app.service.PlaybackController.seekTo(posSec)
-                        },
-                        onRetry = {
-                            lyricsRetryTrigger++
-                        },
-                        onSearchManually = {
-                            val bestArtist = com.videoguard.app.data.LyricsEngine.extractBestArtist(
-                                title = track.title,
-                                artist = track.artist.ifBlank { track.channelName },
-                                description = track.description
-                            )
-                            val cleanTitle = com.videoguard.app.data.LyricsEngine.cleanTrackNameRaw(track.title).ifBlank { track.title }
-                            customLyricsQuery = if (bestArtist.isNotBlank()) "$cleanTitle $bestArtist".trim() else cleanTitle
-                            showWrongLyricsDialog = true
-                            scope.launch {
-                                isSearchingCustomLyrics = true
-                                customLyricsResults = com.videoguard.app.data.LyricsOffsetManager.searchAlternativeLyrics(customLyricsQuery)
-                                isSearchingCustomLyrics = false
-                            }
-                        },
-                        onAddLyrics = {
-                            customLyricsInputText = ""
-                            showAddLyricsDialog = true
-                        },
-                        onCreateLyricsCard = { lines ->
-                            selectedLyricsLinesForCard = lines
-                            showLyricsCardDialog = true
-                        },
-                        forcePlainLyricsView = forcePlainLyricsView,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(top = 48.dp)
-                    )
-
-                    // 4. Spotify-Inspired Minimal Top Bar:
-                    // Left: Source Indicator Pill (e.g. "LRCLIB • Synced", "YouTube Music")
-                    // Right: Romanize Mode Pill + Settings Icon + Close Button
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .align(Alignment.TopCenter)
-                            .padding(horizontal = 14.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        val sourceLabel = lyricsResult?.source?.ifBlank { "LRCLIB" } ?: "LRCLIB"
-                        val isSyncedLyrics = lyricsResult?.isSynced == true && !forcePlainLyricsView
-
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color.Black.copy(alpha = 0.60f),
-                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f))
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(if (isSyncedLyrics) Color(0xFF1DB954) else Color(0xFFFFB300))
+                        // Poster Area with Floating Synchronized Lyrics (Same exact dimensions as the album artwork carousel)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 38.dp)
+                                .aspectRatio(1f)
+                                .shadow(
+                                    elevation = 22.dp,
+                                    shape = RoundedCornerShape(18.dp),
+                                    spotColor = extractedPalette.primary.copy(alpha = 0.65f)
                                 )
-                                Text(
-                                    text = if (isSyncedLyrics) "$sourceLabel • Synced" else sourceLabel,
-                                    color = Color.White.copy(alpha = 0.85f),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                        }
-
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(Color(0xFF161616))
+                                .clickable {
+                                    showInPlayerLyrics = false
+                                }
                         ) {
-                            // Romanize Pill
+                            // 1. Song's Album Poster in background
+                            AsyncImage(
+                                model = com.videoguard.app.data.ArtworkUrlHelper.getHighResArtworkUrl(track.thumbnailUrl, track.id),
+                                contentDescription = track.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            // 2. Gentle dark scrim so lyrics are sharp, high-contrast and crystal-clear
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.52f))
+                            )
+
+                            // 3. 100% Transparent Synchronized Karaoke Lyrics (No inner square card, edge-to-edge over poster)
+                            com.videoguard.app.ui.components.KaraokeLyricsView(
+                                lyrics = lyricsResult,
+                                isLoading = isLoadingLyrics,
+                                track = track,
+                                currentSeconds = currentSeconds,
+                                lyricsOffsetMs = lyricsOffsetMs,
+                                romanizeMode = romanizeMode,
+                                onSeekTo = { posSec ->
+                                    com.videoguard.app.service.PlaybackController.seekTo(posSec)
+                                },
+                                onRetry = {
+                                    lyricsRetryTrigger++
+                                },
+                                onSearchManually = {
+                                    customLyricsQuery = track.title
+                                    showWrongLyricsDialog = true
+                                },
+                                onCreateLyricsCard = { lines ->
+                                    selectedLyricsLinesForCard = lines
+                                    showLyricsCardDialog = true
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            // 4. Top Floating Controls Row: ABC Romanize, ⏱️ Sync Tuner, 🔍 Search/Fix
                             val (modeLabel, isHighlighted) = when (romanizeMode) {
                                 com.videoguard.app.data.LyricsRomanizeMode.BOTH -> "ABC: Both" to true
                                 com.videoguard.app.data.LyricsRomanizeMode.ROMANIZED -> "ABC: Roman" to true
                                 com.videoguard.app.data.LyricsRomanizeMode.NATIVE -> "ABC: Off" to false
                             }
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.55f),
-                                border = BorderStroke(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.20f)),
-                                modifier = Modifier.clickable { onCycleRomanizeMode() }
-                            ) {
-                                Text(
-                                    text = modeLabel,
-                                    color = if (isHighlighted) Color(0xFF3EA6FF) else Color.White.copy(alpha = 0.85f),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
-                                )
+                            val hasOffset = lyricsOffsetMs != 0L
+                            val offsetFormatted = if (lyricsOffsetMs != 0L) {
+                                String.format(java.util.Locale.US, "%+.1fs", lyricsOffsetMs / 1000.0)
+                            } else {
+                                "Sync"
                             }
 
-                            // Settings / Fine-Tuner Icon
-                            val hasOffset = lyricsOffsetMs != 0L
-                            Surface(
-                                shape = CircleShape,
-                                color = if (hasOffset) Color(0xFF2C2416).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.55f),
-                                border = BorderStroke(1.dp, if (hasOffset) Color(0xFFFFB300).copy(alpha = 0.75f) else Color.White.copy(alpha = 0.20f)),
+                            Row(
                                 modifier = Modifier
-                                    .size(30.dp)
-                                    .clickable { showLyricsSettingsSheet = true }
+                                    .align(Alignment.TopEnd)
+                                    .padding(end = 12.dp, top = 10.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.Tune,
-                                        contentDescription = "Lyrics Settings",
-                                        tint = if (hasOffset) Color(0xFFFFC107) else Color.White.copy(alpha = 0.85f),
-                                        modifier = Modifier.size(16.dp)
+                                // ABC Romanize Pill
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (isHighlighted) Color(0xFF1E3A5F).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.55f))
+                                        .border(1.dp, if (isHighlighted) Color(0xFF3EA6FF).copy(alpha = 0.70f) else Color.White.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
+                                        .clickable { onCycleRomanizeMode() }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = modeLabel,
+                                        color = if (isHighlighted) Color(0xFF3EA6FF) else Color.White.copy(alpha = 0.85f),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                // ⏱️ Sync Timing Tuner Toggle
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(if (showSyncTuner || hasOffset) Color(0xFF2C2416).copy(alpha = 0.85f) else Color.Black.copy(alpha = 0.55f))
+                                        .border(1.dp, if (showSyncTuner || hasOffset) Color(0xFFFFB300).copy(alpha = 0.75f) else Color.White.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
+                                        .clickable { showSyncTuner = !showSyncTuner }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "⏱️ $offsetFormatted",
+                                        color = if (showSyncTuner || hasOffset) Color(0xFFFFC107) else Color.White.copy(alpha = 0.85f),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                // 🔍 Search / Fix Lyrics Button
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.Black.copy(alpha = 0.55f))
+                                        .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
+                                        .clickable {
+                                            val bestArtist = com.videoguard.app.data.LyricsEngine.extractBestArtist(
+                                                title = track.title,
+                                                artist = track.artist.ifBlank { track.channelName },
+                                                description = track.description
+                                            )
+                                            val cleanTitle = com.videoguard.app.data.LyricsEngine.cleanTrackNameRaw(track.title).ifBlank { track.title }
+                                            customLyricsQuery = if (bestArtist.isNotBlank()) "$cleanTitle $bestArtist".trim() else cleanTitle
+                                            showWrongLyricsDialog = true
+                                            scope.launch {
+                                                isSearchingCustomLyrics = true
+                                                customLyricsResults = com.videoguard.app.data.LyricsOffsetManager.searchAlternativeLyrics(customLyricsQuery)
+                                                isSearchingCustomLyrics = false
+                                            }
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "🔍 Fix",
+                                        color = Color.White.copy(alpha = 0.85f),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
                             }
 
-                            // Close / Switch back to album artwork
-                            Surface(
-                                shape = CircleShape,
-                                color = Color.Black.copy(alpha = 0.55f),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.20f)),
-                                modifier = Modifier
-                                    .size(30.dp)
-                                    .clickable { showInPlayerLyrics = false }
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
+                            // 5. Floating Sync Timing Tuner Bar (When opened)
+                            if (showSyncTuner) {
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .padding(top = 48.dp, start = 12.dp, end = 12.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(Color(0xFF13141F).copy(alpha = 0.94f))
+                                        .border(1.dp, Color(0xFFFFB300).copy(alpha = 0.40f), RoundedCornerShape(16.dp))
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    // -0.5s
+                                    TunerButton("-0.5s") {
+                                        lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, -500L)
+                                    }
+                                    // -0.1s
+                                    TunerButton("-0.1s") {
+                                        lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, -100L)
+                                    }
+
+                                    // Offset Display Badge
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.White.copy(alpha = 0.08f))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = if (lyricsOffsetMs == 0L) "0.0s (Sync)" else String.format(java.util.Locale.US, "%+.1fs", lyricsOffsetMs / 1000.0),
+                                            color = if (lyricsOffsetMs == 0L) Color(0xFF66BB6A) else Color(0xFFFFC107),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    // +0.1s
+                                    TunerButton("+0.1s") {
+                                        lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, 100L)
+                                    }
+                                    // +0.5s
+                                    TunerButton("+0.5s") {
+                                        lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, 500L)
+                                    }
+
+                                    if (lyricsOffsetMs != 0L) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(Color.Red.copy(alpha = 0.20f))
+                                                .clickable {
+                                                    com.videoguard.app.data.LyricsOffsetManager.resetOffset(track.id)
+                                                    lyricsOffsetMs = 0L
+                                                }
+                                                .padding(horizontal = 6.dp, vertical = 4.dp)
+                                        ) {
+                                            Text(
+                                                text = "Reset",
+                                                color = Color(0xFFFF8A80),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    }
+
+                                    // Close button
                                     Icon(
                                         imageVector = Icons.Default.Close,
-                                        contentDescription = "Close Lyrics",
-                                        tint = Color.White.copy(alpha = 0.85f),
-                                        modifier = Modifier.size(16.dp)
+                                        contentDescription = "Close Tuner",
+                                        tint = Color.Gray,
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clickable { showSyncTuner = false }
                                     )
                                 }
                             }
                         }
+
+                        // Maintain vertical alignment balance with the artwork carousel's bottom spacing
+                        Spacer(modifier = Modifier.height(32.dp))
                     }
                 }
             } else {
@@ -1777,356 +1834,6 @@ fun MusicPlayerScreen(
         com.videoguard.app.ui.components.EqualizerBottomSheet(onDismiss = { showEqualizerSheet = false })
     }
 
-    // Spotify-Style Lyrics Settings & Synchronization Bottom Sheet
-    if (showLyricsSettingsSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showLyricsSettingsSheet = false },
-            containerColor = Color(0xFF13141F),
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 22.dp)
-                    .padding(bottom = 32.dp)
-            ) {
-                // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Lyrics Settings",
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "${track.title} • ${track.artist.ifBlank { track.channelName }}",
-                            color = Color.White.copy(alpha = 0.60f),
-                            fontSize = 12.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    IconButton(
-                        onClick = { showLyricsSettingsSheet = false },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = Color.Gray,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Source & Confidence Card
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color.White.copy(alpha = 0.05f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "Lyrics Provider",
-                                color = Color.White.copy(alpha = 0.50f),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = lyricsResult?.source ?: "LRCLIB",
-                                color = Color.White,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-
-                        val isRealSynced = lyricsResult?.isSynced == true
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isRealSynced) Color(0xFF1DB954).copy(alpha = 0.18f) else Color(0xFFFFB300).copy(alpha = 0.18f),
-                            border = BorderStroke(1.dp, if (isRealSynced) Color(0xFF1DB954).copy(alpha = 0.45f) else Color(0xFFFFB300).copy(alpha = 0.45f))
-                        ) {
-                            Text(
-                                text = if (isRealSynced) "Real-time Synced" else "Estimated Pacing",
-                                color = if (isRealSynced) Color(0xFF1DB954) else Color(0xFFFFB300),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Synchronization Timing Tuner
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = Color.White.copy(alpha = 0.05f),
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Sync Timing Offset",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-
-                            // Offset Badge
-                            val offsetFormatted = if (lyricsOffsetMs == 0L) {
-                                "0.0s (In Sync)"
-                            } else {
-                                String.format(java.util.Locale.US, "%+.1fs", lyricsOffsetMs / 1000.0)
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (lyricsOffsetMs == 0L) Color(0xFF1DB954).copy(alpha = 0.18f) else Color(0xFFFFB300).copy(alpha = 0.18f)
-                            ) {
-                                Text(
-                                    text = offsetFormatted,
-                                    color = if (lyricsOffsetMs == 0L) Color(0xFF1DB954) else Color(0xFFFFB300),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        // Stepper Buttons
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            TunerButton("-0.5s", modifier = Modifier.weight(1f)) {
-                                lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, -500L)
-                            }
-                            TunerButton("-0.1s", modifier = Modifier.weight(1f)) {
-                                lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, -100L)
-                            }
-                            TunerButton("+0.1s", modifier = Modifier.weight(1f)) {
-                                lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, 100L)
-                            }
-                            TunerButton("+0.5s", modifier = Modifier.weight(1f)) {
-                                lyricsOffsetMs = com.videoguard.app.data.LyricsOffsetManager.adjustOffsetMs(track.id, 500L)
-                            }
-                        }
-
-                        if (lyricsOffsetMs != 0L) {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            TextButton(
-                                onClick = {
-                                    com.videoguard.app.data.LyricsOffsetManager.resetOffset(track.id)
-                                    lyricsOffsetMs = 0L
-                                },
-                                modifier = Modifier.align(Alignment.CenterHorizontally)
-                            ) {
-                                Text("Reset Timing to 0.0s", color = Color(0xFFFF8A80), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Actions List: Search, Add Custom, Copy
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Force plain view switch
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { forcePlainLyricsView = !forcePlainLyricsView }
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Force Plain Lyrics View", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            Text("Turn off auto-scrolling to read lyrics statically", color = Color.White.copy(alpha = 0.50f), fontSize = 11.sp)
-                        }
-                        Switch(
-                            checked = forcePlainLyricsView,
-                            onCheckedChange = { forcePlainLyricsView = it },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = Color(0xFF3EA6FF)
-                            )
-                        )
-                    }
-
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
-
-                    // Search Alternative Lyrics
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                showLyricsSettingsSheet = false
-                                val bestArtist = com.videoguard.app.data.LyricsEngine.extractBestArtist(
-                                    title = track.title,
-                                    artist = track.artist.ifBlank { track.channelName },
-                                    description = track.description
-                                )
-                                val cleanTitle = com.videoguard.app.data.LyricsEngine.cleanTrackNameRaw(track.title).ifBlank { track.title }
-                                customLyricsQuery = if (bestArtist.isNotBlank()) "$cleanTitle $bestArtist".trim() else cleanTitle
-                                showWrongLyricsDialog = true
-                                scope.launch {
-                                    isSearchingCustomLyrics = true
-                                    customLyricsResults = com.videoguard.app.data.LyricsOffsetManager.searchAlternativeLyrics(customLyricsQuery)
-                                    isSearchingCustomLyrics = false
-                                }
-                            }
-                            .padding(horizontal = 8.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF3EA6FF), modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Search / Fix Different Lyrics", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
-
-                    // Add Custom Lyrics
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                showLyricsSettingsSheet = false
-                                customLyricsInputText = ""
-                                showAddLyricsDialog = true
-                            }
-                            .padding(horizontal = 8.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = Color(0xFFC084FC), modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Add / Paste Custom Lyrics", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
-
-                    // Copy to clipboard
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                val ok = com.videoguard.app.data.LyricsOffsetManager.copyLyricsToClipboard(
-                                    context = context,
-                                    lyrics = lyricsResult,
-                                    trackTitle = track.title,
-                                    artist = track.artist.ifBlank { track.channelName }
-                                )
-                                if (ok) {
-                                    android.widget.Toast.makeText(context, "Lyrics copied to clipboard!", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                                showLyricsSettingsSheet = false
-                            }
-                            .padding(horizontal = 8.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = null, tint = Color(0xFFAAAAAA), modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text("Copy Lyrics to Clipboard", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-            }
-        }
-    }
-
-    // Custom Lyrics Input Dialog (Paste LRC or Plain Text)
-    if (showAddLyricsDialog) {
-        AlertDialog(
-            onDismissRequest = { showAddLyricsDialog = false },
-            containerColor = Color(0xFF161722),
-            title = {
-                Text("Add Custom Lyrics", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = "Paste plain lyrics or LRC format with [mm:ss.xx] timestamps for real-time synchronization.",
-                        color = Color.White.copy(alpha = 0.65f),
-                        fontSize = 12.sp,
-                        lineHeight = 16.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = customLyricsInputText,
-                        onValueChange = { customLyricsInputText = it },
-                        placeholder = { Text("Paste lyrics here...", color = Color.Gray, fontSize = 13.sp) },
-                        minLines = 6,
-                        maxLines = 10,
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            focusedBorderColor = Color(0xFF3EA6FF),
-                            unfocusedBorderColor = Color(0xFF444444)
-                        )
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (customLyricsInputText.isNotBlank()) {
-                            val durSec = duration.toInt().coerceAtLeast(0)
-                            val customRes = com.videoguard.app.data.LyricsEngine.saveUserCustomLyrics(
-                                context = context,
-                                videoId = track.id,
-                                rawText = customLyricsInputText,
-                                durationSeconds = durSec
-                            )
-                            lyricsResult = customRes
-                            showAddLyricsDialog = false
-                            android.widget.Toast.makeText(context, "Custom lyrics saved and synchronized!", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3EA6FF))
-                ) {
-                    Text("Save & Sync", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddLyricsDialog = false }) {
-                    Text("Cancel", color = Color.Gray)
-                }
-            }
-        )
-    }
-
     if (showWrongLyricsDialog) {
         ModalBottomSheet(
             onDismissRequest = {
@@ -2269,24 +1976,21 @@ private fun TabPill(
 }
 
 @Composable
-private fun TunerButton(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Surface(
-        shape = RoundedCornerShape(10.dp),
-        color = Color.White.copy(alpha = 0.10f),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-        modifier = modifier.clickable(onClick = onClick)
+private fun TunerButton(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.White.copy(alpha = 0.12f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 7.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier.padding(vertical = 8.dp)
-        ) {
-            Text(
-                text = label,
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
+        Text(
+            text = label,
+            color = Color.White,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
