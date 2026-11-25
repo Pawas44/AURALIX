@@ -394,7 +394,6 @@ struct PlaylistDetailView: View {
                 }
             }
         }
-    }
 
     private func refreshVideos() async {
         // 1. If it's an album (starts with MPREb_, OLAK5uy_, or album_), use AlbumDataRepository

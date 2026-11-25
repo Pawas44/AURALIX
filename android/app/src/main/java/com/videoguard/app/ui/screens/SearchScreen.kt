@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material3.*
@@ -422,13 +423,116 @@ fun SearchScreen(
                 ) {
                     if (isMusic) {
                         // YouTube Music search results
-                        items(searchResults, key = { "music_${it.id}" }) { track ->
+                        // 1. Top Result Card (if on All or Songs)
+                        if (searchResults.isNotEmpty() && (selectedCategory == "All" || selectedCategory == "Songs")) {
+                            val topTrack = searchResults.first()
+                            val topArtist = topTrack.artist.ifBlank { topTrack.channelName }
+                            item(key = "music_top_result_header") {
+                                Text(
+                                    text = "TOP RESULT",
+                                    color = Color(0xFFAAAAAA),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                )
+                            }
+                            item(key = "music_top_result_card") {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 4.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color.White.copy(alpha = 0.08f))
+                                        .clickable {
+                                            if (topTrack.category == "Album" || topTrack.id.startsWith("OLAK5uy_") || topTrack.id.startsWith("album_") || topTrack.id.startsWith("MPREb_") || topTrack.views.equals("Album", ignoreCase = true)) {
+                                                val resolvedCover = com.videoguard.app.data.AlbumArtworkResolver.resolveArtwork(
+                                                    albumId = topTrack.id,
+                                                    title = topTrack.title,
+                                                    artist = topArtist,
+                                                    primaryUrl = topTrack.thumbnailUrl
+                                                )
+                                                val album = com.videoguard.app.data.AlbumItem(
+                                                    id = topTrack.id,
+                                                    title = topTrack.title,
+                                                    artist = topArtist,
+                                                    coverUrl = resolvedCover.ifBlank { topTrack.thumbnailUrl },
+                                                    releaseType = "Album"
+                                                )
+                                                onPlaylistClick(com.videoguard.app.data.AlbumDataRepository.toUserPlaylist(album))
+                                            } else {
+                                                onVideoSelected(topTrack, searchResults)
+                                            }
+                                        }
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AsyncImage(
+                                        model = com.videoguard.app.data.ArtworkUrlHelper.getHighResArtworkUrl(topTrack.thumbnailUrl, topTrack.id),
+                                        contentDescription = topTrack.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                    )
+                                    Spacer(modifier = Modifier.width(14.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = topTrack.title,
+                                            color = Color.White,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.height(3.dp))
+                                        Text(
+                                            text = "Song • $topArtist • ${topTrack.duration}",
+                                            color = Color(0xFFAAAAAA),
+                                            fontSize = 12.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { onVideoSelected(topTrack, searchResults) },
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.White)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.PlayArrow,
+                                            contentDescription = "Play",
+                                            tint = Color.Black,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            if (searchResults.size > 1) {
+                                item(key = "music_songs_header") {
+                                    Text(
+                                        text = "SONGS",
+                                        color = Color(0xFFAAAAAA),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.8.sp,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        val remainingTracks = if (searchResults.size > 1 && (selectedCategory == "All" || selectedCategory == "Songs")) searchResults.drop(1) else searchResults
+
+                        items(remainingTracks, key = { "music_${it.id}" }) { track ->
+                            val artistName = track.artist.ifBlank { track.channelName }
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
                                         if (track.category == "Album" || track.id.startsWith("OLAK5uy_") || track.id.startsWith("album_") || track.id.startsWith("MPREb_") || track.views.equals("Album", ignoreCase = true)) {
-                                            val artistName = track.artist.ifBlank { track.channelName }
                                             val resolvedCover = com.videoguard.app.data.AlbumArtworkResolver.resolveArtwork(
                                                 albumId = track.id,
                                                 title = track.title,
@@ -444,18 +548,18 @@ fun SearchScreen(
                                             )
                                             onPlaylistClick(com.videoguard.app.data.AlbumDataRepository.toUserPlaylist(album))
                                         } else {
-                                            onVideoSelected(track, listOf(track))
+                                            onVideoSelected(track, searchResults)
                                         }
                                     }
-                                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 AsyncImage(
-                                    model = track.thumbnailUrl,
+                                    model = com.videoguard.app.data.ArtworkUrlHelper.getHighResArtworkUrl(track.thumbnailUrl, track.id),
                                     contentDescription = track.title,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
-                                        .size(56.dp)
+                                        .size(52.dp)
                                         .clip(RoundedCornerShape(6.dp))
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
@@ -470,7 +574,7 @@ fun SearchScreen(
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
-                                        text = "${track.channelName} • ${track.duration}",
+                                        text = "Song • $artistName • ${track.duration}",
                                         color = Color(0xFFAAAAAA),
                                         fontSize = 12.sp,
                                         maxLines = 1,

@@ -193,73 +193,220 @@ struct SearchScreenView: View {
                                     .foregroundColor(AppTheme.youTubeTextSecondary)
                                     .padding(.top, 40)
                             } else {
-                                ForEach(Array(filteredSongs.enumerated()), id: \.element.id) { index, item in
-                                    if item.category == "Channel" {
-                                        Button(action: { onChannelClick(item) }) {
-                                            HStack(spacing: 14) {
-                                                AsyncImage(url: URL(string: item.channelAvatarUrl)) { img in
-                                                    img.resizable().aspectRatio(contentMode: .fill)
-                                                } placeholder: {
-                                                    Circle().fill(Color.gray.opacity(0.4))
-                                                }
-                                                .frame(width: 60, height: 60)
-                                                .clipShape(Circle())
+                                if isMusic {
+                                    // YouTube Music Mode Search Results
+                                    // 1. Top Result Card
+                                    if selectedCategory == "All", let topMatch = filteredSongs.first {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text("TOP RESULT")
+                                                .font(.system(size: 11, weight: .bold))
+                                                .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                                .tracking(0.8)
+                                                .padding(.horizontal, 14)
 
-                                                VStack(alignment: .leading, spacing: 4) {
-                                                    Text(item.channelName)
-                                                        .font(.system(size: 16, weight: .bold))
-                                                        .foregroundColor(.white)
-                                                    Text(item.subscriberCount)
+                                            Button(action: { onVideoSelected(topMatch, filteredSongs) }) {
+                                                let artistName = !topMatch.artist.isEmpty ? topMatch.artist : topMatch.channelName
+                                                HStack(spacing: 14) {
+                                                    AsyncImage(url: URL(string: topMatch.thumbnailUrl)) { img in
+                                                        img.resizable().aspectRatio(contentMode: .fill)
+                                                    } placeholder: {
+                                                        Rectangle().fill(AppTheme.ytMusicCardBg)
+                                                    }
+                                                    .frame(width: 64, height: 64)
+                                                    .cornerRadius(8)
+                                                    .clipped()
+
+                                                    VStack(alignment: .leading, spacing: 4) {
+                                                        Text(topMatch.title)
+                                                            .font(.system(size: 15, weight: .bold))
+                                                            .foregroundColor(.white)
+                                                            .lineLimit(1)
+                                                        Text("Song • \(artistName) • \(topMatch.duration)")
+                                                            .font(.system(size: 12))
+                                                            .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                                            .lineLimit(1)
+                                                    }
+
+                                                    Spacer()
+
+                                                    ZStack {
+                                                        Circle()
+                                                            .fill(Color.white)
+                                                            .frame(width: 38, height: 38)
+                                                        Image(systemName: "play.fill")
+                                                            .font(.system(size: 15))
+                                                            .foregroundColor(.black)
+                                                            .offset(x: 1)
+                                                    }
+                                                }
+                                                .padding(12)
+                                                .background(Color.white.opacity(0.08))
+                                                .cornerRadius(12)
+                                                .padding(.horizontal, 14)
+                                            }
+                                        }
+                                        .padding(.bottom, 6)
+                                    }
+
+                                    // 2. Songs Section Header
+                                    if selectedCategory == "All" && filteredSongs.count > 1 {
+                                        HStack {
+                                            Text("SONGS")
+                                                .font(.system(size: 11, weight: .bold))
+                                                .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                                .tracking(0.8)
+                                            Spacer()
+                                        }
+                                        .padding(.horizontal, 14)
+                                        .padding(.top, 6)
+                                    }
+
+                                    // 3. Songs Rows
+                                    let songsToDisplay = (selectedCategory == "All" && filteredSongs.count > 1) ? Array(filteredSongs.dropFirst()) : filteredSongs
+
+                                    ForEach(Array(songsToDisplay.enumerated()), id: \.element.id) { index, item in
+                                        if item.category == "Channel" {
+                                            Button(action: { onChannelClick(item) }) {
+                                                HStack(spacing: 14) {
+                                                    AsyncImage(url: URL(string: item.channelAvatarUrl)) { img in
+                                                        img.resizable().aspectRatio(contentMode: .fill)
+                                                    } placeholder: {
+                                                        Circle().fill(Color.gray.opacity(0.4))
+                                                    }
+                                                    .frame(width: 52, height: 52)
+                                                    .clipShape(Circle())
+
+                                                    VStack(alignment: .leading, spacing: 3) {
+                                                        Text(item.channelName)
+                                                            .font(.system(size: 15, weight: .semibold))
+                                                            .foregroundColor(.white)
+                                                        Text("Artist • \(item.subscriberCount)")
+                                                            .font(.system(size: 12))
+                                                            .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                                    }
+                                                    Spacer()
+                                                    Image(systemName: "chevron.right")
                                                         .font(.system(size: 13))
-                                                        .foregroundColor(AppTheme.youTubeTextSecondary)
+                                                        .foregroundColor(AppTheme.ytMusicTextSecondary)
                                                 }
-                                                Spacer()
-                                                Image(systemName: "chevron.right")
-                                                    .font(.system(size: 14))
-                                                    .foregroundColor(AppTheme.youTubeTextSecondary)
+                                                .padding(.horizontal, 14)
+                                                .padding(.vertical, 6)
                                             }
-                                            .padding(.horizontal, 14)
-                                            .padding(.vertical, 6)
-                                        }
-                                    } else {
-                                        Button(action: { onVideoSelected(item, filteredSongs) }) {
-                                            HStack(spacing: 12) {
-                                                AsyncImage(url: URL(string: item.thumbnailUrl)) { img in
-                                                    img.resizable().aspectRatio(16/9, contentMode: .fill)
-                                                } placeholder: {
-                                                    Rectangle().fill(AppTheme.youTubeCardBg)
+                                        } else {
+                                            Button(action: { onVideoSelected(item, filteredSongs) }) {
+                                                let artistName = !item.artist.isEmpty ? item.artist : item.channelName
+                                                HStack(spacing: 12) {
+                                                    AsyncImage(url: URL(string: item.thumbnailUrl)) { img in
+                                                        img.resizable().aspectRatio(contentMode: .fill)
+                                                    } placeholder: {
+                                                        Rectangle().fill(AppTheme.ytMusicCardBg)
+                                                    }
+                                                    .frame(width: 52, height: 52)
+                                                    .cornerRadius(6)
+                                                    .clipped()
+
+                                                    VStack(alignment: .leading, spacing: 3) {
+                                                        Text(item.title)
+                                                            .font(.system(size: 14, weight: .medium))
+                                                            .foregroundColor(.white)
+                                                            .lineLimit(1)
+                                                            .multilineTextAlignment(.leading)
+
+                                                        Text("Song • \(artistName) • \(item.duration)")
+                                                            .font(.system(size: 12))
+                                                            .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                                            .lineLimit(1)
+                                                    }
+
+                                                    Spacer()
+
+                                                    Button(action: { selectedVideoForPlaylist = item }) {
+                                                        Image(systemName: "ellipsis")
+                                                            .font(.system(size: 16))
+                                                            .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                                            .padding(8)
+                                                    }
                                                 }
-                                                .frame(width: 120, height: 68)
-                                                .cornerRadius(8)
-                                                .clipped()
-
-                                                VStack(alignment: .leading, spacing: 4) {
-                                                    Text(item.title)
-                                                        .font(.system(size: 14, weight: .medium))
-                                                        .foregroundColor(.white)
-                                                        .lineLimit(2)
-                                                        .multilineTextAlignment(.leading)
-
-                                                    Text("\(item.artist?.isEmpty == false ? item.artist! : item.channelName) • \(item.duration)")
-                                                        .font(.system(size: 12))
-                                                        .foregroundColor(AppTheme.youTubeTextSecondary)
-                                                        .lineLimit(1)
-                                                }
-                                                Spacer()
-
-                                                Button(action: { selectedVideoForPlaylist = item }) {
-                                                    Image(systemName: "plus.circle")
-                                                        .font(.system(size: 18))
-                                                        .foregroundColor(AppTheme.youTubeTextSecondary)
-                                                        .padding(6)
+                                                .padding(.horizontal, 14)
+                                                .padding(.vertical, 6)
+                                            }
+                                            .onAppear {
+                                                if index == songsToDisplay.count - 3 {
+                                                    loadMoreSearchResults()
                                                 }
                                             }
-                                            .padding(.horizontal, 14)
-                                            .padding(.vertical, 4)
                                         }
-                                        .onAppear {
-                                            if index == filteredSongs.count - 3 {
-                                                loadMoreSearchResults()
+                                    }
+                                } else {
+                                    // Regular YouTube Video Mode Search Results
+                                    ForEach(Array(filteredSongs.enumerated()), id: \.element.id) { index, item in
+                                        if item.category == "Channel" {
+                                            Button(action: { onChannelClick(item) }) {
+                                                HStack(spacing: 14) {
+                                                    AsyncImage(url: URL(string: item.channelAvatarUrl)) { img in
+                                                        img.resizable().aspectRatio(contentMode: .fill)
+                                                    } placeholder: {
+                                                        Circle().fill(Color.gray.opacity(0.4))
+                                                    }
+                                                    .frame(width: 60, height: 60)
+                                                    .clipShape(Circle())
+
+                                                    VStack(alignment: .leading, spacing: 4) {
+                                                        Text(item.channelName)
+                                                            .font(.system(size: 16, weight: .bold))
+                                                            .foregroundColor(.white)
+                                                        Text(item.subscriberCount)
+                                                            .font(.system(size: 13))
+                                                            .foregroundColor(AppTheme.youTubeTextSecondary)
+                                                    }
+                                                    Spacer()
+                                                    Image(systemName: "chevron.right")
+                                                        .font(.system(size: 14))
+                                                        .foregroundColor(AppTheme.youTubeTextSecondary)
+                                                }
+                                                .padding(.horizontal, 14)
+                                                .padding(.vertical, 6)
+                                            }
+                                        } else {
+                                            Button(action: { onVideoSelected(item, filteredSongs) }) {
+                                                HStack(spacing: 12) {
+                                                    AsyncImage(url: URL(string: item.thumbnailUrl)) { img in
+                                                        img.resizable().aspectRatio(16/9, contentMode: .fill)
+                                                    } placeholder: {
+                                                        Rectangle().fill(AppTheme.youTubeCardBg)
+                                                    }
+                                                    .frame(width: 120, height: 68)
+                                                    .cornerRadius(8)
+                                                    .clipped()
+
+                                                    VStack(alignment: .leading, spacing: 4) {
+                                                        Text(item.title)
+                                                            .font(.system(size: 14, weight: .medium))
+                                                            .foregroundColor(.white)
+                                                            .lineLimit(2)
+                                                            .multilineTextAlignment(.leading)
+
+                                                        Text("\(!item.artist.isEmpty ? item.artist : item.channelName) • \(item.duration)")
+                                                            .font(.system(size: 12))
+                                                            .foregroundColor(AppTheme.youTubeTextSecondary)
+                                                            .lineLimit(1)
+                                                    }
+                                                    Spacer()
+
+                                                    Button(action: { selectedVideoForPlaylist = item }) {
+                                                        Image(systemName: "plus.circle")
+                                                            .font(.system(size: 18))
+                                                            .foregroundColor(AppTheme.youTubeTextSecondary)
+                                                            .padding(6)
+                                                    }
+                                                }
+                                                .padding(.horizontal, 14)
+                                                .padding(.vertical, 4)
+                                            }
+                                            .onAppear {
+                                                if index == filteredSongs.count - 3 {
+                                                    loadMoreSearchResults()
+                                                }
                                             }
                                         }
                                     }
