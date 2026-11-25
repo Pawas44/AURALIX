@@ -47,6 +47,24 @@
 		VG000038 /* ListenTogetherEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00039 /* ListenTogetherEngine.swift */; };
 		VG000039 /* ListenTogetherSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00040 /* ListenTogetherSheet.swift */; };
 		VG000040 /* FloatingReactionsOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00041 /* FloatingReactionsOverlay.swift */; };
+		VG000041 /* AlbumItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00042 /* AlbumItem.swift */; };
+		VG000042 /* ArtworkUrlHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00043 /* ArtworkUrlHelper.swift */; };
+		VG000043 /* SongTitleNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00044 /* SongTitleNormalizer.swift */; };
+		VG000044 /* SongVersionClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00045 /* SongVersionClassifier.swift */; };
+		VG000045 /* SongMetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00046 /* SongMetadataExtractor.swift */; };
+		VG000046 /* SongDeduplicationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00047 /* SongDeduplicationEngine.swift */; };
+		VG000047 /* AlbumArtworkResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00048 /* AlbumArtworkResolver.swift */; };
+		VG000048 /* AlbumDataRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00049 /* AlbumDataRepository.swift */; };
+		VG000049 /* UserTasteProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00050 /* UserTasteProfile.swift */; };
+		VG000050 /* SongSimilarityEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00051 /* SongSimilarityEngine.swift */; };
+		VG000051 /* RecommendationRanker.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00052 /* RecommendationRanker.swift */; };
+		VG000052 /* DailyMixGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00053 /* DailyMixGenerator.swift */; };
+		VG000053 /* DiscoverWeeklyGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00054 /* DiscoverWeeklyGenerator.swift */; };
+		VG000054 /* RecommendationCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00055 /* RecommendationCache.swift */; };
+		VG000055 /* RecommendationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00056 /* RecommendationEngine.swift */; };
+		VG000056 /* TransliterationEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00057 /* TransliterationEngine.swift */; };
+		VG000057 /* PlaylistShareEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00058 /* PlaylistShareEngine.swift */; };
+		VG000058 /* PlaylistOptionsBottomSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = VGF00059 /* PlaylistOptionsBottomSheet.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -92,6 +110,24 @@
 		VGF00039 /* ListenTogetherEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenTogetherEngine.swift; sourceTree = "<group>"; };
 		VGF00040 /* ListenTogetherSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenTogetherSheet.swift; sourceTree = "<group>"; };
 		VGF00041 /* FloatingReactionsOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingReactionsOverlay.swift; sourceTree = "<group>"; };
+		VGF00042 /* AlbumItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumItem.swift; sourceTree = "<group>"; };
+		VGF00043 /* ArtworkUrlHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtworkUrlHelper.swift; sourceTree = "<group>"; };
+		VGF00044 /* SongTitleNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongTitleNormalizer.swift; sourceTree = "<group>"; };
+		VGF00045 /* SongVersionClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongVersionClassifier.swift; sourceTree = "<group>"; };
+		VGF00046 /* SongMetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongMetadataExtractor.swift; sourceTree = "<group>"; };
+		VGF00047 /* SongDeduplicationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongDeduplicationEngine.swift; sourceTree = "<group>"; };
+		VGF00048 /* AlbumArtworkResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumArtworkResolver.swift; sourceTree = "<group>"; };
+		VGF00049 /* AlbumDataRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumDataRepository.swift; sourceTree = "<group>"; };
+		VGF00050 /* UserTasteProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserTasteProfile.swift; sourceTree = "<group>"; };
+		VGF00051 /* SongSimilarityEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SongSimilarityEngine.swift; sourceTree = "<group>"; };
+		VGF00052 /* RecommendationRanker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecommendationRanker.swift; sourceTree = "<group>"; };
+		VGF00053 /* DailyMixGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyMixGenerator.swift; sourceTree = "<group>"; };
+		VGF00054 /* DiscoverWeeklyGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoverWeeklyGenerator.swift; sourceTree = "<group>"; };
+		VGF00055 /* RecommendationCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecommendationCache.swift; sourceTree = "<group>"; };
+		VGF00056 /* RecommendationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecommendationEngine.swift; sourceTree = "<group>"; };
+		VGF00057 /* TransliterationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransliterationEngine.swift; sourceTree = "<group>"; };
+		VGF00058 /* PlaylistShareEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistShareEngine.swift; sourceTree = "<group>"; };
+		VGF00059 /* PlaylistOptionsBottomSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistOptionsBottomSheet.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -135,6 +171,7 @@
 				VGF00002 /* VideoItem.swift */,
 				VGF00003 /* UserAccount.swift */,
 				VGF00004 /* UserPlaylist.swift */,
+				VGF00042 /* AlbumItem.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -157,6 +194,22 @@
 				VGF00033 /* YouTubeSyncEngine.swift */,
 				VGF00038 /* LyricsEngine.swift */,
 				VGF00039 /* ListenTogetherEngine.swift */,
+				VGF00043 /* ArtworkUrlHelper.swift */,
+				VGF00044 /* SongTitleNormalizer.swift */,
+				VGF00045 /* SongVersionClassifier.swift */,
+				VGF00046 /* SongMetadataExtractor.swift */,
+				VGF00047 /* SongDeduplicationEngine.swift */,
+				VGF00048 /* AlbumArtworkResolver.swift */,
+				VGF00049 /* AlbumDataRepository.swift */,
+				VGF00050 /* UserTasteProfile.swift */,
+				VGF00051 /* SongSimilarityEngine.swift */,
+				VGF00052 /* RecommendationRanker.swift */,
+				VGF00053 /* DailyMixGenerator.swift */,
+				VGF00054 /* DiscoverWeeklyGenerator.swift */,
+				VGF00055 /* RecommendationCache.swift */,
+				VGF00056 /* RecommendationEngine.swift */,
+				VGF00057 /* TransliterationEngine.swift */,
+				VGF00058 /* PlaylistShareEngine.swift */,
 			);
 			path = Data;
 			sourceTree = "<group>";
@@ -195,6 +248,7 @@
 				VGF00036 /* GoogleAuthSheet.swift */,
 				VGF00040 /* ListenTogetherSheet.swift */,
 				VGF00041 /* FloatingReactionsOverlay.swift */,
+				VGF00059 /* PlaylistOptionsBottomSheet.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -333,6 +387,24 @@
 				VG000038 /* ListenTogetherEngine.swift in Sources */,
 				VG000039 /* ListenTogetherSheet.swift in Sources */,
 				VG000040 /* FloatingReactionsOverlay.swift in Sources */,
+				VG000041 /* AlbumItem.swift in Sources */,
+				VG000042 /* ArtworkUrlHelper.swift in Sources */,
+				VG000043 /* SongTitleNormalizer.swift in Sources */,
+				VG000044 /* SongVersionClassifier.swift in Sources */,
+				VG000045 /* SongMetadataExtractor.swift in Sources */,
+				VG000046 /* SongDeduplicationEngine.swift in Sources */,
+				VG000047 /* AlbumArtworkResolver.swift in Sources */,
+				VG000048 /* AlbumDataRepository.swift in Sources */,
+				VG000049 /* UserTasteProfile.swift in Sources */,
+				VG000050 /* SongSimilarityEngine.swift in Sources */,
+				VG000051 /* RecommendationRanker.swift in Sources */,
+				VG000052 /* DailyMixGenerator.swift in Sources */,
+				VG000053 /* DiscoverWeeklyGenerator.swift in Sources */,
+				VG000054 /* RecommendationCache.swift in Sources */,
+				VG000055 /* RecommendationEngine.swift in Sources */,
+				VG000056 /* TransliterationEngine.swift in Sources */,
+				VG000057 /* PlaylistShareEngine.swift in Sources */,
+				VG000058 /* PlaylistOptionsBottomSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

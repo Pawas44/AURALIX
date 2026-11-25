@@ -77,6 +77,10 @@ struct MainView: View {
                             onChannelClick: { video in
                                 activeChannelVideo = video
                                 isSearchActive = false
+                            },
+                            onPlaylistClick: { pl in
+                                activePlaylist = pl
+                                isSearchActive = false
                             }
                         )
                     } else if isJamActive {
@@ -168,6 +172,9 @@ struct MainView: View {
                                     onTrackSelected: { track, queue in
                                         playbackService.playTrack(track, queue: queue)
                                         isPlayerExpanded = true
+                                    },
+                                    onPlaylistClick: { pl in
+                                        activePlaylist = pl
                                     },
                                     scrollToTopTrigger: homeScrollToTopTrigger
                                 )

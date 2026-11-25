@@ -54,7 +54,7 @@ struct MusicLibraryView: View {
                 // Category Chips
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(["All", "Playlists", "Liked Songs", "Recently Played", "Downloads"], id: \.self) { chip in
+                        ForEach(["All", "Playlists", "Albums", "Mixtapes", "Liked Songs", "Recently Played", "Downloads"], id: \.self) { chip in
                             let isSelected = selectedFilter == chip
                             Button(action: { selectedFilter = chip }) {
                                 Text(chip)
@@ -162,6 +162,58 @@ struct MusicLibraryView: View {
                         )
                     }
                     .padding(.horizontal, 16)
+                }
+
+                // 2b. Albums & Mixtapes Section
+                if selectedFilter == "All" || selectedFilter == "Albums" || selectedFilter == "Mixtapes" {
+                    let albums = AlbumDataRepository.shared.getAllAlbums()
+                    if !albums.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Albums & Mixtapes")
+                                .font(.system(size: 17, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 12) {
+                                    ForEach(albums) { album in
+                                        Button(action: {
+                                            let pl = AlbumDataRepository.shared.toUserPlaylist(album: album)
+                                            onPlaylistClick(pl)
+                                        }) {
+                                            VStack(alignment: .leading, spacing: 6) {
+                                                AsyncImage(url: URL(string: album.artworkUrl)) { img in
+                                                    img.resizable().aspectRatio(contentMode: .fill)
+                                                } placeholder: {
+                                                    Rectangle().fill(Color(hex: 0x1E1E24))
+                                                }
+                                                .frame(width: 120, height: 120)
+                                                .cornerRadius(10)
+                                                .clipped()
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 10)
+                                                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                                                )
+
+                                                Text(album.title)
+                                                    .font(.system(size: 12, weight: .semibold))
+                                                    .foregroundColor(.white)
+                                                    .lineLimit(1)
+                                                    .frame(width: 120, alignment: .leading)
+
+                                                Text("\(album.artist) • \(album.year)")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(Color(hex: 0x888888))
+                                                    .lineLimit(1)
+                                                    .frame(width: 120, alignment: .leading)
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                            }
+                        }
+                    }
                 }
 
                 // 3. Recently Played Carousel
@@ -371,27 +423,28 @@ struct MusicLibraryView: View {
             }
             .padding(.bottom, 90)
         }
-        .confirmationDialog(
-            selectedPlaylistForOptions?.title ?? "Playlist Options",
-            isPresented: Binding(
-                get: { selectedPlaylistForOptions != nil },
-                set: { if !$0 { selectedPlaylistForOptions = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            if let pl = selectedPlaylistForOptions {
-                Button("Clear All Songs", role: .destructive) {
+        .sheet(item: $selectedPlaylistForOptions) { pl in
+            PlaylistOptionsBottomSheet(
+                playlist: pl,
+                onDownload: {
+                    for v in pl.videos {
+                        userData.startDownload(video: v)
+                    }
+                },
+                onClear: {
                     userData.clearPlaylist(playlistId: pl.id)
-                    selectedPlaylistForOptions = nil
-                }
-                Button("Delete Playlist", role: .destructive) {
+                },
+                onDelete: {
                     userData.deletePlaylist(playlistId: pl.id)
+                },
+                onShare: {
+                    PlaylistShareEngine.shared.sharePlaylist(playlist: pl)
+                },
+                onDismiss: {
                     selectedPlaylistForOptions = nil
                 }
-                Button("Cancel", role: .cancel) {
-                    selectedPlaylistForOptions = nil
-                }
-            }
+            )
+            .presentationDetents([.fraction(0.42), .medium])
         }
         .alert("New Playlist", isPresented: $showNewPlaylistAlert) {
             TextField("Playlist Title", text: $newPlaylistTitle)

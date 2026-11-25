@@ -741,30 +741,61 @@ private struct SyncedLyricsView: View {
     let scrubPosition: Double
     let onSeek: (Double) -> Void
 
+    @State private var showRomanized: Bool = false
+
+    private var hasRomanizableLines: Bool {
+        lyrics.lines.contains { $0.romanizedText != nil }
+    }
+
     var body: some View {
         let currentMs = (isUserScrubbing ? scrubPosition : currentTimeSeconds) * 1000.0
         let activeIdx = lyrics.isSynced ? (lyrics.lines.lastIndex(where: { $0.timestampMs <= currentMs }) ?? 0) : -1
 
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
-                    ForEach(0..<lyrics.lines.count, id: \.self) { idx in
-                        let line = lyrics.lines[idx]
-                        LyricsLineRow(
-                            line: line,
-                            isActive: idx == activeIdx && lyrics.isSynced,
-                            isSynced: lyrics.isSynced,
-                            onTap: { onSeek(line.timestampMs / 1000.0) }
-                        )
-                        .id(idx)
+        VStack(spacing: 0) {
+            // Romanization Toggle bar if applicable
+            if hasRomanizableLines {
+                HStack {
+                    Spacer()
+                    Button(action: { showRomanized.toggle() }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "character.book.closed")
+                                .font(.system(size: 11))
+                            Text(showRomanized ? "Show Original" : "Romanize / English")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .foregroundColor(showRomanized ? .black : .white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(showRomanized ? Color.white : Color.white.opacity(0.12))
+                        .clipShape(Capsule())
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
                 }
-                .padding(16)
             }
-            .onChange(of: activeIdx) { newIdx in
-                if newIdx >= 0 && lyrics.isSynced {
-                    withAnimation {
-                        proxy.scrollTo(max(0, newIdx - 1), anchor: .top)
+
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(0..<lyrics.lines.count, id: \.self) { idx in
+                            let line = lyrics.lines[idx]
+                            LyricsLineRow(
+                                line: line,
+                                showRomanized: showRomanized,
+                                isActive: idx == activeIdx && lyrics.isSynced,
+                                isSynced: lyrics.isSynced,
+                                onTap: { onSeek(line.timestampMs / 1000.0) }
+                            )
+                            .id(idx)
+                        }
+                    }
+                    .padding(16)
+                }
+                .onChange(of: activeIdx) { newIdx in
+                    if newIdx >= 0 && lyrics.isSynced {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                            proxy.scrollTo(max(0, newIdx - 1), anchor: .top)
+                        }
                     }
                 }
             }
@@ -774,21 +805,32 @@ private struct SyncedLyricsView: View {
 
 private struct LyricsLineRow: View {
     let line: LyricLine
+    let showRomanized: Bool
     let isActive: Bool
     let isSynced: Bool
     let onTap: () -> Void
 
     var body: some View {
-        Text(line.text)
-            .font(.system(size: isActive ? 18 : 15, weight: isActive ? .heavy : .regular))
-            .foregroundColor(isActive ? .white : Color(hex: 0x777777))
-            .lineSpacing(4)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                if isSynced {
-                    onTap()
-                }
+        VStack(alignment: .leading, spacing: 2) {
+            let primaryText = showRomanized && line.romanizedText != nil ? line.romanizedText! : line.text
+            Text(primaryText)
+                .font(.system(size: isActive ? 18 : 15, weight: isActive ? .heavy : .regular))
+                .foregroundColor(isActive ? .white : Color(hex: 0x777777))
+                .lineSpacing(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if showRomanized && line.romanizedText != nil {
+                Text(line.text)
+                    .font(.system(size: 11))
+                    .foregroundColor(isActive ? Color.white.opacity(0.6) : Color(hex: 0x555555))
+                    .lineLimit(1)
             }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isSynced {
+                onTap()
+            }
+        }
     }
 }

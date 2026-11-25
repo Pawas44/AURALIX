@@ -11,8 +11,11 @@ struct PlayerBottomSheet: View {
     @State private var showQualityPicker = false
     @State private var showSpeedPicker = false
     @State private var showSleepTimerPicker = false
+    @State private var showEqualizerPicker = false
     @State private var showStatsAlert = false
+    @State private var selectedEqualizerProfile = "Flat (Default)"
 
+    private let equalizerProfiles = ["Flat (Default)", "Bass Boost", "Vocal Clarity", "Acoustic", "Electronic / Dance", "Rock / Punchy"]
     private let qualities = ["Auto (1080p)", "1080p HD", "720p HD", "480p", "360p"]
     private let speeds: [Float] = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
     private let timerOptions: [(String, Int?)] = [
@@ -115,6 +118,29 @@ struct PlayerBottomSheet: View {
                         ) { showSleepTimerPicker = true }
 
                         SettingsActionRow(
+                            icon: "slider.vertical.3",
+                            title: "Equalizer & Sound Profile",
+                            subtitle: "Bass Boost, Vocal Clarity & Studio"
+                        ) { showEqualizerPicker = true }
+
+                        SettingsActionRow(
+                            icon: "square.and.arrow.up",
+                            title: "Share track",
+                            subtitle: "Send 1-click playable link"
+                        ) {
+                            if let track = playbackService.currentTrack {
+                                let shareUrl = "https://auralix.app/track/\(track.id)"
+                                let av = UIActivityViewController(activityItems: [shareUrl], applicationActivities: nil)
+                                if let root = UIApplication.shared.connectedScenes
+                                    .compactMap({ $0 as? UIWindowScene })
+                                    .flatMap({ $0.windows })
+                                    .first(where: { $0.isKeyWindow })?.rootViewController {
+                                    root.present(av, animated: true)
+                                }
+                            }
+                        }
+
+                        SettingsActionRow(
                             icon: "info.circle",
                             title: "Stats & video info",
                             subtitle: "Resolution, ID, codec & channel"
@@ -140,6 +166,14 @@ struct PlayerBottomSheet: View {
         .confirmationDialog("Sleep Timer", isPresented: $showSleepTimerPicker, titleVisibility: .visible) {
             ForEach(timerOptions, id: \.0) { opt in
                 Button(opt.0) { playbackService.setSleepTimer(minutes: opt.1) }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog("Equalizer & Sound Profile", isPresented: $showEqualizerPicker, titleVisibility: .visible) {
+            ForEach(equalizerProfiles, id: \.self) { prof in
+                Button(prof) {
+                    selectedEqualizerProfile = prof
+                }
             }
             Button("Cancel", role: .cancel) {}
         }

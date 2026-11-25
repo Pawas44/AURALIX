@@ -11,6 +11,7 @@ struct PlaylistDetailView: View {
     @State private var currentVideos: [VideoItem] = []
     @State private var isLoading = false
     @State private var showAddSongsSheet = false
+    @State private var showOptionsMenu = false
     @State private var addSongQuery = ""
     @State private var addSongResults: [VideoItem] = []
     @State private var isSearchingAdd = false
@@ -25,6 +26,7 @@ struct PlaylistDetailView: View {
         let accentColor = appMode == .youtube ? AppTheme.youTubeRed : AppTheme.ytMusicRedAccent
 
         VStack(spacing: 0) {
+            // Top Navigation Bar
             HStack(spacing: 12) {
                 Button(action: onBack) {
                     Image(systemName: "chevron.left")
@@ -39,6 +41,25 @@ struct PlaylistDetailView: View {
                     .lineLimit(1)
 
                 Spacer()
+
+                Button(action: {
+                    PlaylistShareEngine.shared.sharePlaylist(playlist: playlist)
+                }) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 17))
+                        .foregroundColor(.white)
+                        .padding(8)
+                }
+
+                Button(action: {
+                    showOptionsMenu = true
+                }) {
+                    Image(systemName: "ellipsis")
+                        .rotationEffect(.degrees(90))
+                        .font(.system(size: 17))
+                        .foregroundColor(.white)
+                        .padding(8)
+                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
@@ -48,7 +69,7 @@ struct PlaylistDetailView: View {
                     // Hero Header
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(spacing: 14) {
-                            let coverUrl = playlist.thumbnailUrl.isEmpty ? (currentVideos.first?.thumbnailUrl ?? "") : playlist.thumbnailUrl
+                            let coverUrl = playlist.customCoverUrl ?? (playlist.thumbnailUrl.isEmpty ? (currentVideos.first?.thumbnailUrl ?? "") : playlist.thumbnailUrl)
                             if !coverUrl.isEmpty {
                                 AsyncImage(url: URL(string: coverUrl)) { img in
                                     img.resizable().aspectRatio(contentMode: .fill)
@@ -61,10 +82,14 @@ struct PlaylistDetailView: View {
                             } else {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 10)
-                                        .fill(Color.white.opacity(0.08))
-                                    Image(systemName: playlist.iconType == "like" ? "hand.thumbsup.fill" : "music.note.list")
+                                        .fill(LinearGradient(
+                                            colors: [Color(hex: 0x4C1D95), Color(hex: 0x1E1B4B)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ))
+                                    Image(systemName: playlist.iconType == "like" ? "heart.fill" : "music.note.list")
                                         .font(.system(size: 36))
-                                        .foregroundColor(.white.opacity(0.7))
+                                        .foregroundColor(Color(hex: 0xC4B5FD))
                                 }
                                 .frame(width: 110, height: 110)
                             }
@@ -76,7 +101,7 @@ struct PlaylistDetailView: View {
                                 Text(playlist.description.isEmpty ? "Playlist" : playlist.description)
                                     .font(.system(size: 13))
                                     .foregroundColor(AppTheme.youTubeTextSecondary)
-                                Text("\(currentVideos.count) videos")
+                                Text("\(currentVideos.count) songs")
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundColor(AppTheme.youTubeTextSecondary)
                             }
@@ -121,18 +146,38 @@ struct PlaylistDetailView: View {
                             }
                         }
 
-                        Button(action: { showAddSongsSheet = true }) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "plus")
-                                Text("Add songs to this playlist")
-                                    .fontWeight(.semibold)
+                        HStack(spacing: 12) {
+                            Button(action: { showAddSongsSheet = true }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "plus")
+                                    Text("Add songs")
+                                        .fontWeight(.semibold)
+                                }
+                                .font(.system(size: 13))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 9)
+                                .background(Color.white.opacity(0.08))
+                                .cornerRadius(20)
                             }
-                            .font(.system(size: 13))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(Color.white.opacity(0.08))
-                            .cornerRadius(20)
+
+                            Button(action: {
+                                for v in currentVideos {
+                                    userData.startDownload(video: v)
+                                }
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.down.circle")
+                                    Text("Download all")
+                                        .fontWeight(.semibold)
+                                }
+                                .font(.system(size: 13))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 9)
+                                .background(Color.white.opacity(0.08))
+                                .cornerRadius(20)
+                            }
                         }
                     }
                     .padding(16)
@@ -147,7 +192,7 @@ struct PlaylistDetailView: View {
                     if isLoading && currentVideos.isEmpty {
                         HStack {
                             Spacer()
-                            ProgressView("Loading playlist...")
+                            ProgressView("Loading tracks...")
                                 .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                 .foregroundColor(AppTheme.youTubeTextSecondary)
                                 .padding(40)
@@ -169,22 +214,22 @@ struct PlaylistDetailView: View {
                                             .frame(width: 24)
 
                                         AsyncImage(url: URL(string: vid.thumbnailUrl)) { img in
-                                            img.resizable().aspectRatio(16/9, contentMode: .fill)
+                                            img.resizable().aspectRatio(contentMode: .fill)
                                         } placeholder: {
                                             Rectangle().fill(AppTheme.youTubeCardBg)
                                         }
-                                        .frame(width: 112, height: 64)
+                                        .frame(width: 50, height: 50)
                                         .cornerRadius(8)
                                         .clipped()
 
-                                        VStack(alignment: .leading, spacing: 4) {
+                                        VStack(alignment: .leading, spacing: 3) {
                                             Text(vid.title)
                                                 .font(.system(size: 14, weight: .medium))
                                                 .foregroundColor(.white)
-                                                .lineLimit(2)
+                                                .lineLimit(1)
                                                 .multilineTextAlignment(.leading)
 
-                                            Text("\(vid.channelName) • \(vid.duration)")
+                                            Text("\(vid.artist?.isEmpty == false ? vid.artist! : vid.channelName) • \(vid.duration)")
                                                 .font(.system(size: 12))
                                                 .foregroundColor(AppTheme.youTubeTextSecondary)
                                                 .lineLimit(1)
@@ -218,6 +263,31 @@ struct PlaylistDetailView: View {
             currentVideos = playlist.videos
             if currentVideos.isEmpty { isLoading = true }
             await refreshVideos()
+        }
+        .sheet(isPresented: $showOptionsMenu) {
+            PlaylistOptionsBottomSheet(
+                playlist: playlist,
+                onDownload: {
+                    for v in currentVideos {
+                        userData.startDownload(video: v)
+                    }
+                },
+                onClear: {
+                    userData.clearPlaylist(playlistId: playlist.id)
+                    currentVideos.removeAll()
+                },
+                onDelete: {
+                    userData.deletePlaylist(playlistId: playlist.id)
+                    onBack()
+                },
+                onShare: {
+                    PlaylistShareEngine.shared.sharePlaylist(playlist: playlist)
+                },
+                onDismiss: {
+                    showOptionsMenu = false
+                }
+            )
+            .presentationDetents([.fraction(0.42), .medium])
         }
         .sheet(isPresented: $showAddSongsSheet) {
             NavigationView {
@@ -312,6 +382,19 @@ struct PlaylistDetailView: View {
     }
 
     private func refreshVideos() async {
+        // 1. If it's an album (starts with MPREb_, OLAK5uy_, or album_), use AlbumDataRepository
+        if playlistId.hasPrefix("MPREb_") || playlistId.hasPrefix("OLAK5uy_") || playlistId.hasPrefix("album_") {
+            let albumTracks = await AlbumDataRepository.shared.getOrFetchAlbumTracks(albumId: playlistId, albumTitle: playlist.title)
+            await MainActor.run {
+                if !albumTracks.isEmpty {
+                    currentVideos = albumTracks
+                }
+                isLoading = false
+            }
+            return
+        }
+
+        // 2. YouTube playlist sync
         guard playlistId.hasPrefix("PL") || playlistId == "liked_videos" || playlistId == "watch_later" else {
             await MainActor.run { isLoading = false }
             return

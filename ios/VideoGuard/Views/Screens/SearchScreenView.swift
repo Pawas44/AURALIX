@@ -5,14 +5,17 @@ struct SearchScreenView: View {
     let onBack: () -> Void
     let onVideoSelected: (VideoItem, [VideoItem]) -> Void
     let onChannelClick: (VideoItem) -> Void
+    var onPlaylistClick: ((UserPlaylist) -> Void)? = nil
 
     @ObservedObject var userData = UserDataRepository.shared
 
     @State private var searchQuery = ""
     @State private var isSearching = false
     @State private var searchResults: [VideoItem] = []
+    @State private var albumResults: [AlbumItem] = []
     @State private var suggestionsList: [String] = []
     @State private var hasSearched = false
+    @State private var selectedCategory: String = "All"
     @State private var selectedVideoForPlaylist: VideoItem? = nil
     @State private var searchPage = 0
     @State private var isLoadingMore = false
@@ -23,6 +26,8 @@ struct SearchScreenView: View {
         "The Weeknd", "Lofi Beats", "Imagine Dragons",
         "Dua Lipa", "Taylor Swift", "Trending News", "Tech Review"
     ]
+
+    private let musicCategories = ["All", "Songs", "Albums", "Mixtapes", "Artists"]
 
     var body: some View {
         let isMusic = appMode == .youtubeMusic
@@ -59,6 +64,7 @@ struct SearchScreenView: View {
                             suggestionsList = []
                             hasSearched = false
                             searchResults = []
+                            albumResults = []
                         }) {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(AppTheme.youTubeTextSecondary)
@@ -73,8 +79,28 @@ struct SearchScreenView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
 
-            // Preset Chips
-            if !hasSearched {
+            // Category Chips when in Music mode and has searched
+            if isMusic && hasSearched {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(musicCategories, id: \.self) { cat in
+                            let isSelected = selectedCategory == cat
+                            Button(action: { selectedCategory = cat }) {
+                                Text(cat)
+                                    .font(.system(size: 12, weight: isSelected ? .bold : .medium))
+                                    .foregroundColor(isSelected ? .black : .white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                                    .background(isSelected ? Color.white : Color(hex: 0x1E1E24))
+                                    .cornerRadius(16)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+            } else if !hasSearched {
+                // Preset Chips
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(presetChips, id: \.self) { chip in
@@ -98,203 +124,241 @@ struct SearchScreenView: View {
             // Main Content
             if isSearching {
                 Spacer()
-                ProgressView("Searching YouTube...")
+                ProgressView(isMusic ? "Searching music..." : "Searching YouTube...")
                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
                     .foregroundColor(AppTheme.youTubeTextSecondary)
                 Spacer()
             } else if hasSearched {
                 ScrollView {
                     LazyVStack(spacing: 14) {
-                        if searchResults.isEmpty {
-                            Text("No results found for \"\(searchQuery)\"")
-                                .foregroundColor(AppTheme.youTubeTextSecondary)
-                                .padding(.top, 40)
-                        } else {
-                            ForEach(Array(searchResults.enumerated()), id: \.element.id) { index, item in
-                                if item.category == "Channel" {
-                                    Button(action: { onChannelClick(item) }) {
-                                        HStack(spacing: 14) {
-                                            AsyncImage(url: URL(string: item.channelAvatarUrl)) { img in
-                                                img.resizable().aspectRatio(contentMode: .fill)
-                                            } placeholder: {
-                                                Circle().fill(Color.gray.opacity(0.4))
-                                            }
-                                            .frame(width: 60, height: 60)
-                                            .clipShape(Circle())
+                        // Albums / Mixtapes Row if available and category is All, Albums, or Mixtapes
+                        if isMusic && (selectedCategory == "All" || selectedCategory == "Albums" || selectedCategory == "Mixtapes") && !albumResults.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Albums & Singles")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 14)
 
-                                            VStack(alignment: .leading, spacing: 4) {
-                                                Text(item.channelName)
-                                                    .font(.system(size: 16, weight: .bold))
-                                                    .foregroundColor(.white)
-                                                Text(item.subscriberCount)
-                                                    .font(.system(size: 13))
-                                                    .foregroundColor(AppTheme.youTubeTextSecondary)
-                                            }
-                                            Spacer()
-                                            Text("View")
-                                                .font(.system(size: 13, weight: .semibold))
-                                                .foregroundColor(.black)
-                                                .padding(.horizontal, 14)
-                                                .padding(.vertical, 7)
-                                                .background(Color.white)
-                                                .cornerRadius(18)
-                                        }
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 8)
-                                    }
-                                } else {
-                                    YouTubeVideoCard(
-                                        video: item,
-                                        onClick: {
-                                            let queue = searchResults.filter { $0.category != "Channel" }
-                                            onVideoSelected(item, queue)
-                                        },
-                                        onChannelClick: {
-                                            onChannelClick(item)
-                                        },
-                                        onSaveToPlaylist: {
-                                            selectedVideoForPlaylist = item
-                                        }
-                                    )
-                                }
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 12) {
+                                        ForEach(albumResults) { album in
+                                            Button(action: {
+                                                let pl = AlbumDataRepository.shared.toUserPlaylist(album: album)
+                                                onPlaylistClick?(pl)
+                                            }) {
+                                                VStack(alignment: .leading, spacing: 6) {
+                                                    AsyncImage(url: URL(string: album.artworkUrl)) { img in
+                                                        img.resizable().aspectRatio(contentMode: .fill)
+                                                    } placeholder: {
+                                                        Rectangle().fill(Color(hex: 0x1E1E24))
+                                                    }
+                                                    .frame(width: 120, height: 120)
+                                                    .cornerRadius(10)
+                                                    .clipped()
 
-                                if index >= searchResults.count - 3 {
-                                    Color.clear.frame(height: 1).onAppear {
-                                        loadMoreSearchResults()
+                                                    Text(album.title)
+                                                        .font(.system(size: 13, weight: .semibold))
+                                                        .foregroundColor(.white)
+                                                        .lineLimit(1)
+                                                        .frame(width: 120, alignment: .leading)
+
+                                                    Text("\(album.artist) • \(album.year)")
+                                                        .font(.system(size: 11))
+                                                        .foregroundColor(AppTheme.ytMusicTextSecondary)
+                                                        .lineLimit(1)
+                                                        .frame(width: 120, alignment: .leading)
+                                                }
+                                            }
+                                        }
                                     }
+                                    .padding(.horizontal, 14)
                                 }
                             }
+                            .padding(.top, 6)
+                        }
 
-                            if isLoadingMore {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .padding()
+                        // Songs list
+                        if selectedCategory != "Albums" && selectedCategory != "Mixtapes" {
+                            let filteredSongs = searchResults.filter { item in
+                                if selectedCategory == "Artists" {
+                                    return item.category == "Channel"
+                                } else if selectedCategory == "Songs" {
+                                    return item.category != "Channel"
+                                }
+                                return true
+                            }
+
+                            if filteredSongs.isEmpty && albumResults.isEmpty {
+                                Text("No results found for \"\(searchQuery)\"")
+                                    .foregroundColor(AppTheme.youTubeTextSecondary)
+                                    .padding(.top, 40)
+                            } else {
+                                ForEach(Array(filteredSongs.enumerated()), id: \.element.id) { index, item in
+                                    if item.category == "Channel" {
+                                        Button(action: { onChannelClick(item) }) {
+                                            HStack(spacing: 14) {
+                                                AsyncImage(url: URL(string: item.channelAvatarUrl)) { img in
+                                                    img.resizable().aspectRatio(contentMode: .fill)
+                                                } placeholder: {
+                                                    Circle().fill(Color.gray.opacity(0.4))
+                                                }
+                                                .frame(width: 60, height: 60)
+                                                .clipShape(Circle())
+
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    Text(item.channelName)
+                                                        .font(.system(size: 16, weight: .bold))
+                                                        .foregroundColor(.white)
+                                                    Text(item.subscriberCount)
+                                                        .font(.system(size: 13))
+                                                        .foregroundColor(AppTheme.youTubeTextSecondary)
+                                                }
+                                                Spacer()
+                                                Image(systemName: "chevron.right")
+                                                    .font(.system(size: 14))
+                                                    .foregroundColor(AppTheme.youTubeTextSecondary)
+                                            }
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 6)
+                                        }
+                                    } else {
+                                        Button(action: { onVideoSelected(item, filteredSongs) }) {
+                                            HStack(spacing: 12) {
+                                                AsyncImage(url: URL(string: item.thumbnailUrl)) { img in
+                                                    img.resizable().aspectRatio(16/9, contentMode: .fill)
+                                                } placeholder: {
+                                                    Rectangle().fill(AppTheme.youTubeCardBg)
+                                                }
+                                                .frame(width: 120, height: 68)
+                                                .cornerRadius(8)
+                                                .clipped()
+
+                                                VStack(alignment: .leading, spacing: 4) {
+                                                    Text(item.title)
+                                                        .font(.system(size: 14, weight: .medium))
+                                                        .foregroundColor(.white)
+                                                        .lineLimit(2)
+                                                        .multilineTextAlignment(.leading)
+
+                                                    Text("\(item.artist?.isEmpty == false ? item.artist! : item.channelName) • \(item.duration)")
+                                                        .font(.system(size: 12))
+                                                        .foregroundColor(AppTheme.youTubeTextSecondary)
+                                                        .lineLimit(1)
+                                                }
+                                                Spacer()
+
+                                                Button(action: { selectedVideoForPlaylist = item }) {
+                                                    Image(systemName: "plus.circle")
+                                                        .font(.system(size: 18))
+                                                        .foregroundColor(AppTheme.youTubeTextSecondary)
+                                                        .padding(6)
+                                                }
+                                            }
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 4)
+                                        }
+                                        .onAppear {
+                                            if index == filteredSongs.count - 3 {
+                                                loadMoreSearchResults()
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if isLoadingMore {
+                                    ProgressView()
+                                        .tint(.white)
+                                        .padding(.vertical, 16)
+                                }
                             }
                         }
                     }
-                    .padding(.vertical, 10)
+                    .padding(.top, 10)
                     .padding(.bottom, 80)
                 }
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Live Suggestions
-                        if !suggestionsList.isEmpty {
+                // Suggestions and search history
+                List {
+                    if !suggestionsList.isEmpty {
+                        Section("Suggestions") {
                             ForEach(suggestionsList, id: \.self) { suggestion in
-                                Button(action: { performSearch(suggestion) }) {
-                                    HStack(spacing: 14) {
+                                Button(action: {
+                                    searchQuery = suggestion
+                                    performSearch(suggestion)
+                                }) {
+                                    HStack {
                                         Image(systemName: "magnifyingglass")
-                                            .font(.system(size: 15))
                                             .foregroundColor(AppTheme.youTubeTextSecondary)
                                         Text(suggestion)
-                                            .font(.system(size: 15))
                                             .foregroundColor(.white)
                                         Spacer()
                                         Image(systemName: "arrow.up.left")
-                                            .font(.system(size: 13))
                                             .foregroundColor(AppTheme.youTubeTextSecondary)
                                     }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 13)
                                 }
+                                .listRowBackground(Color.clear)
                             }
-                        } else {
-                            // Search History + Trending
-                            if !userData.searchHistory.isEmpty {
+                        }
+                    }
+
+                    if !userData.searchHistory.isEmpty {
+                        Section("Recent searches") {
+                            ForEach(userData.searchHistory, id: \.self) { term in
                                 HStack {
-                                    Text("Recent searches")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundColor(AppTheme.youTubeTextSecondary)
-                                    Spacer()
-                                    Button("Clear") {
-                                        userData.clearSearchHistory()
-                                    }
-                                    .font(.system(size: 12))
-                                    .foregroundColor(Color(hex: 0x3EA6FF))
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.top, 12)
-                                .padding(.bottom, 4)
-
-                                ForEach(userData.searchHistory, id: \.self) { item in
-                                    HStack(spacing: 14) {
-                                        Button(action: { performSearch(item) }) {
-                                            HStack(spacing: 14) {
-                                                Image(systemName: "clock.arrow.circlepath")
-                                                    .font(.system(size: 15))
-                                                    .foregroundColor(AppTheme.youTubeTextSecondary)
-                                                Text(item)
-                                                    .font(.system(size: 15))
-                                                    .foregroundColor(.white)
-                                                Spacer()
-                                            }
-                                        }
-                                        Button(action: { userData.removeSearchQuery(item) }) {
-                                            Image(systemName: "xmark")
-                                                .font(.system(size: 12))
+                                    Button(action: {
+                                        searchQuery = term
+                                        performSearch(term)
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "clock")
                                                 .foregroundColor(AppTheme.youTubeTextSecondary)
-                                                .padding(4)
+                                            Text(term)
+                                                .foregroundColor(.white)
+                                            Spacer()
                                         }
                                     }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 11)
-                                }
-                            }
-
-                            Text("Trending searches")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundColor(AppTheme.youTubeTextSecondary)
-                                .padding(.horizontal, 16)
-                                .padding(.top, 14)
-                                .padding(.bottom, 4)
-
-                            ForEach(YouTubeSearchEngine.getTrendingSearches(), id: \.self) { item in
-                                Button(action: { performSearch(item) }) {
-                                    HStack(spacing: 14) {
-                                        Image(systemName: "flame")
-                                            .font(.system(size: 15))
-                                            .foregroundColor(AppTheme.youTubeRed)
-                                        Text(item)
-                                            .font(.system(size: 15))
-                                            .foregroundColor(.white)
-                                        Spacer()
+                                    Button(action: { userData.removeSearchQuery(term) }) {
+                                        Image(systemName: "xmark")
+                                            .foregroundColor(AppTheme.youTubeTextSecondary)
+                                            .padding(4)
                                     }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 12)
                                 }
+                                .listRowBackground(Color.clear)
                             }
                         }
                     }
                 }
+                .listStyle(.plain)
             }
         }
+        .background(LiquidGlassDefaults.liquidCanvas.ignoresSafeArea())
         .sheet(item: $selectedVideoForPlaylist) { vid in
             AddToPlaylistSheet(video: vid) {
                 selectedVideoForPlaylist = nil
             }
+            .presentationDetents([.medium, .large])
         }
     }
 
-    private func handleQueryChange(_ newValue: String) {
-        hasSearched = false
+    private func handleQueryChange(_ text: String) {
         debounceTask?.cancel()
-        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             suggestionsList = []
             return
         }
         debounceTask = Task {
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            try? await Task.sleep(nanoseconds: 300_000_000)
             guard !Task.isCancelled else { return }
-            let fetched = await YouTubeSearchEngine.getSuggestions(query: trimmed)
+            let list = await YouTubeSearchEngine.fetchSearchSuggestions(query: trimmed)
             await MainActor.run {
-                self.suggestionsList = fetched
+                self.suggestionsList = list
             }
         }
     }
 
-    private func performSearch(_ rawQuery: String) {
-        let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func performSearch(_ query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         searchQuery = trimmed
         suggestionsList = []
@@ -305,13 +369,21 @@ struct SearchScreenView: View {
         userData.addSearchQuery(trimmed)
 
         Task {
+            let isMusic = appMode == .youtubeMusic
             let results = await YouTubeSearchEngine.searchVideos(
                 query: trimmed,
-                isMusicOnly: appMode == .youtubeMusic,
+                isMusicOnly: isMusic,
                 page: 0
             )
+
+            var albums: [AlbumItem] = []
+            if isMusic {
+                albums = await AlbumDataRepository.shared.searchAlbums(query: trimmed)
+            }
+
             await MainActor.run {
                 self.searchResults = results
+                self.albumResults = albums
                 self.seenIds = Set(results.map { $0.id })
                 self.isSearching = false
             }
@@ -335,138 +407,6 @@ struct SearchScreenView: View {
                     searchResults.append(contentsOf: newItems)
                 }
                 isLoadingMore = false
-            }
-        }
-    }
-}
-
-// MARK: - Add To Playlist Sheet
-struct AddToPlaylistSheet: View {
-    let video: VideoItem
-    let onDismiss: () -> Void
-
-    @ObservedObject var userData = UserDataRepository.shared
-    @State private var showCreateAlert = false
-    @State private var newPlaylistTitle = ""
-    @State private var feedbackText: String? = nil
-
-    var body: some View {
-        NavigationView {
-            VStack(alignment: .leading, spacing: 14) {
-                // Video Header
-                HStack(spacing: 12) {
-                    AsyncImage(url: URL(string: video.thumbnailUrl)) { img in
-                        img.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Rectangle().fill(Color.white.opacity(0.08))
-                    }
-                    .frame(width: 50, height: 50)
-                    .cornerRadius(8)
-                    .clipped()
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Save to playlist")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundColor(.white)
-                        Text(video.title)
-                            .font(.system(size: 12))
-                            .foregroundColor(Color(hex: 0xAAAAAA))
-                            .lineLimit(1)
-                    }
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-
-                if let msg = feedbackText {
-                    Text(msg)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(AppTheme.ytMusicRedAccent.opacity(0.3))
-                        .cornerRadius(8)
-                        .padding(.horizontal, 16)
-                }
-
-                Divider().background(Color.white.opacity(0.1))
-
-                // Playlists List
-                List {
-                    ForEach(userData.playlists) { playlist in
-                        let isIncluded = playlist.videos.contains(where: { $0.id == video.id })
-                        Button(action: {
-                            if isIncluded {
-                                userData.removeVideoFromPlaylist(playlistId: playlist.id, videoId: video.id)
-                                feedbackText = "Removed from \(playlist.title)"
-                            } else {
-                                userData.addVideoToPlaylist(playlistId: playlist.id, video: video)
-                                feedbackText = "Added to \(playlist.title) ✓"
-                            }
-                        }) {
-                            HStack(spacing: 14) {
-                                Image(systemName: playlist.iconType == "like" ? "heart.fill" : "play.square.stack")
-                                    .font(.system(size: 18))
-                                    .foregroundColor(playlist.iconType == "like" ? AppTheme.ytMusicRedAccent : .white)
-                                    .frame(width: 28)
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(playlist.title)
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundColor(.white)
-                                    Text("\(playlist.videoCount) tracks")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(Color(hex: 0xAAAAAA))
-                                }
-
-                                Spacer()
-
-                                Image(systemName: isIncluded ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 20))
-                                    .foregroundColor(isIncluded ? AppTheme.ytMusicRedAccent : Color.gray)
-                            }
-                            .padding(.vertical, 4)
-                        }
-                        .listRowBackground(Color.clear)
-                    }
-
-                    // New Playlist Row
-                    Button(action: { showCreateAlert = true }) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 20))
-                                .foregroundColor(AppTheme.ytMusicRedAccent)
-                            Text("New playlist")
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundColor(.white)
-                        }
-                        .padding(.vertical, 6)
-                    }
-                    .listRowBackground(Color.clear)
-                }
-                .listStyle(.plain)
-            }
-            .background(Color(hex: 0x161824).ignoresSafeArea())
-            .navigationTitle("Save to...")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done", action: onDismiss)
-                        .foregroundColor(.white)
-                }
-            }
-            .alert("New Playlist", isPresented: $showCreateAlert) {
-                TextField("Playlist Title", text: $newPlaylistTitle)
-                Button("Create & Add") {
-                    let trimmed = newPlaylistTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !trimmed.isEmpty {
-                        let created = userData.createPlaylist(title: trimmed)
-                        userData.addVideoToPlaylist(playlistId: created.id, video: video)
-                        newPlaylistTitle = ""
-                        feedbackText = "Added to \(trimmed) ✓"
-                    }
-                }
-                Button("Cancel", role: .cancel) { newPlaylistTitle = "" }
             }
         }
     }

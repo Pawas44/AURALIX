@@ -4,6 +4,7 @@ struct LyricLine: Identifiable, Equatable {
     var id: String { "\(timestampMs)_\(text)" }
     let timestampMs: Double
     let text: String
+    var romanizedText: String? = nil
 }
 
 struct LyricsResult {
@@ -38,8 +39,9 @@ final class LyricsEngine {
         durationSeconds: Int = 0,
         videoId: String = ""
     ) async -> LyricsResult? {
-        let cleanTitle = cleanTrackName(trackTitle)
-        let cleanArtist = cleanArtistName(artistName)
+        let extracted = SongMetadataExtractor.extractSongMetadata(from: trackTitle, uploader: artistName)
+        let cleanTitle = !extracted.songTitle.isEmpty ? extracted.songTitle : cleanTrackName(trackTitle)
+        let cleanArtist = !extracted.primaryArtist.isEmpty ? extracted.primaryArtist : cleanArtistName(artistName)
         let cacheKey = "\(cleanTitle.lowercased())_\(cleanArtist.lowercased())_\(videoId)"
 
         if let cached = getCached(key: cacheKey) {
@@ -48,16 +50,24 @@ final class LyricsEngine {
 
         var result: LyricsResult? = nil
 
-        // 1. Direct LRCLib GET endpoint
-        result = await tryGetLrc(title: cleanTitle, artist: cleanArtist, duration: durationSeconds)
+        // 1. Direct LRCLib GET endpoint (without strict duration constraint first)
+        result = await tryGetLrc(title: cleanTitle, artist: cleanArtist, duration: 0)
 
-        // 1b. If YouTube title has "Artist - Track" format
+        // 1b. If not found or not synced, try with duration if available
+        if (result == nil || result?.isSynced == false) && durationSeconds > 0 {
+            let durResult = await tryGetLrc(title: cleanTitle, artist: cleanArtist, duration: durationSeconds)
+            if durResult?.isSynced == true {
+                result = durResult
+            }
+        }
+
+        // 1c. If YouTube title has "Artist - Track" format
         if (result == nil || result?.isSynced == false) && trackTitle.contains(" - ") {
             let parts = trackTitle.components(separatedBy: " - ")
             if parts.count >= 2 {
                 let guessedArtist = cleanArtistName(parts[0])
                 let guessedTitle = cleanTrackName(parts[1])
-                let alt = await tryGetLrc(title: guessedTitle, artist: guessedArtist, duration: durationSeconds)
+                let alt = await tryGetLrc(title: guessedTitle, artist: guessedArtist, duration: 0)
                 if alt?.isSynced == true {
                     result = alt
                 } else if result == nil {
@@ -279,7 +289,7 @@ final class LyricsEngine {
             if !hasSynced && !hasPlain { continue }
 
             var score = 0
-            if hasSynced { score += 20 }
+            if hasSynced { score += 50 }
             if hasPlain { score += 5 }
             if resArtist == expArtistClean { score += 30 }
             if resTrack == expTitleClean { score += 30 }
@@ -320,7 +330,8 @@ final class LyricsEngine {
             let parsedLines = rawLines.enumerated().compactMap { idx, line -> LyricLine? in
                 let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return nil }
-                return LyricLine(timestampMs: Double(idx * 3000), text: trimmed)
+                let romanized = TransliterationEngine.shared.canRomanize(trimmed) ? TransliterationEngine.shared.romanize(trimmed) : nil
+                return LyricLine(timestampMs: Double(idx * 3000), text: trimmed, romanizedText: romanized)
             }
             return LyricsResult(lines: parsedLines, plainLyrics: plain, isSynced: false)
         }
@@ -346,7 +357,8 @@ final class LyricsEngine {
                 let min = Double(minStr) ?? 0.0
                 let sec = Double(secStr) ?? 0.0
                 let ms = (min * 60.0 + sec) * 1000.0
-                lines.append(LyricLine(timestampMs: ms, text: text))
+                let romanized = TransliterationEngine.shared.canRomanize(text) ? TransliterationEngine.shared.romanize(text) : nil
+                lines.append(LyricLine(timestampMs: ms, text: text, romanizedText: romanized))
             }
         }
 
