@@ -10,4 +10,9 @@ struct AlbumItem: Identifiable, Hashable, Codable {
     var releaseType: String = "Album" // "Album", "Mixtape", "EP"
     var tracks: [VideoItem] = []
     var isCurated: Bool = false
+
+    var artworkUrl: String {
+        get { coverUrl }
+        set { coverUrl = newValue }
+    }
 }

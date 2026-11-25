@@ -20,6 +20,10 @@ class UserDataRepository: ObservableObject {
     private let keyOfflineTracks = "vg_offline_tracks_json"
 
     @Published var watchHistory: [VideoItem] = []
+    var history: [VideoItem] {
+        get { watchHistory }
+        set { watchHistory = newValue }
+    }
     @Published var playlists: [UserPlaylist] = []
     @Published var subscribedChannels: Set<String> = []
     @Published var searchHistory: [String] = []

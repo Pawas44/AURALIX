@@ -135,8 +135,8 @@ final class DailyMixGenerator {
         
         // MIX 4: Chill / Relax / Focus (Mood-based)
         let mix4Filtered = validPool.filter {
-            $0.mood?.caseInsensitiveCompare("Relax") == .orderedSame ||
-            $0.mood?.caseInsensitiveCompare("Focus") == .orderedSame ||
+            $0.mood.caseInsensitiveCompare("Relax") == .orderedSame ||
+            $0.mood.caseInsensitiveCompare("Focus") == .orderedSame ||
             profile.extractGenre($0).localizedCaseInsensitiveContains("Lo-Fi") ||
             profile.extractGenre($0).localizedCaseInsensitiveContains("Acoustic")
         }.reduce(into: [VideoItem]()) { res, item in

@@ -1,6 +1,35 @@
 import Foundation
 
 struct YouTubeSearchEngine {
+    static let shared = YouTubeSearchEngine()
+
+    static func fetchSearchSuggestions(query: String) async -> [String] {
+        await getSuggestions(query: query)
+    }
+
+    func getSuggestions(query: String) async -> [String] {
+        await Self.getSuggestions(query: query)
+    }
+
+    func fetchSearchSuggestions(query: String) async -> [String] {
+        await Self.getSuggestions(query: query)
+    }
+
+    func searchVideos(_ query: String, isMusicOnly: Bool = false, page: Int = 0) async -> [VideoItem] {
+        await Self.searchVideos(query: query, isMusicOnly: isMusicOnly, page: page)
+    }
+
+    func searchVideos(query: String, isMusicOnly: Bool = false, page: Int = 0) async -> [VideoItem] {
+        await Self.searchVideos(query: query, isMusicOnly: isMusicOnly, page: page)
+    }
+
+    func getSongRadio(videoId: String) async throws -> [VideoItem] {
+        if let video = VideoRepository.getMusicTracks().first(where: { $0.id == videoId }) {
+            return await Self.getRelatedVideos(video: video, isMusicOnly: true)
+        }
+        return await Self.searchVideos(query: "\(videoId) radio", isMusicOnly: true)
+    }
+
     static let trendingSearches = [
         "trending music 2024",
         "lofi hip hop",

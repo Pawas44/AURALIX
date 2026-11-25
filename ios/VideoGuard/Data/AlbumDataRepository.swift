@@ -352,11 +352,19 @@ final class AlbumDataRepository {
         }
     }
 
+    func getOrFetchAlbumTracks(albumId: String, albumTitle: String = "") async -> [VideoItem] {
+        if let existing = albums.first(where: { $0.id == albumId }) {
+            return await getOrFetchAlbumTracks(album: existing)
+        }
+        let album = AlbumItem(id: albumId, title: albumTitle.isEmpty ? "Album" : albumTitle, artist: "Various Artists", coverUrl: "")
+        return await getOrFetchAlbumTracks(album: album)
+    }
+
     func getOrFetchAlbumTracks(album: AlbumItem) async -> [VideoItem] {
         if !album.tracks.isEmpty { return album.tracks }
 
         if album.id.hasPrefix("OLAK5uy_") || album.id.hasPrefix("MPREb_") || album.id.hasPrefix("PL") || album.id.hasPrefix("VL") {
-            let plTracks = await YouTubeSyncEngine.shared.fetchPlaylistVideos(album.id)
+            let plTracks = await YouTubeSyncEngine.shared.fetchPlaylistVideos(playlistId: album.id)
             if !plTracks.isEmpty {
                 let enriched = plTracks.map { track in
                     var t = track

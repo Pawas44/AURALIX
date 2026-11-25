@@ -85,17 +85,16 @@ final class RecommendationEngine: ObservableObject {
         
         // Candidate pool collection
         let syncFeed = YouTubeSyncEngine.shared.musicFeed
-        let rawCandidatePool = (
-            dynamicDiscoveryTracks +
-            syncFeed.quickPicks +
-            syncFeed.listenAgain +
-            syncFeed.recommendedVideos +
-            syncFeed.trendingCharts +
-            importedPlaylistTracks +
-            userHistory +
-            likedPlaylist +
-            VideoRepository.sampleVideos
-        )
+        var rawCandidatePool: [VideoItem] = []
+        rawCandidatePool.append(contentsOf: dynamicDiscoveryTracks)
+        rawCandidatePool.append(contentsOf: syncFeed.quickPicks)
+        rawCandidatePool.append(contentsOf: syncFeed.listenAgain)
+        rawCandidatePool.append(contentsOf: syncFeed.recommendedVideos)
+        rawCandidatePool.append(contentsOf: syncFeed.trendingCharts)
+        rawCandidatePool.append(contentsOf: importedPlaylistTracks)
+        rawCandidatePool.append(contentsOf: userHistory)
+        rawCandidatePool.append(contentsOf: likedPlaylist)
+        rawCandidatePool.append(contentsOf: VideoRepository.sampleVideos)
         
         let candidatePool = SongDeduplicationEngine.shared.deduplicate(rawCandidatePool)
         
@@ -106,7 +105,7 @@ final class RecommendationEngine: ObservableObject {
         let scoredMadeForYou: [VideoItem]
         if let mood = selectedMood, !mood.trimmingCharacters(in: .whitespaces).isEmpty {
             let moodCandidates = candidatePool.filter {
-                $0.mood?.caseInsensitiveCompare(mood) == .orderedSame ||
+                $0.mood.caseInsensitiveCompare(mood) == .orderedSame ||
                 $0.category.caseInsensitiveCompare(mood) == .orderedSame
             }
             let pool = !moodCandidates.isEmpty ? moodCandidates : candidatePool
@@ -237,7 +236,7 @@ final class RecommendationEngine: ObservableObject {
         let targetMood = (selectedMood?.isEmpty == false ? selectedMood : nil) ?? "Energize"
         let rawMoodTracks = candidatePool.filter { track in
             !placedTrackIds.contains(track.id) &&
-            (track.mood?.caseInsensitiveCompare(targetMood) == .orderedSame ||
+            (track.mood.caseInsensitiveCompare(targetMood) == .orderedSame ||
              track.category.caseInsensitiveCompare(targetMood) == .orderedSame)
         }
         let moodTracks = Array((forceRefresh ? rawMoodTracks.shuffled() : rawMoodTracks).prefix(10))

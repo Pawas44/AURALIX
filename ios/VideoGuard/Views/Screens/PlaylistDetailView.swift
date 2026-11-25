@@ -23,235 +23,13 @@ struct PlaylistDetailView: View {
     }
 
     var body: some View {
-        let accentColor = appMode == .youtube ? AppTheme.youTubeRed : AppTheme.ytMusicRedAccent
-
         VStack(spacing: 0) {
-            // Top Navigation Bar
-            HStack(spacing: 12) {
-                Button(action: onBack) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(8)
-                }
-
-                Text(playlist.title)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-
-                Spacer()
-
-                Button(action: {
-                    PlaylistShareEngine.shared.sharePlaylist(playlist: playlist)
-                }) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 17))
-                        .foregroundColor(.white)
-                        .padding(8)
-                }
-
-                Button(action: {
-                    showOptionsMenu = true
-                }) {
-                    Image(systemName: "ellipsis")
-                        .rotationEffect(.degrees(90))
-                        .font(.system(size: 17))
-                        .foregroundColor(.white)
-                        .padding(8)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            topNavBar
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    // Hero Header
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(spacing: 14) {
-                            let coverUrl = playlist.customCoverUrl ?? (playlist.thumbnailUrl.isEmpty ? (currentVideos.first?.thumbnailUrl ?? "") : playlist.thumbnailUrl)
-                            if !coverUrl.isEmpty {
-                                AsyncImage(url: URL(string: coverUrl)) { img in
-                                    img.resizable().aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Rectangle().fill(Color.white.opacity(0.08))
-                                }
-                                .frame(width: 110, height: 110)
-                                .cornerRadius(10)
-                                .clipped()
-                            } else {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 10)
-                                        .fill(LinearGradient(
-                                            colors: [Color(hex: 0x4C1D95), Color(hex: 0x1E1B4B)],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        ))
-                                    Image(systemName: playlist.iconType == "like" ? "heart.fill" : "music.note.list")
-                                        .font(.system(size: 36))
-                                        .foregroundColor(Color(hex: 0xC4B5FD))
-                                }
-                                .frame(width: 110, height: 110)
-                            }
-
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(playlist.title)
-                                    .font(.system(size: 20, weight: .bold))
-                                    .foregroundColor(.white)
-                                Text(playlist.description.isEmpty ? "Playlist" : playlist.description)
-                                    .font(.system(size: 13))
-                                    .foregroundColor(AppTheme.youTubeTextSecondary)
-                                Text("\(currentVideos.count) songs")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(AppTheme.youTubeTextSecondary)
-                            }
-                        }
-
-                        if !currentVideos.isEmpty {
-                            HStack(spacing: 12) {
-                                Button(action: {
-                                    if let first = currentVideos.first {
-                                        onVideoSelected(first, currentVideos)
-                                    }
-                                }) {
-                                    HStack {
-                                        Image(systemName: "play.fill")
-                                        Text("Play all")
-                                            .fontWeight(.semibold)
-                                    }
-                                    .foregroundColor(.black)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 10)
-                                    .background(Color.white)
-                                    .cornerRadius(22)
-                                }
-
-                                Button(action: {
-                                    let shuffled = currentVideos.shuffled()
-                                    if let first = shuffled.first {
-                                        onVideoSelected(first, shuffled)
-                                    }
-                                }) {
-                                    HStack {
-                                        Image(systemName: "shuffle")
-                                        Text("Shuffle")
-                                            .fontWeight(.semibold)
-                                    }
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 10)
-                                    .background(accentColor.opacity(0.28))
-                                    .cornerRadius(22)
-                                }
-                            }
-                        }
-
-                        HStack(spacing: 12) {
-                            Button(action: { showAddSongsSheet = true }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "plus")
-                                    Text("Add songs")
-                                        .fontWeight(.semibold)
-                                }
-                                .font(.system(size: 13))
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 9)
-                                .background(Color.white.opacity(0.08))
-                                .cornerRadius(20)
-                            }
-
-                            Button(action: {
-                                for v in currentVideos {
-                                    userData.startDownload(video: v)
-                                }
-                            }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: "arrow.down.circle")
-                                    Text("Download all")
-                                        .fontWeight(.semibold)
-                                }
-                                .font(.system(size: 13))
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 9)
-                                .background(Color.white.opacity(0.08))
-                                .cornerRadius(20)
-                            }
-                        }
-                    }
-                    .padding(16)
-                    .background(
-                        LinearGradient(
-                            colors: [Color(hex: 0x2C3440), Color.clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-
-                    if isLoading && currentVideos.isEmpty {
-                        HStack {
-                            Spacer()
-                            ProgressView("Loading tracks...")
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                .foregroundColor(AppTheme.youTubeTextSecondary)
-                                .padding(40)
-                            Spacer()
-                        }
-                    } else if currentVideos.isEmpty {
-                        Text("This playlist is empty.")
-                            .foregroundColor(AppTheme.youTubeTextSecondary)
-                            .padding(32)
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        LazyVStack(spacing: 12) {
-                            ForEach(Array(currentVideos.enumerated()), id: \.element.id) { idx, vid in
-                                Button(action: { onVideoSelected(vid, currentVideos) }) {
-                                    HStack(spacing: 12) {
-                                        Text("\(idx + 1)")
-                                            .font(.system(size: 13))
-                                            .foregroundColor(AppTheme.youTubeTextSecondary)
-                                            .frame(width: 24)
-
-                                        AsyncImage(url: URL(string: vid.thumbnailUrl)) { img in
-                                            img.resizable().aspectRatio(contentMode: .fill)
-                                        } placeholder: {
-                                            Rectangle().fill(AppTheme.youTubeCardBg)
-                                        }
-                                        .frame(width: 50, height: 50)
-                                        .cornerRadius(8)
-                                        .clipped()
-
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text(vid.title)
-                                                .font(.system(size: 14, weight: .medium))
-                                                .foregroundColor(.white)
-                                                .lineLimit(1)
-                                                .multilineTextAlignment(.leading)
-
-                                            Text("\(vid.artist?.isEmpty == false ? vid.artist! : vid.channelName) • \(vid.duration)")
-                                                .font(.system(size: 12))
-                                                .foregroundColor(AppTheme.youTubeTextSecondary)
-                                                .lineLimit(1)
-                                        }
-                                        Spacer()
-
-                                        Button(action: {
-                                            userData.removeVideoFromPlaylist(playlistId: playlist.id, videoId: vid.id)
-                                            currentVideos.removeAll { $0.id == vid.id }
-                                        }) {
-                                            Image(systemName: "xmark")
-                                                .font(.system(size: 13, weight: .semibold))
-                                                .foregroundColor(Color.gray)
-                                                .padding(8)
-                                        }
-                                    }
-                                    .padding(.horizontal, 14)
-                                }
-                            }
-                        }
-                        .padding(.bottom, 80)
-                    }
+                    heroHeader
+                    tracksList
                 }
             }
             .refreshable {
@@ -290,7 +68,244 @@ struct PlaylistDetailView: View {
             .presentationDetents([.fraction(0.42), .medium])
         }
         .sheet(isPresented: $showAddSongsSheet) {
-            NavigationView {
+            addSongsSheetView
+        }
+    }
+
+    private var topNavBar: some View {
+        HStack(spacing: 12) {
+            Button(action: onBack) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(8)
+            }
+
+            Text(playlist.title)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(.white)
+                .lineLimit(1)
+
+            Spacer()
+
+            Button(action: {
+                PlaylistShareEngine.shared.sharePlaylist(playlist: playlist)
+            }) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.system(size: 17))
+                    .foregroundColor(.white)
+                    .padding(8)
+            }
+
+            Button(action: {
+                showOptionsMenu = true
+            }) {
+                Image(systemName: "ellipsis")
+                    .rotationEffect(.degrees(90))
+                    .font(.system(size: 17))
+                    .foregroundColor(.white)
+                    .padding(8)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+    }
+
+    private var heroHeader: some View {
+        let accentColor = appMode == .youtube ? AppTheme.youTubeRed : AppTheme.ytMusicRedAccent
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                let coverUrl = playlist.customCoverUrl ?? (playlist.thumbnailUrl.isEmpty ? (currentVideos.first?.thumbnailUrl ?? "") : playlist.thumbnailUrl)
+                if !coverUrl.isEmpty {
+                    AsyncImage(url: URL(string: coverUrl)) { img in
+                        img.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Rectangle().fill(Color.white.opacity(0.08))
+                    }
+                    .frame(width: 110, height: 110)
+                    .cornerRadius(10)
+                    .clipped()
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(LinearGradient(
+                                colors: [Color(hex: 0x4C1D95), Color(hex: 0x1E1B4B)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ))
+                        Image(systemName: playlist.iconType == "like" ? "heart.fill" : "music.note.list")
+                            .font(.system(size: 36))
+                            .foregroundColor(Color(hex: 0xC4B5FD))
+                    }
+                    .frame(width: 110, height: 110)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(playlist.title)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                    Text(playlist.description.isEmpty ? "Playlist" : playlist.description)
+                        .font(.system(size: 13))
+                        .foregroundColor(AppTheme.youTubeTextSecondary)
+                    Text("\(currentVideos.count) songs")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(AppTheme.youTubeTextSecondary)
+                }
+            }
+
+            if !currentVideos.isEmpty {
+                HStack(spacing: 12) {
+                    Button(action: {
+                        if let first = currentVideos.first {
+                            onVideoSelected(first, currentVideos)
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: "play.fill")
+                            Text("Play all")
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.white)
+                        .cornerRadius(22)
+                    }
+
+                    Button(action: {
+                        let shuffled = currentVideos.shuffled()
+                        if let first = shuffled.first {
+                            onVideoSelected(first, shuffled)
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: "shuffle")
+                            Text("Shuffle")
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(accentColor.opacity(0.28))
+                        .cornerRadius(22)
+                    }
+                }
+            }
+
+            HStack(spacing: 12) {
+                Button(action: { showAddSongsSheet = true }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                        Text("Add songs")
+                            .fontWeight(.semibold)
+                    }
+                    .font(.system(size: 13))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(20)
+                }
+
+                Button(action: {
+                    for v in currentVideos {
+                        userData.startDownload(video: v)
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.circle")
+                        Text("Download all")
+                            .fontWeight(.semibold)
+                    }
+                    .font(.system(size: 13))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(20)
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            LinearGradient(
+                colors: [Color(hex: 0x2C3440), Color.clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
+    }
+
+    private var tracksList: some View {
+        Group {
+            if isLoading && currentVideos.isEmpty {
+                HStack {
+                    Spacer()
+                    ProgressView("Loading tracks...")
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .foregroundColor(AppTheme.youTubeTextSecondary)
+                        .padding(40)
+                    Spacer()
+                }
+            } else if currentVideos.isEmpty {
+                Text("This playlist is empty.")
+                    .foregroundColor(AppTheme.youTubeTextSecondary)
+                    .padding(32)
+                    .frame(maxWidth: .infinity)
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(Array(currentVideos.enumerated()), id: \.element.id) { idx, vid in
+                        Button(action: { onVideoSelected(vid, currentVideos) }) {
+                            HStack(spacing: 12) {
+                                Text("\(idx + 1)")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(AppTheme.youTubeTextSecondary)
+                                    .frame(width: 24)
+
+                                AsyncImage(url: URL(string: vid.thumbnailUrl)) { img in
+                                    img.resizable().aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    Rectangle().fill(AppTheme.youTubeCardBg)
+                                }
+                                .frame(width: 50, height: 50)
+                                .cornerRadius(8)
+                                .clipped()
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(vid.title)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                        .multilineTextAlignment(.leading)
+
+                                    Text("\(!vid.artist.isEmpty ? vid.artist : vid.channelName) • \(vid.duration)")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(AppTheme.youTubeTextSecondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+
+                                Button(action: {
+                                    userData.removeVideoFromPlaylist(playlistId: playlist.id, videoId: vid.id)
+                                    currentVideos.removeAll { $0.id == vid.id }
+                                }) {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(Color.gray)
+                                        .padding(8)
+                                }
+                            }
+                            .padding(.horizontal, 14)
+                        }
+                    }
+                }
+                .padding(.bottom, 80)
+            }
+        }
+    }
+
+    private var addSongsSheetView: some View {
+        NavigationView {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         Image(systemName: "magnifyingglass")

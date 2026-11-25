@@ -250,3 +250,95 @@ private struct SettingsToggleRow: View {
         .padding(.vertical, 10)
     }
 }
+
+struct AddToPlaylistSheet: View {
+    let video: VideoItem
+    var onDismiss: (() -> Void)? = nil
+    @ObservedObject private var userData = UserDataRepository.shared
+
+    var body: some View {
+        ZStack {
+            Color(hex: 0x16161E).ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Text("Add to Playlist")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white)
+                    Spacer()
+                    Button(action: { onDismiss?() }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(6)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+
+                Divider().background(Color.white.opacity(0.08))
+
+                ScrollView {
+                    VStack(spacing: 6) {
+                        // Watch Later Quick Action
+                        Button(action: {
+                            userData.toggleWatchLater(video)
+                            onDismiss?()
+                        }) {
+                            HStack(spacing: 14) {
+                                Image(systemName: "clock.fill")
+                                    .font(.system(size: 18))
+                                    .foregroundColor(Color(hex: 0x8B5CF6))
+                                    .frame(width: 32)
+                                Text("Watch Later")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundColor(.white)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 12)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PlainButtonStyle())
+
+                        Divider().background(Color.white.opacity(0.05)).padding(.horizontal, 20)
+
+                        // Existing Playlists
+                        ForEach(userData.playlists.filter { !$0.isSystem }) { pl in
+                            Button(action: {
+                                userData.addVideoToPlaylist(playlistId: pl.id, video: video)
+                                onDismiss?()
+                            }) {
+                                HStack(spacing: 14) {
+                                    Image(systemName: "music.note.list")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(Color(hex: 0xC4B5FD))
+                                        .frame(width: 32)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(pl.title)
+                                            .font(.system(size: 15, weight: .medium))
+                                            .foregroundColor(.white)
+                                        Text("\(pl.videos.count) songs")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.gray)
+                                    }
+                                    Spacer()
+                                    if pl.videos.contains(where: { $0.id == video.id }) {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(Color(hex: 0x8B5CF6))
+                                    }
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 10)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    .padding(.top, 10)
+                }
+            }
+        }
+    }
+}
