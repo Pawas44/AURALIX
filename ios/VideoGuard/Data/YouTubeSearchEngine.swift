@@ -191,8 +191,12 @@ struct YouTubeSearchEngine {
                 }
                 var isAlbum = false
                 if vid.isEmpty {
-                    let bId = ((card["onTap"] as? [String: Any])?["browseEndpoint"] as? [String: Any])?["browseId"] as? String
-                        ?? (((card["title"] as? [String: Any])?["runs"] as? [[String: Any]])?.first?["navigationEndpoint"] as? [String: Any])?["browseEndpoint"] as? [String: Any]?["browseId"] as? String ?? ""
+                    var bId = ((card["onTap"] as? [String: Any])?["browseEndpoint"] as? [String: Any])?["browseId"] as? String ?? ""
+                    if bId.isEmpty {
+                        let runs0 = (card["title"] as? [String: Any])?["runs"] as? [[String: Any]]
+                        let nav = runs0?.first?["navigationEndpoint"] as? [String: Any]
+                        bId = (nav?["browseEndpoint"] as? [String: Any])?["browseId"] as? String ?? ""
+                    }
                     if bId.hasPrefix("MPREb_") || bId.hasPrefix("OLAK5uy_") || bId.hasPrefix("FEmusic_library_album_") {
                         vid = bId
                         isAlbum = true
